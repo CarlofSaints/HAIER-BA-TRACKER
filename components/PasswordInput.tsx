@@ -14,7 +14,7 @@ export default function PasswordInput({ value, onChange, placeholder, required, 
   const [show, setShow] = useState(false);
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', width: '100%' }}>
       <input
         className="input"
         type={show ? 'text' : 'password'}
@@ -23,21 +23,25 @@ export default function PasswordInput({ value, onChange, placeholder, required, 
         placeholder={placeholder}
         required={required}
         autoComplete={autoComplete}
-        style={{ paddingRight: 36 }}
+        style={{ paddingRight: 40, boxSizing: 'border-box' }}
       />
       <button
         type="button"
         onClick={() => setShow(s => !s)}
         style={{
           position: 'absolute',
-          right: 8,
-          top: '50%',
-          transform: 'translateY(-50%)',
+          right: 1,
+          top: 1,
+          bottom: 1,
+          width: 36,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           background: 'none',
           border: 'none',
+          borderRadius: '0 7px 7px 0',
           cursor: 'pointer',
-          padding: 4,
-          fontSize: '0.9rem',
+          padding: 0,
           color: '#6b7280',
           lineHeight: 1,
         }}

@@ -20,6 +20,14 @@ export function useAuth(requiredRole?: Role | Role[]) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  // Stabilize the dependency — array literals like ['super_admin','admin']
+  // create a new reference every render, which re-triggers the effect and
+  // causes an infinite loop (JSON.parse always returns a new object → setSession
+  // triggers re-render → new array ref → effect fires again).
+  const rolesKey = requiredRole
+    ? (Array.isArray(requiredRole) ? requiredRole.join(',') : requiredRole)
+    : '';
+
   useEffect(() => {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) {
@@ -33,8 +41,8 @@ export function useAuth(requiredRole?: Role | Role[]) {
         setLoading(false);
         return;
       }
-      if (requiredRole) {
-        const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
+      if (rolesKey) {
+        const roles = rolesKey.split(',') as Role[];
         if (!roles.includes(s.role)) {
           router.replace('/');
           setLoading(false);
@@ -48,7 +56,7 @@ export function useAuth(requiredRole?: Role | Role[]) {
     } finally {
       setLoading(false);
     }
-  }, [router, requiredRole]);
+  }, [router, rolesKey]);
 
   function logout() {
     localStorage.removeItem(SESSION_KEY);
