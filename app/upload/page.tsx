@@ -53,7 +53,8 @@ export default function UploadPage() {
       if (!res.ok) {
         setToast({ msg: data.error || 'Upload failed', type: 'error' });
       } else {
-        setToast({ msg: `Uploaded ${data.rowCount} visit rows`, type: 'success' });
+        const nameInfo = data.sampleRepName ? ` (Sample name: ${data.sampleRepName})` : '';
+        setToast({ msg: `Uploaded ${data.rowCount} visit rows${nameInfo}`, type: 'success' });
         loadUploads();
       }
     } catch {

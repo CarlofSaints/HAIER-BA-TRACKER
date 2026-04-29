@@ -9,33 +9,57 @@ export const runtime = 'nodejs';
 
 // Perigee column mapping — maps expected header names to Visit fields
 // Columns that map directly to Visit fields
+// Supports both custom report format AND standard Perigee export format
 const COLUMN_MAP: Record<string, keyof Visit> = {
+  // Email
   'email': 'email',
+  'representative id': 'email',
+  'rep email': 'email',
+  // Rep name
   'rep name': 'repName',
+  'representative name': 'repName',
+  // Channel
   'channel': 'channel',
+  'cpf.channel': 'channel',
+  // Store
   'store name': 'storeName',
+  'place': 'storeName',
   'store code': 'storeCode',
+  'place id': 'storeCode',
+  'cpf.retailersitecode': 'storeCode',
+  // Check-in date/time (custom report format)
   'check in date': 'checkInDate',
   'check-in date': 'checkInDate',
   'check in time': 'checkInTime',
   'check-in time': 'checkInTime',
+  // Check-out date/time (custom report format)
   'check out date': 'checkOutDate',
   'check-out date': 'checkOutDate',
   'check out time': 'checkOutTime',
   'check-out time': 'checkOutTime',
+  // Perigee standard format: Date, Start time, End time
+  'date': 'checkInDate',
+  'start time': 'checkInTime',
+  'end time': 'checkOutTime',
+  // Duration
+  'visit duration': 'visitDuration',
+  'time at place': 'visitDuration',
+  // Distance
   'check in distance': 'checkInDistance',
   'check-in distance': 'checkInDistance',
   'check out distance': 'checkOutDistance',
   'check-out distance': 'checkOutDistance',
-  'visit duration': 'visitDuration',
+  // Forms / pics
   'forms completed': 'formsCompleted',
   'pics uploaded': 'picsUploaded',
+  // Status
   'status': 'status',
+  // Network
   'network on check in': 'networkOnCheckIn',
   'network on check-in': 'networkOnCheckIn',
 };
 
-// Extra columns used to build repName when "Rep Name" column is absent
+// Extra columns used to build repName when mapped repName is empty
 const NAME_COLUMNS = ['name', 'first name', 'firstname'];
 const SURNAME_COLUMNS = ['surname', 'last name', 'lastname'];
 
@@ -46,7 +70,13 @@ function normaliseDateDDMMYYYY(val: string): string {
   return val;
 }
 
-function parseExcelRows(buffer: Buffer, fileName: string): Visit[] {
+interface ParseResult {
+  visits: Visit[];
+  detectedHeaders: string[];
+  mappedFields: string[];
+}
+
+function parseExcelRows(buffer: Buffer, fileName: string): ParseResult {
   // Dynamic import doesn't work in synchronous context, so use require-style
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const XLSX = require('xlsx');
@@ -54,7 +84,7 @@ function parseExcelRows(buffer: Buffer, fileName: string): Visit[] {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return { visits: [], detectedHeaders: [], mappedFields: [] };
 
   // Build header mapping
   const headers = Object.keys(rows[0]);
@@ -114,7 +144,11 @@ function parseExcelRows(buffer: Buffer, fileName: string): Visit[] {
       });
     }
   }
-  return visits;
+  return {
+    visits,
+    detectedHeaders: headers,
+    mappedFields: Object.values(mapping),
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -179,13 +213,17 @@ export async function POST(req: NextRequest) {
     fileName = file.name;
     buffer = Buffer.from(await file.arrayBuffer());
 
-    const visits = parseExcelRows(buffer, fileName);
-    if (visits.length === 0) {
-      return NextResponse.json({ error: 'No valid visit rows found' }, { status: 400 });
+    const parsed = parseExcelRows(buffer, fileName);
+    if (parsed.visits.length === 0) {
+      return NextResponse.json({
+        error: 'No valid visit rows found',
+        detectedHeaders: parsed.detectedHeaders,
+        mappedFields: parsed.mappedFields,
+      }, { status: 400 });
     }
 
     const uploadId = crypto.randomUUID();
-    await saveVisitData(uploadId, visits);
+    await saveVisitData(uploadId, parsed.visits);
 
     const index = await loadVisitIndex();
     index.unshift({
@@ -193,11 +231,17 @@ export async function POST(req: NextRequest) {
       fileName,
       uploadedAt: new Date().toISOString(),
       uploadedBy: `${user.name} ${user.surname}`,
-      rowCount: visits.length,
+      rowCount: parsed.visits.length,
     });
     await saveVisitIndex(index);
 
-    return NextResponse.json({ ok: true, uploadId, rowCount: visits.length }, { headers: noCacheHeaders() });
+    // Include sample repName for debugging
+    const sampleName = parsed.visits.find(v => v.repName)?.repName || '(none detected)';
+    return NextResponse.json({
+      ok: true, uploadId, rowCount: parsed.visits.length,
+      detectedHeaders: parsed.detectedHeaders,
+      sampleRepName: sampleName,
+    }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Visit upload error:', err);
     return NextResponse.json({ error: 'Upload failed: ' + (err instanceof Error ? err.message : 'Unknown') }, { status: 500 });
