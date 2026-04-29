@@ -7,6 +7,7 @@ export interface User {
   email: string;
   name: string;
   surname: string;
+  cellNumber?: string;
   passwordHash: string;
   role: Role;
   forcePasswordChange: boolean;

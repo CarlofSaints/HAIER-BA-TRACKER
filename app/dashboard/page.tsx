@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
+import Footer from '@/components/Footer';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -192,7 +193,7 @@ export default function DashboardPage() {
   return (
     <div style={{ display: 'flex' }}>
       <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
-      <main style={{ marginLeft: 240, flex: 1, padding: '2rem', minHeight: '100vh' }}>
+      <main style={{ flex: 1, padding: '2rem', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
           BA Scorecard Dashboard
         </h1>
@@ -376,6 +377,8 @@ export default function DashboardPage() {
             </div>
           </>
         )}
+        <div style={{ flex: 1 }} />
+        <Footer />
       </main>
     </div>
   );

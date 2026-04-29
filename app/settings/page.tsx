@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
+import Footer from '@/components/Footer';
 
 interface PerigeeConfig {
   apiKey: string;
@@ -74,7 +75,7 @@ export default function SettingsPage() {
   return (
     <div style={{ display: 'flex' }}>
       <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
-      <main style={{ marginLeft: 240, flex: 1, padding: '2rem', minHeight: '100vh' }}>
+      <main style={{ flex: 1, padding: '2rem', minHeight: '100vh' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
           Settings
         </h1>
@@ -146,6 +147,7 @@ export default function SettingsPage() {
             Automatic polling is not yet implemented. Use the Upload page to manually import visit data from Perigee Excel exports.
           </div>
         </div>
+        <Footer />
       </main>
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}

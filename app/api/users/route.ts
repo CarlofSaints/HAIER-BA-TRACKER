@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { email, name, surname, role, password, forcePasswordChange, sendWelcomeEmail } = await req.json();
+    const { email, name, surname, role, password, forcePasswordChange, sendWelcomeEmail, cellNumber } = await req.json();
     if (!email || !name || !surname || !role) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
     }
@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       email,
       name,
       surname,
+      cellNumber: cellNumber || undefined,
       passwordHash: await bcrypt.hash(tempPassword, 10),
       role,
       forcePasswordChange: forcePasswordChange !== false,

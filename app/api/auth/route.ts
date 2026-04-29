@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       email: user.email,
       name: user.name,
       surname: user.surname,
+      cellNumber: user.cellNumber || '',
       role: user.role,
       forcePasswordChange: user.forcePasswordChange,
     };

@@ -5,6 +5,7 @@ import { useAuth, authFetch } from '@/lib/useAuth';
 import type { Role } from '@/lib/userData';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
+import Footer from '@/components/Footer';
 import PasswordInput from '@/components/PasswordInput';
 
 interface UserRow {
@@ -12,6 +13,7 @@ interface UserRow {
   email: string;
   name: string;
   surname: string;
+  cellNumber?: string;
   role: Role;
   forcePasswordChange: boolean;
   createdAt: string;
@@ -27,6 +29,7 @@ interface UserForm {
   email: string;
   name: string;
   surname: string;
+  cellNumber: string;
   role: Role;
   password: string;
   forcePasswordChange: boolean;
@@ -38,7 +41,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
-  const [form, setForm] = useState<UserForm>({ email: '', name: '', surname: '', role: 'client', password: '', forcePasswordChange: true, sendWelcomeEmail: true });
+  const [form, setForm] = useState<UserForm>({ email: '', name: '', surname: '', cellNumber: '', role: 'client', password: '', forcePasswordChange: true, sendWelcomeEmail: true });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
@@ -55,13 +58,13 @@ export default function UsersPage() {
 
   function openCreate() {
     setEditUser(null);
-    setForm({ email: '', name: '', surname: '', role: 'client', password: '', forcePasswordChange: true, sendWelcomeEmail: true });
+    setForm({ email: '', name: '', surname: '', cellNumber: '', role: 'client', password: '', forcePasswordChange: true, sendWelcomeEmail: true });
     setShowModal(true);
   }
 
   function openEdit(u: UserRow) {
     setEditUser(u);
-    setForm({ email: u.email, name: u.name, surname: u.surname, role: u.role, password: '', forcePasswordChange: false, sendWelcomeEmail: false });
+    setForm({ email: u.email, name: u.name, surname: u.surname, cellNumber: u.cellNumber || '', role: u.role, password: '', forcePasswordChange: false, sendWelcomeEmail: false });
     setShowModal(true);
   }
 
@@ -74,6 +77,7 @@ export default function UsersPage() {
         if (form.surname !== editUser.surname) body.surname = form.surname;
         if (form.email !== editUser.email) body.email = form.email;
         if (form.role !== editUser.role) body.role = form.role;
+        if (form.cellNumber !== (editUser.cellNumber || '')) body.cellNumber = form.cellNumber;
         if (form.password) {
           body.password = form.password;
           body.forcePasswordChange = form.forcePasswordChange;
@@ -139,7 +143,7 @@ export default function UsersPage() {
   return (
     <div style={{ display: 'flex' }}>
       <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
-      <main style={{ marginLeft: 240, flex: 1, padding: '2rem', minHeight: '100vh' }}>
+      <main style={{ flex: 1, padding: '2rem', minHeight: '100vh' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <div>
             <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', margin: 0 }}>Users</h1>
@@ -154,6 +158,7 @@ export default function UsersPage() {
               <tr>
                 <th>Name</th>
                 <th>Email</th>
+                <th>Cell</th>
                 <th>Role</th>
                 <th>Created</th>
                 <th style={{ width: 140 }}>Actions</th>
@@ -164,6 +169,7 @@ export default function UsersPage() {
                 <tr key={u.id}>
                   <td>{u.name} {u.surname}</td>
                   <td>{u.email}</td>
+                  <td>{u.cellNumber || '-'}</td>
                   <td style={{ textTransform: 'capitalize' }}>{u.role.replace('_', ' ')}</td>
                   <td>{new Date(u.createdAt).toLocaleDateString('en-ZA')}</td>
                   <td>
@@ -175,11 +181,13 @@ export default function UsersPage() {
                 </tr>
               ))}
               {users.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No users</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>No users</td></tr>
               )}
             </tbody>
           </table>
         </div>
+
+        <Footer />
 
         {/* Modal */}
         {showModal && (
@@ -202,6 +210,10 @@ export default function UsersPage() {
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>Email</label>
                   <input className="input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>Cell Number</label>
+                  <input className="input" type="tel" value={form.cellNumber} onChange={e => setForm({ ...form, cellNumber: e.target.value })} placeholder="e.g. 082 123 4567" />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>Role</label>

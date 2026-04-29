@@ -9,6 +9,7 @@ export interface Session {
   email: string;
   name: string;
   surname: string;
+  cellNumber?: string;
   role: Role;
   forcePasswordChange: boolean;
 }
