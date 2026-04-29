@@ -84,11 +84,12 @@ function parseExcelRows(buffer: Buffer, fileName: string): Visit[] {
       }
     }
 
-    // If repName is empty, build from Name + Surname columns
-    if (!visit.repName && (nameHeader || surnameHeader)) {
+    // Build full name from Name + Surname columns — always prefer over repName
+    if (nameHeader || surnameHeader) {
       const first = String(row[nameHeader] ?? '').trim();
       const last = String(row[surnameHeader] ?? '').trim();
-      visit.repName = [first, last].filter(Boolean).join(' ');
+      const fullName = [first, last].filter(Boolean).join(' ');
+      if (fullName) visit.repName = fullName;
     }
 
     // Only include rows that have at minimum a store name or rep name
