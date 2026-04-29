@@ -1,16 +1,13 @@
-import { put, del, list, getDownloadUrl } from '@vercel/blob';
+import { get, put, del } from '@vercel/blob';
 
 export async function readJson<T>(key: string, fallback: T): Promise<T> {
   try {
-    const { blobs } = await list({ prefix: key, limit: 1 });
-    const match = blobs.find(b => b.pathname === key);
-    if (!match) return fallback;
-
-    const url = getDownloadUrl(match.url);
-    const res = await fetch(url);
-    if (!res.ok) return fallback;
-    const text = await res.text();
-    return JSON.parse(text) as T;
+    const result = await get(key, { access: 'private', useCache: false });
+    if (result && result.statusCode === 200) {
+      const text = await new Response(result.stream).text();
+      return JSON.parse(text) as T;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
@@ -20,17 +17,14 @@ export async function writeJson<T>(key: string, data: T): Promise<void> {
   await put(key, JSON.stringify(data, null, 2), {
     access: 'private',
     addRandomSuffix: false,
+    allowOverwrite: true,
     contentType: 'application/json',
   });
 }
 
 export async function deleteBlob(key: string): Promise<void> {
   try {
-    const { blobs } = await list({ prefix: key, limit: 1 });
-    const match = blobs.find(b => b.pathname === key);
-    if (match) {
-      await del(match.url);
-    }
+    await del(key);
   } catch {
     // ignore - key may not exist
   }
