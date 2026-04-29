@@ -31,6 +31,6 @@ export async function deleteBlob(key: string): Promise<void> {
       await del(match.url);
     }
   } catch {
-    // ignore — key may not exist
+    // ignore - key may not exist
   }
 }
