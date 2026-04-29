@@ -5,6 +5,7 @@ import { useAuth, authFetch } from '@/lib/useAuth';
 import type { Role } from '@/lib/userData';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
+import PasswordInput from '@/components/PasswordInput';
 
 interface UserRow {
   id: string;
@@ -22,12 +23,22 @@ const ROLES: { value: Role; label: string }[] = [
   { value: 'super_admin', label: 'Super Admin' },
 ];
 
+interface UserForm {
+  email: string;
+  name: string;
+  surname: string;
+  role: Role;
+  password: string;
+  forcePasswordChange: boolean;
+  sendWelcomeEmail: boolean;
+}
+
 export default function UsersPage() {
   const { session, loading: authLoading, logout } = useAuth(['super_admin', 'admin']);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
-  const [form, setForm] = useState({ email: '', name: '', surname: '', role: 'client' as Role, password: '' });
+  const [form, setForm] = useState<UserForm>({ email: '', name: '', surname: '', role: 'client', password: '', forcePasswordChange: true, sendWelcomeEmail: true });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
@@ -44,13 +55,13 @@ export default function UsersPage() {
 
   function openCreate() {
     setEditUser(null);
-    setForm({ email: '', name: '', surname: '', role: 'client', password: '' });
+    setForm({ email: '', name: '', surname: '', role: 'client', password: '', forcePasswordChange: true, sendWelcomeEmail: true });
     setShowModal(true);
   }
 
   function openEdit(u: UserRow) {
     setEditUser(u);
-    setForm({ email: u.email, name: u.name, surname: u.surname, role: u.role, password: '' });
+    setForm({ email: u.email, name: u.name, surname: u.surname, role: u.role, password: '', forcePasswordChange: false, sendWelcomeEmail: false });
     setShowModal(true);
   }
 
@@ -58,12 +69,15 @@ export default function UsersPage() {
     setSaving(true);
     try {
       if (editUser) {
-        const body: Record<string, string> = {};
+        const body: Record<string, unknown> = {};
         if (form.name !== editUser.name) body.name = form.name;
         if (form.surname !== editUser.surname) body.surname = form.surname;
         if (form.email !== editUser.email) body.email = form.email;
         if (form.role !== editUser.role) body.role = form.role;
-        if (form.password) body.password = form.password;
+        if (form.password) {
+          body.password = form.password;
+          body.forcePasswordChange = form.forcePasswordChange;
+        }
 
         const res = await authFetch(`/api/users/${editUser.id}`, {
           method: 'PUT',
@@ -81,7 +95,9 @@ export default function UsersPage() {
         const res = await authFetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
+          body: JSON.stringify({
+            ...form,
+          }),
         });
         if (!res.ok) {
           const data = await res.json();
@@ -152,12 +168,8 @@ export default function UsersPage() {
                   <td>{new Date(u.createdAt).toLocaleDateString('en-ZA')}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      <button className="btn btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => openEdit(u)}>
-                        Edit
-                      </button>
-                      <button className="btn btn-danger" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => handleDelete(u.id)}>
-                        Delete
-                      </button>
+                      <button className="btn btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => openEdit(u)}>Edit</button>
+                      <button className="btn btn-danger" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => handleDelete(u.id)}>Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -203,7 +215,31 @@ export default function UsersPage() {
                   <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
                     {editUser ? 'Reset Password (leave blank to keep)' : 'Password (leave blank for auto-generated)'}
                   </label>
-                  <input className="input" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder={editUser ? 'Leave blank to keep' : 'Auto-generated if empty'} />
+                  <PasswordInput value={form.password} onChange={pw => setForm({ ...form, password: pw })} placeholder={editUser ? 'Leave blank to keep' : 'Auto-generated if empty'} />
+                </div>
+
+                {/* Checkboxes */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: '#374151', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={form.forcePasswordChange}
+                      onChange={e => setForm({ ...form, forcePasswordChange: e.target.checked })}
+                      style={{ width: 16, height: 16 }}
+                    />
+                    Force password change on first login
+                  </label>
+                  {!editUser && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: '#374151', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={form.sendWelcomeEmail}
+                        onChange={e => setForm({ ...form, sendWelcomeEmail: e.target.checked })}
+                        style={{ width: 16, height: 16 }}
+                      />
+                      Send welcome email
+                    </label>
+                  )}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
@@ -216,7 +252,6 @@ export default function UsersPage() {
           </div>
         )}
       </main>
-
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );

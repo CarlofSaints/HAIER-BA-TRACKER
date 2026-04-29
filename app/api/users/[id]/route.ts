@@ -42,7 +42,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (body.role) users[idx].role = body.role;
   if (body.password) {
     users[idx].passwordHash = await bcrypt.hash(body.password, 10);
-    users[idx].forcePasswordChange = true;
+    users[idx].forcePasswordChange = body.forcePasswordChange !== undefined ? body.forcePasswordChange : true;
   }
 
   await saveUsers(users);

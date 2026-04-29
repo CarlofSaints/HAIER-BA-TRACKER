@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { email, name, surname, role, password } = await req.json();
+    const { email, name, surname, role, password, forcePasswordChange, sendWelcomeEmail } = await req.json();
     if (!email || !name || !surname || !role) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
     }
@@ -30,7 +30,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Email already exists' }, { status: 409 });
     }
 
-    // Only super_admin can create super_admin users
     if (role === 'super_admin' && user.role !== 'super_admin') {
       return NextResponse.json({ error: 'Cannot create super_admin' }, { status: 403 });
     }
@@ -43,29 +42,31 @@ export async function POST(req: NextRequest) {
       surname,
       passwordHash: await bcrypt.hash(tempPassword, 10),
       role,
-      forcePasswordChange: !password,
+      forcePasswordChange: forcePasswordChange !== false,
       createdAt: new Date().toISOString(),
     };
 
     users.push(newUser);
     await saveUsers(users);
 
-    // Send welcome email
-    try {
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://haier-ba-measurement.vercel.app';
-      await sendEmail({
-        to: email,
-        subject: 'Welcome to Haier BA Measurement',
-        html: `
-          <h2>Welcome, ${name}!</h2>
-          <p>Your account has been created.</p>
-          <p><strong>Email:</strong> ${email}<br/>
-          <strong>Temporary password:</strong> ${tempPassword}</p>
-          <p>Please log in and change your password: <a href="${siteUrl}/login">${siteUrl}/login</a></p>
-        `,
-      });
-    } catch (emailErr) {
-      console.error('Welcome email failed:', emailErr);
+    // Send welcome email only if requested
+    if (sendWelcomeEmail !== false) {
+      try {
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://haier-ba-measurement.vercel.app';
+        await sendEmail({
+          to: email,
+          subject: 'Welcome to Haier BA Measurement',
+          html: `
+            <h2>Welcome, ${name}!</h2>
+            <p>Your account has been created.</p>
+            <p><strong>Email:</strong> ${email}<br/>
+            <strong>Temporary password:</strong> ${tempPassword}</p>
+            <p>Please log in and change your password: <a href="${siteUrl}/login">${siteUrl}/login</a></p>
+          `,
+        });
+      } catch (emailErr) {
+        console.error('Welcome email failed:', emailErr);
+      }
     }
 
     const { passwordHash: _, ...safe } = newUser;

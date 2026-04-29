@@ -194,10 +194,10 @@ export default function DashboardPage() {
       <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
       <main style={{ marginLeft: 240, flex: 1, padding: '2rem', minHeight: '100vh' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
-          Visits Dashboard
+          BA Scorecard Dashboard
         </h1>
         <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          Perigee visit data overview
+          Business Analyst performance overview
         </p>
 
         {/* Filters */}

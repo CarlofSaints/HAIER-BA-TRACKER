@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import PasswordInput from '@/components/PasswordInput';
 
 const SESSION_KEY = 'haier_session';
 
@@ -44,25 +45,21 @@ export default function LoginPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #0054A6 0%, #1A1A2E 100%)',
+        backgroundImage: 'url(/haier-bg.png)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundColor: '#0054A6',
         padding: '1rem',
         position: 'relative',
-        overflow: 'hidden',
       }}
     >
-      {/* Background image */}
+      {/* Dark overlay */}
       <div
         style={{
           position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: '45%',
-          backgroundImage: 'url(/haier-bg.png)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center top',
-          backgroundRepeat: 'no-repeat',
-          opacity: 0.3,
+          inset: 0,
+          background: 'linear-gradient(135deg, rgba(0,84,166,0.85) 0%, rgba(26,26,46,0.9) 100%)',
           pointerEvents: 'none',
         }}
       />
@@ -116,14 +113,7 @@ export default function LoginPage() {
             <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4, fontWeight: 500 }}>
               Password
             </label>
-            <input
-              className="input"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              placeholder="Enter password"
-            />
+            <PasswordInput value={password} onChange={setPassword} placeholder="Enter password" required />
           </div>
 
           {error && (

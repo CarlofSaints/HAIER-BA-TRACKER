@@ -12,9 +12,10 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: '📊', roles: ['super_admin', 'admin', 'client'] },
+  { label: 'BA Scorecard', href: '/dashboard', icon: '📊', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Upload Data', href: '/upload', icon: '📤', roles: ['super_admin', 'admin'] },
   { label: 'Users', href: '/users', icon: '👥', roles: ['super_admin', 'admin'] },
+  { label: 'Roles', href: '/roles', icon: '🔑', roles: ['super_admin'] },
   { label: 'Settings', href: '/settings', icon: '⚙️', roles: ['super_admin'] },
   { label: 'Account', href: '/account', icon: '👤', roles: ['super_admin', 'admin', 'client'] },
 ];

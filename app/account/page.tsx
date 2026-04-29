@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
+import PasswordInput from '@/components/PasswordInput';
 
 export default function AccountPage() {
   const { session, loading: authLoading, logout, setSession } = useAuth();
@@ -39,7 +40,6 @@ export default function AccountPage() {
         setCurrentPw('');
         setNewPw('');
         setConfirmPw('');
-        // Update session to clear forcePasswordChange
         if (session?.forcePasswordChange) {
           const updated = { ...session, forcePasswordChange: false };
           localStorage.setItem('haier_session', JSON.stringify(updated));
@@ -61,14 +61,9 @@ export default function AccountPage() {
     <div style={{ display: 'flex' }}>
       <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
       <main style={{ marginLeft: 240, flex: 1, padding: '2rem', minHeight: '100vh' }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
-          Account
-        </h1>
-        <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '2rem' }}>
-          Manage your profile and password
-        </p>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>Account</h1>
+        <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '2rem' }}>Manage your profile and password</p>
 
-        {/* Profile card */}
         <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginBottom: '2rem', maxWidth: 500 }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Profile</h2>
           <div style={{ display: 'grid', gap: '0.5rem', fontSize: '0.85rem' }}>
@@ -78,7 +73,6 @@ export default function AccountPage() {
           </div>
         </div>
 
-        {/* Change password */}
         <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 500 }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Change Password</h2>
           {session.forcePasswordChange && (
@@ -90,15 +84,15 @@ export default function AccountPage() {
             <div style={{ display: 'grid', gap: '0.75rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>Current Password</label>
-                <input className="input" type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} required />
+                <PasswordInput value={currentPw} onChange={setCurrentPw} required />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>New Password</label>
-                <input className="input" type="password" value={newPw} onChange={e => setNewPw(e.target.value)} required />
+                <PasswordInput value={newPw} onChange={setNewPw} required />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>Confirm New Password</label>
-                <input className="input" type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required />
+                <PasswordInput value={confirmPw} onChange={setConfirmPw} required />
               </div>
               <button className="btn btn-primary" type="submit" disabled={saving} style={{ justifySelf: 'start' }}>
                 {saving ? 'Saving...' : 'Change Password'}
@@ -107,7 +101,6 @@ export default function AccountPage() {
           </form>
         </div>
       </main>
-
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
