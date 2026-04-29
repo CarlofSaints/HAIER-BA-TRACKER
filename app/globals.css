@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+:root {
+  --haier-blue: #0054A6;
+  --haier-accent: #00A0E9;
+  --haier-dark: #1A1A2E;
+  --haier-light: #F0F4F8;
+  --haier-border: #D1D5DB;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--haier-light);
+  color: #1a1a1a;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+
+/* KPI card */
+.kpi-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border: 1px solid var(--haier-border);
+}
+
+/* Table */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.data-table th {
+  background: var(--haier-blue);
+  color: white;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.data-table th:hover { background: #004690; }
+.data-table td {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+.data-table tr:hover td { background: #f0f7ff; }
+
+/* Button */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--haier-blue); color: white; }
+.btn-primary:hover:not(:disabled) { background: #004690; }
+.btn-accent { background: var(--haier-accent); color: white; }
+.btn-accent:hover:not(:disabled) { background: #008fd0; }
+.btn-danger { background: #dc2626; color: white; }
+.btn-danger:hover:not(:disabled) { background: #b91c1c; }
+.btn-outline { background: transparent; border: 1px solid var(--haier-border); color: #374151; }
+.btn-outline:hover:not(:disabled) { background: #f3f4f6; }
+
+/* Input */
+.input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--haier-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.input:focus { border-color: var(--haier-blue); box-shadow: 0 0 0 2px rgba(0,84,166,0.15); }
+
+/* Select */
+.select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--haier-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  outline: none;
+  background: white;
+}
+.select:focus { border-color: var(--haier-blue); }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+.pagination button {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--haier-border);
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.pagination button:hover { background: #f3f4f6; }
+.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+.pagination button.active { background: var(--haier-blue); color: white; border-color: var(--haier-blue); }
