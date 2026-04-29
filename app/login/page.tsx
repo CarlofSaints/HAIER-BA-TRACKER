@@ -46,16 +46,37 @@ export default function LoginPage() {
         justifyContent: 'center',
         background: 'linear-gradient(135deg, #0054A6 0%, #1A1A2E 100%)',
         padding: '1rem',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
+      {/* Background image */}
       <div
         style={{
-          background: 'white',
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '45%',
+          backgroundImage: 'url(/haier-bg.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center top',
+          backgroundRepeat: 'no-repeat',
+          opacity: 0.3,
+          pointerEvents: 'none',
+        }}
+      />
+
+      <div
+        style={{
+          background: 'rgba(255,255,255,0.97)',
           borderRadius: 16,
           padding: '2.5rem 2rem',
           width: '100%',
           maxWidth: 400,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+          position: 'relative',
+          zIndex: 1,
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
