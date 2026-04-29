@@ -51,7 +51,7 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
         <img
           src="/haier-logo-white.png"
           alt="Haier"
-          style={{ height: 36, objectFit: 'contain' }}
+          style={{ width: '100%', objectFit: 'contain' }}
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = 'none';
           }}
