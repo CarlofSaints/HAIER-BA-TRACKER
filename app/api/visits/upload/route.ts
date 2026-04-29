@@ -8,6 +8,7 @@ export const maxDuration = 60;
 export const runtime = 'nodejs';
 
 // Perigee column mapping — maps expected header names to Visit fields
+// Columns that map directly to Visit fields
 const COLUMN_MAP: Record<string, keyof Visit> = {
   'email': 'email',
   'rep name': 'repName',
@@ -34,6 +35,10 @@ const COLUMN_MAP: Record<string, keyof Visit> = {
   'network on check-in': 'networkOnCheckIn',
 };
 
+// Extra columns used to build repName when "Rep Name" column is absent
+const NAME_COLUMNS = ['name', 'first name', 'firstname'];
+const SURNAME_COLUMNS = ['surname', 'last name', 'lastname'];
+
 function normaliseDateDDMMYYYY(val: string): string {
   // Convert DD/MM/YYYY → YYYY-MM-DD
   const m = val.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
@@ -54,11 +59,15 @@ function parseExcelRows(buffer: Buffer, fileName: string): Visit[] {
   // Build header mapping
   const headers = Object.keys(rows[0]);
   const mapping: Record<string, keyof Visit> = {};
+  let nameHeader = '';
+  let surnameHeader = '';
   for (const h of headers) {
     const normalised = h.toLowerCase().trim();
     if (COLUMN_MAP[normalised]) {
       mapping[h] = COLUMN_MAP[normalised];
     }
+    if (NAME_COLUMNS.includes(normalised)) nameHeader = h;
+    if (SURNAME_COLUMNS.includes(normalised)) surnameHeader = h;
   }
 
   const visits: Visit[] = [];
@@ -74,6 +83,14 @@ function parseExcelRows(buffer: Buffer, fileName: string): Visit[] {
         (visit as Record<string, unknown>)[field] = raw;
       }
     }
+
+    // If repName is empty, build from Name + Surname columns
+    if (!visit.repName && (nameHeader || surnameHeader)) {
+      const first = String(row[nameHeader] ?? '').trim();
+      const last = String(row[surnameHeader] ?? '').trim();
+      visit.repName = [first, last].filter(Boolean).join(' ');
+    }
+
     // Only include rows that have at minimum a store name or rep name
     if (visit.storeName || visit.repName) {
       visits.push({
