@@ -70,7 +70,8 @@ export default function ScoreEntryPage() {
       const merged: BAScore[] = [];
       for (const [email, repName] of baMap) {
         if (scoreMap.has(email)) {
-          merged.push(scoreMap.get(email)!);
+          // Use fresh name from visit data, keep scores
+          merged.push({ ...scoreMap.get(email)!, repName });
         } else {
           merged.push({
             email, repName, month,

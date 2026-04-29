@@ -70,10 +70,11 @@ export async function POST(req: NextRequest) {
         const checkInScore = data.total > 0 ? Math.round((data.onTime / data.total) * 10) : 0;
 
         if (existingMap.has(email)) {
-          // Existing score: only update checkInOnTime (preserve manual KPIs)
+          // Existing score: update checkInOnTime + repName (preserve manual KPIs)
           const existing = existingMap.get(email)!;
           scores.push({
             ...existing,
+            repName: data.repName,
             checkInOnTime: checkInScore,
             updatedAt: now,
             updatedBy: user.email,
