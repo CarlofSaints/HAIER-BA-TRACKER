@@ -13,7 +13,9 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'BA Scorecard', href: '/dashboard', icon: '📊', roles: ['super_admin', 'admin', 'client'] },
+  { label: 'Leaderboard', href: '/leaderboard', icon: '🏆', roles: ['super_admin', 'admin', 'client'] },
+  { label: 'Visit Analytics', href: '/dashboard', icon: '📊', roles: ['super_admin', 'admin', 'client'] },
+  { label: 'Score Entry', href: '/scores', icon: '✏️', roles: ['super_admin', 'admin'] },
   { label: 'Upload Data', href: '/upload', icon: '📤', roles: ['super_admin', 'admin'] },
   { label: 'Users', href: '/users', icon: '👥', roles: ['super_admin', 'admin'] },
   { label: 'Roles', href: '/roles', icon: '🔑', roles: ['super_admin'] },
