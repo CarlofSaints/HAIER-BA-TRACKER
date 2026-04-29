@@ -31,6 +31,7 @@ export default function ScoreEntryPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [autoCalcing, setAutoCalcing] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [toast, setToast] = useState('');
 
   const loadData = useCallback(async () => {
@@ -140,6 +141,24 @@ export default function ScoreEntryPage() {
     setAutoCalcing(false);
   }
 
+  async function handleSeedFromVisits() {
+    setSeeding(true);
+    try {
+      const res = await authFetch('/api/scores/seed-from-visits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error('Seed failed');
+      const result = await res.json();
+      showToast(`Seeded ${result.bas} BA scores across ${result.months} months from visit data`);
+      // Reload current month's data
+      loadData();
+    } catch {
+      showToast('Failed to seed scores from visits');
+    }
+    setSeeding(false);
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -206,6 +225,14 @@ export default function ScoreEntryPage() {
             disabled={autoCalcing || loadingData}
           >
             {autoCalcing ? 'Calculating...' : 'Auto-Calculate Check-in'}
+          </button>
+          <button
+            className="btn btn-outline"
+            onClick={handleSeedFromVisits}
+            disabled={seeding || loadingData}
+            style={{ borderColor: '#00A0E9', color: '#00A0E9' }}
+          >
+            {seeding ? 'Seeding...' : 'Seed All Months from Visits'}
           </button>
           <button
             className="btn btn-primary"

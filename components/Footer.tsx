@@ -17,7 +17,7 @@ export default function Footer() {
       <img
         src="/oj-logo.png"
         alt="OuterJoin"
-        style={{ height: 16, objectFit: 'contain', opacity: 0.7 }}
+        style={{ height: 48, objectFit: 'contain', opacity: 0.7 }}
       />
     </footer>
   );
