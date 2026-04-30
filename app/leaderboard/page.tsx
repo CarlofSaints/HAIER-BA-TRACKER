@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
@@ -72,6 +72,62 @@ export default function LeaderboardPage() {
   const [sortField, setSortField] = useState<SortField>('grandTotal');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   const trendMonths = useMemo(() => getLastNMonths(6), []);
+
+  // Column resize state
+  const DEFAULT_WIDTHS = useMemo(() => [60, 180, 160, 200, 80, 60, 100], []);
+  const [colWidths, setColWidths] = useState<number[]>(DEFAULT_WIDTHS);
+  const [trendColWidth, setTrendColWidth] = useState(70);
+  const dragRef = useRef<{ colIdx: number; startX: number; startW: number; isTrend: boolean } | null>(null);
+
+  const onResizeStart = useCallback((e: React.MouseEvent, colIdx: number, isTrend = false) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startW = isTrend ? trendColWidth : colWidths[colIdx];
+    dragRef.current = { colIdx, startX: e.clientX, startW, isTrend };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [colWidths, trendColWidth]);
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      const d = dragRef.current;
+      if (!d) return;
+      const delta = e.clientX - d.startX;
+      const newW = Math.max(40, d.startW + delta);
+      if (d.isTrend) {
+        setTrendColWidth(newW);
+      } else {
+        setColWidths(prev => {
+          const next = [...prev];
+          next[d.colIdx] = newW;
+          return next;
+        });
+      }
+    }
+    function onMouseUp() {
+      if (dragRef.current) {
+        dragRef.current = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    }
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
+
+  const resizeHandle = useCallback((colIdx: number, isTrend = false) => (
+    <div
+      onMouseDown={e => onResizeStart(e, colIdx, isTrend)}
+      style={{
+        position: 'absolute', right: 0, top: 0, bottom: 0, width: 6,
+        cursor: 'col-resize', zIndex: 1,
+      }}
+    />
+  ), [onResizeStart]);
 
   const loadData = useCallback(async () => {
     setLoadingData(true);
@@ -202,23 +258,29 @@ export default function LeaderboardPage() {
                 Rankings — {formatMonth(selectedMonth)}
               </div>
               <div style={{ overflowX: 'auto' }}>
-                <table className="data-table">
+                <table className="data-table" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%' }}>
+                  <colgroup>
+                    {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+                    {showTrend && trendMonths.slice(1).map(m => (
+                      <col key={m} style={{ width: trendColWidth }} />
+                    ))}
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th style={{ width: 60, textAlign: 'center' }}>Rank</th>
-                      <th style={{ minWidth: 180 }}>BA Name</th>
-                      <th style={{ minWidth: 160 }}>Store</th>
-                      <th style={{ minWidth: 200 }}>Score</th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', minWidth: 80 }} onClick={() => toggleSort('total')}>
-                        Score/100{sortArrow('total')}
+                      <th style={{ textAlign: 'center', position: 'relative' }}>Rank{resizeHandle(0)}</th>
+                      <th style={{ position: 'relative' }}>BA Name{resizeHandle(1)}</th>
+                      <th style={{ position: 'relative' }}>Store{resizeHandle(2)}</th>
+                      <th style={{ position: 'relative' }}>Score{resizeHandle(3)}</th>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'relative' }} onClick={() => toggleSort('total')}>
+                        Score/100{sortArrow('total')}{resizeHandle(4)}
                       </th>
-                      <th style={{ textAlign: 'center', minWidth: 60 }}>Bonus</th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', minWidth: 80 }} onClick={() => toggleSort('grandTotal')}>
-                        Grand Total{sortArrow('grandTotal')}
+                      <th style={{ textAlign: 'center', position: 'relative' }}>Bonus{resizeHandle(5)}</th>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'relative' }} onClick={() => toggleSort('grandTotal')}>
+                        Grand Total{sortArrow('grandTotal')}{resizeHandle(6)}
                       </th>
                       {showTrend && trendMonths.slice(1).map(m => (
-                        <th key={m} style={{ textAlign: 'center', minWidth: 70, fontSize: '0.7rem' }}>
-                          {formatMonth(m)}
+                        <th key={m} style={{ textAlign: 'center', fontSize: '0.7rem', position: 'relative' }}>
+                          {formatMonth(m)}{resizeHandle(0, true)}
                         </th>
                       ))}
                     </tr>
@@ -245,11 +307,11 @@ export default function LeaderboardPage() {
                           <td style={{ textAlign: 'center', fontSize: rank <= 3 ? '1.2rem' : '0.85rem', fontWeight: rank <= 3 ? 700 : 400 }}>
                             {rankBadge(rank)}
                           </td>
-                          <td>
-                            <div style={{ fontWeight: 500 }}>{entry.repName}</div>
-                            <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{entry.email}</div>
+                          <td style={{ overflow: 'hidden' }}>
+                            <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.repName}</div>
+                            <div style={{ fontSize: '0.7rem', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.email}</div>
                           </td>
-                          <td style={{ color: '#374151', fontSize: '0.85rem' }}>
+                          <td style={{ color: '#374151', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {entry.storeName || <span style={{ color: '#d1d5db' }}>—</span>}
                           </td>
                           <td>
