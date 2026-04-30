@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAnyUser, noCacheHeaders } from '@/lib/auth';
 import { loadScores, calcTotal, calcGrandTotal } from '@/lib/scoreData';
+import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,7 @@ interface MonthScore {
 interface LeaderboardEntry {
   email: string;
   repName: string;
+  storeName: string;
   scores: Record<string, MonthScore>;
 }
 
@@ -36,6 +38,18 @@ export async function GET(req: NextRequest) {
     const monthCount = Math.min(Number(url.searchParams.get('months')) || 6, 24);
     const months = getLastNMonths(monthCount);
 
+    // Build email → storeName map from visit data (BA is dedicated to one store)
+    const storeMap = new Map<string, string>();
+    const visitIndex = await loadVisitIndex();
+    for (const meta of visitIndex) {
+      const visits = await loadVisitData(meta.id);
+      for (const v of visits) {
+        if (v.email && v.storeName) {
+          storeMap.set(v.email.toLowerCase(), v.storeName);
+        }
+      }
+    }
+
     const baMap = new Map<string, LeaderboardEntry>();
 
     for (const month of months) {
@@ -43,7 +57,7 @@ export async function GET(req: NextRequest) {
       for (const s of scores) {
         const key = s.email.toLowerCase();
         if (!baMap.has(key)) {
-          baMap.set(key, { email: s.email, repName: s.repName, scores: {} });
+          baMap.set(key, { email: s.email, repName: s.repName, storeName: storeMap.get(key) || '', scores: {} });
         }
         const entry = baMap.get(key)!;
         // Keep latest repName

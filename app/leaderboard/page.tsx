@@ -14,6 +14,7 @@ interface MonthScore {
 interface LeaderboardEntry {
   email: string;
   repName: string;
+  storeName: string;
   scores: Record<string, MonthScore>;
 }
 
@@ -206,6 +207,7 @@ export default function LeaderboardPage() {
                     <tr>
                       <th style={{ width: 60, textAlign: 'center' }}>Rank</th>
                       <th style={{ minWidth: 180 }}>BA Name</th>
+                      <th style={{ minWidth: 160 }}>Store</th>
                       <th style={{ minWidth: 200 }}>Score</th>
                       <th style={{ textAlign: 'center', cursor: 'pointer', minWidth: 80 }} onClick={() => toggleSort('total')}>
                         Score/100{sortArrow('total')}
@@ -224,7 +226,7 @@ export default function LeaderboardPage() {
                   <tbody>
                     {ranked.length === 0 ? (
                       <tr>
-                        <td colSpan={6 + (showTrend ? trendMonths.length - 1 : 0)} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                        <td colSpan={7 + (showTrend ? trendMonths.length - 1 : 0)} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                           No scores for {formatMonth(selectedMonth)}
                         </td>
                       </tr>
@@ -246,6 +248,9 @@ export default function LeaderboardPage() {
                           <td>
                             <div style={{ fontWeight: 500 }}>{entry.repName}</div>
                             <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{entry.email}</div>
+                          </td>
+                          <td style={{ color: '#374151', fontSize: '0.85rem' }}>
+                            {entry.storeName || <span style={{ color: '#d1d5db' }}>—</span>}
                           </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
