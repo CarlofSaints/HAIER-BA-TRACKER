@@ -11,6 +11,7 @@ interface PerigeeConfig {
   endpoint: string;
   enabled: boolean;
   lastPolledAt: string | null;
+  customers: string[];
 }
 
 const CONFIG_KEY = 'config/perigee-api.json';
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
   const user = await requireRole(req, ['super_admin']);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const config = await readJson<PerigeeConfig>(CONFIG_KEY, { apiKey: '', endpoint: '', enabled: false, lastPolledAt: null });
+  const config = await readJson<PerigeeConfig>(CONFIG_KEY, { apiKey: '', endpoint: '', enabled: false, lastPolledAt: null, customers: [] });
 
   if (!config.endpoint || !config.apiKey) {
     return NextResponse.json(
@@ -65,10 +66,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Build request body — just startDate for now (simplest call)
+    // Build request body
     const perigeeBody: Record<string, unknown> = { startDate };
     if ((body as Record<string, string>).endDate) {
       perigeeBody.endDate = (body as Record<string, string>).endDate;
+    }
+    // Include customer filter from config (filters to specific customer e.g. Haier)
+    if (config.customers && config.customers.length > 0) {
+      perigeeBody.customers = config.customers;
     }
 
     // Call Perigee API

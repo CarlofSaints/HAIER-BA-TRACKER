@@ -11,6 +11,7 @@ interface PerigeeConfig {
   endpoint: string;
   enabled: boolean;
   lastPolledAt: string | null;
+  customers?: string[];
 }
 
 interface TestResult {
@@ -26,7 +27,7 @@ interface TestResult {
 export default function SettingsPage() {
   const { session, loading: authLoading, logout } = useAuth('super_admin');
   const [config, setConfig] = useState<PerigeeConfig | null>(null);
-  const [form, setForm] = useState({ apiKey: '', endpoint: '', enabled: false });
+  const [form, setForm] = useState({ apiKey: '', endpoint: '', enabled: false, customers: '' });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -41,7 +42,12 @@ export default function SettingsPage() {
       .then(r => r.json())
       .then(data => {
         setConfig(data);
-        setForm({ apiKey: '', endpoint: data.endpoint || '', enabled: data.enabled || false });
+        setForm({
+          apiKey: '',
+          endpoint: data.endpoint || '',
+          enabled: data.enabled || false,
+          customers: (data.customers || []).join('\n'),
+        });
       })
       .catch(() => {});
   }, [session]);
@@ -51,6 +57,8 @@ export default function SettingsPage() {
     try {
       const body: Record<string, unknown> = { endpoint: form.endpoint, enabled: form.enabled };
       if (form.apiKey) body.apiKey = form.apiKey;
+      // Parse customers — one GUID per line, filter empties
+      body.customers = form.customers.split('\n').map(s => s.trim()).filter(Boolean);
 
       const res = await authFetch('/api/config/perigee', {
         method: 'PUT',
@@ -170,6 +178,22 @@ export default function SettingsPage() {
               />
               <p style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 2 }}>
                 Format: user_XX.abc123... (from Perigee Portal)
+              </p>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
+                Customer Filter (one GUID per line)
+              </label>
+              <textarea
+                className="input"
+                value={form.customers}
+                onChange={e => setForm({ ...form, customers: e.target.value })}
+                placeholder="e.g. D9BACE9E-DF76-5DB3-4A39-4054D159E218"
+                rows={3}
+                style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+              />
+              <p style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 2 }}>
+                Perigee customer GUIDs — only visits for these customers will be fetched
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
