@@ -58,9 +58,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const mode = (body as Record<string, string>).mode || 'test';
 
-    // The client sends the full Perigee request body (minus 'mode')
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { mode: _mode, ...perigeeBody } = body as Record<string, unknown>;
+    // The client sends the full Perigee request body — strip 'mode' before forwarding
+    const perigeeBody = { ...(body as Record<string, unknown>) };
+    delete perigeeBody.mode;
 
     if (!perigeeBody.startDate) {
       return NextResponse.json(
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
     const index = await loadVisitIndex();
     index.unshift({
       id: uploadId,
-      fileName: `perigee-api-${startDate}.json`,
+      fileName: `perigee-api-${perigeeBody.startDate}.json`,
       uploadedAt: new Date().toISOString(),
       uploadedBy: `${user.name} ${user.surname} (API)`,
       rowCount: visits.length,
