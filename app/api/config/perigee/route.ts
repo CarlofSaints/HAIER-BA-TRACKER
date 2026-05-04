@@ -9,11 +9,11 @@ interface PerigeeConfig {
   endpoint: string;
   enabled: boolean;
   lastPolledAt: string | null;
-  customers: string[]; // Perigee customer GUIDs to filter by
+  requestBody: string; // Full JSON body template for Perigee API
 }
 
 const BLOB_KEY = 'config/perigee-api.json';
-const DEFAULT: PerigeeConfig = { apiKey: '', endpoint: '', enabled: false, lastPolledAt: null, customers: [] };
+const DEFAULT: PerigeeConfig = { apiKey: '', endpoint: '', enabled: false, lastPolledAt: null, requestBody: '' };
 
 export async function GET(req: NextRequest) {
   const user = await requireRole(req, ['super_admin']);
@@ -40,7 +40,7 @@ export async function PUT(req: NextRequest) {
       endpoint: body.endpoint !== undefined ? body.endpoint : current.endpoint,
       enabled: body.enabled !== undefined ? body.enabled : current.enabled,
       lastPolledAt: current.lastPolledAt,
-      customers: body.customers !== undefined ? body.customers : (current.customers || []),
+      requestBody: body.requestBody !== undefined ? body.requestBody : (current.requestBody || ''),
     };
 
     await writeJson(BLOB_KEY, updated);

@@ -11,7 +11,7 @@ interface PerigeeConfig {
   endpoint: string;
   enabled: boolean;
   lastPolledAt: string | null;
-  customers?: string[];
+  requestBody?: string;
 }
 
 interface TestResult {
@@ -26,15 +26,35 @@ interface TestResult {
   sentBody?: Record<string, unknown>;
 }
 
+const DEFAULT_BODY = JSON.stringify({
+  startDate: new Date().toISOString().slice(0, 10),
+  endDate: '',
+  channels: [],
+  stores: [],
+  provinces: [],
+  users: [],
+  tags: [],
+  customers: [],
+  userStatus: ['ACTIVE', 'INACTIVE'],
+  userAccess: ['ENABLED', 'SUSPENDED'],
+  userTags: [],
+  includeDataUsage: 'YES',
+  includeNotificationData: 'NO',
+  includeTravelDistance: 'YES',
+  includeRecessData: 'NO',
+  earlyCheckoutTime: '16:50',
+  lateCheckinTime: '09:10',
+}, null, 2);
+
 export default function SettingsPage() {
   const { session, loading: authLoading, logout } = useAuth('super_admin');
   const [config, setConfig] = useState<PerigeeConfig | null>(null);
-  const [form, setForm] = useState({ apiKey: '', endpoint: '', enabled: false, customers: '' });
+  const [form, setForm] = useState({ apiKey: '', endpoint: '', enabled: false });
+  const [requestBody, setRequestBody] = useState(DEFAULT_BODY);
+  const [bodyError, setBodyError] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [testDate, setTestDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState('');
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -44,23 +64,39 @@ export default function SettingsPage() {
       .then(r => r.json())
       .then(data => {
         setConfig(data);
-        setForm({
-          apiKey: '',
-          endpoint: data.endpoint || '',
-          enabled: data.enabled || false,
-          customers: (data.customers || []).join('\n'),
-        });
+        setForm({ apiKey: '', endpoint: data.endpoint || '', enabled: data.enabled || false });
+        if (data.requestBody) setRequestBody(data.requestBody);
       })
       .catch(() => {});
   }, [session]);
 
+  // Validate JSON as user types
+  function handleBodyChange(val: string) {
+    setRequestBody(val);
+    try {
+      JSON.parse(val);
+      setBodyError('');
+    } catch (e) {
+      setBodyError(e instanceof Error ? e.message : 'Invalid JSON');
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
-      const body: Record<string, unknown> = { endpoint: form.endpoint, enabled: form.enabled };
+      // Validate JSON before saving
+      try { JSON.parse(requestBody); } catch {
+        setToast({ msg: 'Fix the JSON errors before saving', type: 'error' });
+        setSaving(false);
+        return;
+      }
+
+      const body: Record<string, unknown> = {
+        endpoint: form.endpoint,
+        enabled: form.enabled,
+        requestBody,
+      };
       if (form.apiKey) body.apiKey = form.apiKey;
-      // Parse customers — one GUID per line, filter empties
-      body.customers = form.customers.split('\n').map(s => s.trim()).filter(Boolean);
 
       const res = await authFetch('/api/config/perigee', {
         method: 'PUT',
@@ -82,53 +118,47 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleTestPoll() {
-    setTesting(true);
-    setTestResult(null);
+  async function callPoll(mode: 'test' | 'import') {
+    // Validate JSON
+    let parsed: Record<string, unknown>;
     try {
-      const reqBody: Record<string, string> = { startDate: testDate, mode: 'test' };
-      if (endDate) reqBody.endDate = endDate;
+      parsed = JSON.parse(requestBody);
+    } catch {
+      setToast({ msg: 'Fix the JSON errors first', type: 'error' });
+      return;
+    }
 
+    if (!parsed.startDate) {
+      setToast({ msg: 'startDate is required in the request body', type: 'error' });
+      return;
+    }
+
+    if (mode === 'test') {
+      setTesting(true);
+      setTestResult(null);
+    } else {
+      if (!confirm(`Import visits from ${parsed.startDate}? This will create a new upload batch.`)) return;
+      setImporting(true);
+    }
+
+    try {
       const res = await authFetch('/api/perigee/poll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reqBody),
+        body: JSON.stringify({ ...parsed, mode }),
       });
       const data = await res.json();
-      setTestResult(data);
-      if (data.ok) {
-        setToast({ msg: `Test OK — ${data.totalRows} visits returned`, type: 'success' });
+
+      if (mode === 'test') {
+        setTestResult(data);
+        setToast({ msg: data.ok ? `Test OK — ${data.totalRows} visits returned` : (data.error || 'Test failed'), type: data.ok ? 'success' : 'error' });
       } else {
-        setToast({ msg: data.error || 'Test failed', type: 'error' });
+        setToast({ msg: data.ok ? `Imported ${data.importedRows} visits` : (data.error || 'Import failed'), type: data.ok ? 'success' : 'error' });
       }
     } catch {
-      setToast({ msg: 'Connection failed', type: 'error' });
+      setToast({ msg: `${mode === 'test' ? 'Connection' : 'Import'} failed`, type: 'error' });
     } finally {
       setTesting(false);
-    }
-  }
-
-  async function handleImport() {
-    if (!confirm(`Import visits from ${testDate}${endDate ? ` to ${endDate}` : ''}? This will create a new upload batch.`)) return;
-    setImporting(true);
-    try {
-      const reqBody: Record<string, string> = { startDate: testDate, mode: 'import' };
-      if (endDate) reqBody.endDate = endDate;
-
-      const res = await authFetch('/api/perigee/poll', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reqBody),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setToast({ msg: `Imported ${data.importedRows} visits`, type: 'success' });
-      } else {
-        setToast({ msg: data.error || 'Import failed', type: 'error' });
-      }
-    } catch {
-      setToast({ msg: 'Import failed', type: 'error' });
-    } finally {
       setImporting(false);
     }
   }
@@ -151,10 +181,10 @@ export default function SettingsPage() {
         {/* Perigee API Config */}
         <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 620 }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
-            Perigee API Configuration
+            Perigee API Connection
           </h2>
           <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
-            Connect to the Perigee Portal to pull visit data via API
+            Endpoint and authentication
           </p>
 
           <div style={{ display: 'grid', gap: '0.75rem' }}>
@@ -178,37 +208,6 @@ export default function SettingsPage() {
                 onChange={e => setForm({ ...form, apiKey: e.target.value })}
                 placeholder="Leave blank to keep current token"
               />
-              <p style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 2 }}>
-                Format: user_XX.abc123... (from Perigee Portal)
-              </p>
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
-                Customer Filter (one GUID per line)
-              </label>
-              <textarea
-                className="input"
-                value={form.customers}
-                onChange={e => setForm({ ...form, customers: e.target.value })}
-                placeholder="e.g. D9BACE9E-DF76-5DB3-4A39-4054D159E218"
-                rows={3}
-                style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
-              />
-              <p style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 2 }}>
-                Perigee customer GUIDs — only visits for these customers will be fetched
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <input
-                type="checkbox"
-                id="enabled"
-                checked={form.enabled}
-                onChange={e => setForm({ ...form, enabled: e.target.checked })}
-                style={{ width: 16, height: 16 }}
-              />
-              <label htmlFor="enabled" style={{ fontSize: '0.85rem', color: '#374151' }}>
-                Enable automatic polling
-              </label>
             </div>
 
             {config?.lastPolledAt && (
@@ -217,7 +216,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
               <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
                 {saving ? 'Saving...' : 'Save Settings'}
               </button>
@@ -225,45 +224,36 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Test / Import Section */}
+        {/* Request Body + Fetch */}
         <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 620, marginTop: '1.5rem' }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
-            Fetch Visits
+            Request Body
           </h2>
           <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
-            Test the connection or import visits from Perigee
+            JSON body sent to Perigee — edit filters, dates, and options below
           </p>
 
-          <div style={{ display: 'grid', gap: '0.75rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>Start Date</label>
-                <input
-                  className="input"
-                  type="date"
-                  value={testDate}
-                  onChange={e => setTestDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>End Date (optional)</label>
-                <input
-                  className="input"
-                  type="date"
-                  value={endDate}
-                  onChange={e => setEndDate(e.target.value)}
-                />
-              </div>
+          <textarea
+            className="input"
+            value={requestBody}
+            onChange={e => handleBodyChange(e.target.value)}
+            rows={20}
+            style={{ fontFamily: 'monospace', fontSize: '0.75rem', lineHeight: 1.5, resize: 'vertical' }}
+            spellCheck={false}
+          />
+          {bodyError && (
+            <div style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: 4 }}>
+              {bodyError}
             </div>
+          )}
 
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="btn btn-outline" onClick={handleTestPoll} disabled={testing || !testDate}>
-                {testing ? 'Testing...' : 'Test Connection'}
-              </button>
-              <button className="btn btn-primary" onClick={handleImport} disabled={importing || !testDate}>
-                {importing ? 'Importing...' : 'Import Visits'}
-              </button>
-            </div>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+            <button className="btn btn-outline" onClick={() => callPoll('test')} disabled={testing || !!bodyError}>
+              {testing ? 'Testing...' : 'Test Connection'}
+            </button>
+            <button className="btn btn-primary" onClick={() => callPoll('import')} disabled={importing || !!bodyError}>
+              {importing ? 'Importing...' : 'Import Visits'}
+            </button>
           </div>
 
           {/* Test Results */}
@@ -277,11 +267,6 @@ export default function SettingsPage() {
                   {testResult.responseKeys && testResult.responseKeys.length > 0 && (
                     <div style={{ color: '#374151', marginBottom: 4 }}>
                       <strong>Response fields:</strong> {testResult.responseKeys.join(', ')}
-                    </div>
-                  )}
-                  {testResult.rawTopLevelKeys && (
-                    <div style={{ color: '#6b7280', marginBottom: 4 }}>
-                      <strong>Top-level keys:</strong> {testResult.rawTopLevelKeys.join(', ')}
                     </div>
                   )}
                   {testResult.meta && (

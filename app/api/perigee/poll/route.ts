@@ -11,7 +11,7 @@ interface PerigeeConfig {
   endpoint: string;
   enabled: boolean;
   lastPolledAt: string | null;
-  customers: string[];
+  requestBody: string;
 }
 
 const CONFIG_KEY = 'config/perigee-api.json';
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   const user = await requireRole(req, ['super_admin']);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const config = await readJson<PerigeeConfig>(CONFIG_KEY, { apiKey: '', endpoint: '', enabled: false, lastPolledAt: null, customers: [] });
+  const config = await readJson<PerigeeConfig>(CONFIG_KEY, { apiKey: '', endpoint: '', enabled: false, lastPolledAt: null, requestBody: '' });
 
   if (!config.endpoint || !config.apiKey) {
     return NextResponse.json(
@@ -56,27 +56,20 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const startDate = (body as Record<string, string>).startDate;
-    const mode = (body as Record<string, string>).mode || 'test'; // 'test' or 'import'
+    const mode = (body as Record<string, string>).mode || 'test';
 
-    if (!startDate) {
+    // The client sends the full Perigee request body (minus 'mode')
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { mode: _mode, ...perigeeBody } = body as Record<string, unknown>;
+
+    if (!perigeeBody.startDate) {
       return NextResponse.json(
-        { error: 'startDate is required (YYYY-MM-DD)' },
+        { error: 'startDate is required in the request body' },
         { status: 400, headers: noCacheHeaders() }
       );
     }
 
-    // Build request body
-    const perigeeBody: Record<string, unknown> = { startDate };
-    if ((body as Record<string, string>).endDate) {
-      perigeeBody.endDate = (body as Record<string, string>).endDate;
-    }
-    // Include customer filter from config (filters to specific customer e.g. Haier)
-    if (config.customers && config.customers.length > 0) {
-      perigeeBody.customers = config.customers;
-    }
-
-    // Call Perigee API
+    // Call Perigee API — forward the JSON body directly
     const perigeeRes = await fetch(config.endpoint, {
       method: 'POST',
       headers: {
