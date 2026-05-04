@@ -22,6 +22,8 @@ interface TestResult {
   responseKeys?: string[];
   sample?: Record<string, unknown>[];
   rawTopLevelKeys?: string[];
+  meta?: Record<string, unknown>;
+  sentBody?: Record<string, unknown>;
 }
 
 export default function SettingsPage() {
@@ -281,6 +283,22 @@ export default function SettingsPage() {
                     <div style={{ color: '#6b7280', marginBottom: 4 }}>
                       <strong>Top-level keys:</strong> {testResult.rawTopLevelKeys.join(', ')}
                     </div>
+                  )}
+                  {testResult.meta && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ cursor: 'pointer', color: '#374151' }}>Perigee response metadata</summary>
+                      <pre style={{ marginTop: 4, overflow: 'auto', maxHeight: 200, fontSize: '0.7rem', background: '#f9fafb', padding: 8, borderRadius: 4 }}>
+                        {JSON.stringify(testResult.meta, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                  {testResult.sentBody && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ cursor: 'pointer', color: '#374151' }}>Request body sent to Perigee</summary>
+                      <pre style={{ marginTop: 4, overflow: 'auto', maxHeight: 200, fontSize: '0.7rem', background: '#f9fafb', padding: 8, borderRadius: 4 }}>
+                        {JSON.stringify(testResult.sentBody, null, 2)}
+                      </pre>
+                    </details>
                   )}
                   {testResult.sample && testResult.sample.length > 0 && (
                     <details style={{ marginTop: 8 }}>

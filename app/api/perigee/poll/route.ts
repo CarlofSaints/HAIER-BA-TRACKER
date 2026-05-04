@@ -110,9 +110,14 @@ export async function POST(req: NextRequest) {
           : [];
 
     if (mode === 'test') {
-      // Return a preview — raw response keys + sample + count
+      // Return a preview — raw response keys + sample + count + debug info
       const sample = rawVisits.slice(0, 3);
-      const responseKeys = rawVisits.length > 0 ? Object.keys(rawVisits[0]) : Object.keys(perigeeData);
+      const responseKeys = rawVisits.length > 0 ? Object.keys(rawVisits[0]) : [];
+      // Include non-visits metadata for debugging
+      const meta: Record<string, unknown> = {};
+      for (const k of Object.keys(perigeeData)) {
+        if (k !== 'visits') meta[k] = perigeeData[k];
+      }
       return NextResponse.json({
         ok: true,
         mode: 'test',
@@ -120,6 +125,8 @@ export async function POST(req: NextRequest) {
         responseKeys,
         sample,
         rawTopLevelKeys: Object.keys(perigeeData),
+        meta,
+        sentBody: perigeeBody,
       }, { headers: noCacheHeaders() });
     }
 
