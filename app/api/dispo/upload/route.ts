@@ -18,17 +18,41 @@ const COL_PROM_SP = 42;       // AQ
 const SALES_COL_START = 16;   // Q
 const SALES_COL_END = 22;     // W
 
-function parseMonthFromHeader(header: string): string | null {
-  if (!header || typeof header !== 'string') return null;
+function parseMonthFromHeader(header: unknown): string | null {
+  if (header === undefined || header === null) return null;
+
+  // If xlsx returns a Date object (rare with raw:true, but handle it)
+  if (header instanceof Date) {
+    const mm = String(header.getMonth() + 1).padStart(2, '0');
+    const yyyy = header.getFullYear();
+    return `${mm}-${yyyy}`;
+  }
+
+  // If xlsx returns a number (Excel date serial), convert it
+  if (typeof header === 'number') {
+    // Excel date serial: days since 1899-12-30
+    // Only plausible date serials are > 1 (not a plain small number)
+    if (header > 30000 && header < 60000) {
+      const d = new Date((header - 25569) * 86400 * 1000);
+      if (!isNaN(d.getTime())) {
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const yyyy = d.getUTCFullYear();
+        return `${mm}-${yyyy}`;
+      }
+    }
+    return null;
+  }
+
   const cleaned = String(header).trim();
+  if (!cleaned) return null;
 
   // Format: "MM-YYYY" (e.g. "05-2026", "12-2025")
-  const mmyyyyMatch = cleaned.match(/^(\d{2})-(\d{4})$/);
-  if (mmyyyyMatch) return `${mmyyyyMatch[1]}-${mmyyyyMatch[2]}`;
+  const mmyyyyMatch = cleaned.match(/^(\d{1,2})-(\d{4})$/);
+  if (mmyyyyMatch) return `${mmyyyyMatch[1].padStart(2, '0')}-${mmyyyyMatch[2]}`;
 
   // Format: "YYYY-MM" (e.g. "2026-05")
-  const yyyymmMatch = cleaned.match(/^(\d{4})-(\d{2})$/);
-  if (yyyymmMatch) return `${yyyymmMatch[2]}-${yyyymmMatch[1]}`;
+  const yyyymmMatch = cleaned.match(/^(\d{4})-(\d{1,2})$/);
+  if (yyyymmMatch) return `${yyyymmMatch[2].padStart(2, '0')}-${yyyymmMatch[1]}`;
 
   // Format: "Mon YYYY" or "Month YYYY" (e.g. "Mar 2026")
   const months: Record<string, string> = {
@@ -61,22 +85,26 @@ export async function POST(req: NextRequest) {
 
     const XLSX = require('xlsx');
     const buffer = Buffer.from(await file.arrayBuffer());
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    // Read with raw: true to prevent xlsx from converting date-like strings to Date serials
+    const workbook = XLSX.read(buffer, { type: 'buffer', raw: true });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
-    const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
 
     if (rows.length < 2) {
       return NextResponse.json({ error: 'File has no data rows' }, { status: 400 });
     }
 
     // Parse month headers from the first row (columns Q..W)
-    const headerRow = rows[0] as string[];
+    const headerRow = rows[0] as unknown[];
     const monthMap: Record<number, string> = {}; // colIndex → "MM-YYYY"
+    const debugHeaders: Record<string, string> = {};
     for (let col = SALES_COL_START; col <= SALES_COL_END; col++) {
       const headerVal = headerRow[col];
-      if (headerVal) {
-        const month = parseMonthFromHeader(String(headerVal));
+      const colLetter = String.fromCharCode(65 + col); // A=65
+      debugHeaders[colLetter] = `${typeof headerVal}: ${headerVal}`;
+      if (headerVal !== undefined && headerVal !== null && headerVal !== '') {
+        const month = parseMonthFromHeader(headerVal);
         if (month) {
           monthMap[col] = month;
         }
@@ -85,7 +113,8 @@ export async function POST(req: NextRequest) {
 
     if (Object.keys(monthMap).length === 0) {
       return NextResponse.json({
-        error: 'Could not parse month headers from columns Q-W. Expected format: "MM-YYYY" (e.g. "05-2026").',
+        error: 'Could not parse month headers from columns Q-W.',
+        debugHeaders,
       }, { status: 400 });
     }
 
