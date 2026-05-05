@@ -23,8 +23,19 @@ export async function GET(req: NextRequest) {
       allVisits.push(...visits);
     }
 
+    // Deduplicate by visitId (guards against overlapping imports)
+    const seenIds = new Set<string>();
+    const deduped: Visit[] = [];
+    for (const v of allVisits) {
+      if (v.visitId) {
+        if (seenIds.has(v.visitId)) continue;
+        seenIds.add(v.visitId);
+      }
+      deduped.push(v);
+    }
+
     // Apply date filter
-    let filtered = allVisits;
+    let filtered = deduped;
     if (from) {
       filtered = filtered.filter(v => v.checkInDate >= from);
     }
