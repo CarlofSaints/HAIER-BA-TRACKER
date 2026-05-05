@@ -27,6 +27,7 @@ interface Channel {
 
 interface VisitRecord {
   storeName: string;
+  storeCode: string;
   checkInDate: string;
 }
 
@@ -190,7 +191,16 @@ export default function SalesPage() {
     return { currentMonth: months[0], prevMonth: months.length > 1 ? months[1] : '' };
   }, [months, monthFilter]);
 
-  // Visit counts per store (filtered by month)
+  // Map siteCode → storeName (from store master) for visit matching
+  const siteCodeToStoreName = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const s of storeMaster) {
+      if (s.siteCode) map[s.siteCode] = s.storeName;
+    }
+    return map;
+  }, [storeMaster]);
+
+  // Visit counts per storeName (filtered by month), matched via storeCode → siteCode
   const storeVisitCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const v of visits) {
@@ -200,10 +210,14 @@ export default function SalesPage() {
         const visitMonth = `${mm}-${yyyy}`;
         if (visitMonth !== monthFilter) continue;
       }
-      counts[v.storeName] = (counts[v.storeName] || 0) + 1;
+      // Match visit.storeCode to store master siteCode → storeName
+      const storeName = siteCodeToStoreName[v.storeCode];
+      if (storeName) {
+        counts[storeName] = (counts[storeName] || 0) + 1;
+      }
     }
     return counts;
-  }, [visits, monthFilter]);
+  }, [visits, monthFilter, siteCodeToStoreName]);
 
   // Available store names (non-DC)
   const availableStores = useMemo(() => {
