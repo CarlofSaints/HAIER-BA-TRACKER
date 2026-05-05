@@ -17,26 +17,84 @@ interface PerigeeConfig {
 const CONFIG_KEY = 'config/perigee-api.json';
 
 // Map Perigee API response fields to our Visit interface
+// Perigee visit record fields (from actual API):
+//   store / Store Full Name — "STORE NAME - CODE"
+//   channel / Channel
+//   username / Username — email
+//   displayName — rep full name
+//   startDateFull — "2026-05-04 16:39:02"
+//   endDateFull — ""
+//   startTime — "16:39"
+//   endTime — ""
+//   callStatus — "VISITED"
 function mapPerigeeVisit(row: Record<string, unknown>): Visit {
   const str = (key: string) => String(row[key] ?? '').trim();
   const num = (key: string) => parseInt(String(row[key] ?? '0')) || 0;
 
+  // Extract store name and code from "STORE NAME - CODE" format
+  const rawStore = str('store') || str('Store Full Name') || str('storeName') || str('place') || '';
+  let storeName = rawStore;
+  let storeCode = str('storeCode') || str('placeId') || '';
+
+  // If store field has " - CODE" suffix, split it
+  if (!storeCode && rawStore.includes(' - ')) {
+    const lastDash = rawStore.lastIndexOf(' - ');
+    storeName = rawStore.substring(0, lastDash).trim();
+    storeCode = rawStore.substring(lastDash + 3).trim();
+  }
+
+  // Extract check-in date from startDateFull "2026-05-04 16:39:02" or checkInDate or date
+  let checkInDate = str('checkInDate') || '';
+  if (!checkInDate) {
+    const startDateFull = str('startDateFull');
+    if (startDateFull && startDateFull.includes(' ')) {
+      checkInDate = startDateFull.split(' ')[0]; // "2026-05-04"
+    } else {
+      checkInDate = str('date') || '';
+    }
+  }
+
+  // Extract check-out date similarly
+  let checkOutDate = str('checkOutDate') || '';
+  if (!checkOutDate) {
+    const endDateFull = str('endDateFull');
+    if (endDateFull && endDateFull.includes(' ')) {
+      checkOutDate = endDateFull.split(' ')[0];
+    }
+  }
+
+  // Check-in/out times
+  const checkInTime = str('checkInTime') || str('startTime') || '';
+  const checkOutTime = str('checkOutTime') || str('endTime') || '';
+
+  // Email — username field is the email in Perigee
+  const email = str('email') || str('username') || str('Username') || str('representativeId') || '';
+
+  // Rep name — displayName in Perigee
+  const repName = str('repName') || str('displayName') || str('representativeName') || '';
+
+  // Channel
+  const channel = str('channel') || str('Channel') || '';
+
+  // Status
+  const status = str('status') || str('callStatus') || '';
+
   return {
-    email: str('email') || str('representativeId') || str('repEmail') || '',
-    repName: str('repName') || str('representativeName') || '',
-    channel: str('channel') || '',
-    storeName: str('storeName') || str('place') || '',
-    storeCode: str('storeCode') || str('placeId') || '',
-    checkInDate: str('checkInDate') || str('date') || '',
-    checkInTime: str('checkInTime') || str('startTime') || '',
-    checkOutDate: str('checkOutDate') || str('date') || '',
-    checkOutTime: str('checkOutTime') || str('endTime') || '',
+    email,
+    repName,
+    channel,
+    storeName,
+    storeCode,
+    checkInDate,
+    checkInTime,
+    checkOutDate,
+    checkOutTime,
     checkInDistance: str('checkInDistance') || '',
     checkOutDistance: str('checkOutDistance') || '',
     visitDuration: str('visitDuration') || str('timeAtPlace') || '',
     formsCompleted: num('formsCompleted'),
     picsUploaded: num('picsUploaded'),
-    status: str('status') || '',
+    status,
     networkOnCheckIn: str('networkOnCheckIn') || '',
   };
 }
@@ -93,23 +151,36 @@ export async function POST(req: NextRequest) {
     await writeJson(CONFIG_KEY, { ...config, lastPolledAt: new Date().toISOString() });
 
     // Determine the visits array from the response
-    // Perigee may return { visits: [...] } or just an array
-    const rawVisits: Record<string, unknown>[] = Array.isArray(perigeeData)
-      ? perigeeData
-      : Array.isArray(perigeeData.visits)
-        ? perigeeData.visits
-        : Array.isArray(perigeeData.data)
-          ? perigeeData.data
-          : [];
+    // Perigee returns: { valid, visits: { total, data: [...] }, timestamp, metadata }
+    // Or possibly: { visits: [...] } or just an array
+    let rawVisits: Record<string, unknown>[] = [];
+    if (Array.isArray(perigeeData)) {
+      rawVisits = perigeeData;
+    } else if (perigeeData.visits && Array.isArray(perigeeData.visits.data)) {
+      // Perigee standard: { visits: { total, data: [...], ... } }
+      rawVisits = perigeeData.visits.data;
+    } else if (Array.isArray(perigeeData.visits)) {
+      rawVisits = perigeeData.visits;
+    } else if (Array.isArray(perigeeData.data)) {
+      rawVisits = perigeeData.data;
+    }
 
     if (mode === 'test') {
       // Return a preview — raw response keys + sample + count + debug info
       const sample = rawVisits.slice(0, 3);
       const responseKeys = rawVisits.length > 0 ? Object.keys(rawVisits[0]) : [];
+      // Map the sample to show what would be imported
+      const mappedSample = sample.map(mapPerigeeVisit);
       // Include non-visits metadata for debugging
       const meta: Record<string, unknown> = {};
       for (const k of Object.keys(perigeeData)) {
-        if (k !== 'visits') meta[k] = perigeeData[k];
+        if (k === 'visits' && typeof perigeeData[k] === 'object' && !Array.isArray(perigeeData[k])) {
+          // Include visits metadata (total, redFlags, etc.) but not the full data array
+          const { data, ...visitsMeta } = perigeeData[k] as Record<string, unknown>;
+          meta['visits'] = visitsMeta;
+        } else if (k !== 'visits') {
+          meta[k] = perigeeData[k];
+        }
       }
       return NextResponse.json({
         ok: true,
@@ -117,6 +188,7 @@ export async function POST(req: NextRequest) {
         totalRows: rawVisits.length,
         responseKeys,
         sample,
+        mappedSample,
         rawTopLevelKeys: Object.keys(perigeeData),
         meta,
         sentBody: perigeeBody,

@@ -1,0 +1,7 @@
+Fix Perigee visits API: correct response parsing and field mapping
+
+- Fix rawVisits extraction to handle nested visits.data[] structure
+- Map actual Perigee field names (store, displayName, startDateFull, etc.)
+- Split "STORE NAME - CODE" into storeName + storeCode
+- Add mappedSample to test mode response for debugging
+- Enhanced DISPO upload debug output (all columns for first 5 rows)

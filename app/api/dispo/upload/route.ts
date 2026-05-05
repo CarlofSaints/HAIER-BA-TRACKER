@@ -151,22 +151,29 @@ export async function POST(req: NextRequest) {
     // Find the header row dynamically (headers may not be in row 1)
     const found = findHeaderRow(rows);
     if (!found) {
-      // Gather debug info from first 10 rows, columns Q-W
+      // Dump everything we can for diagnosis
       const debug: Record<string, unknown> = {};
       debug['_sheetRef'] = range;
       debug['_totalRows'] = rows.length;
       debug['_sheetNames'] = workbook.SheetNames;
-      for (let r = 0; r < Math.min(10, rows.length); r++) {
+      debug['_fileName'] = file.name;
+      debug['_fileSize'] = file.size;
+
+      // Dump first 5 rows — ALL columns (as array of values with col letter keys)
+      for (let r = 0; r < Math.min(5, rows.length); r++) {
         const row = rows[r] as unknown[];
         if (!row) { debug[`row${r + 1}`] = 'null/undefined'; continue; }
         const cells: Record<string, string> = {};
         cells['_len'] = String(row.length);
-        for (let col = SALES_COL_START; col <= SALES_COL_END; col++) {
-          const letter = String.fromCharCode(65 + col);
-          cells[letter] = `${typeof row[col]}: ${row[col]}`;
+        for (let col = 0; col < Math.min(row.length, 50); col++) {
+          // Column letter: A=0..Z=25, AA=26..AZ=51
+          const letter = col < 26 ? String.fromCharCode(65 + col) : 'A' + String.fromCharCode(65 + col - 26);
+          const val = row[col];
+          cells[letter] = val === null ? 'null' : val === undefined ? 'undefined' : `${typeof val}: ${String(val).slice(0, 60)}`;
         }
         debug[`row${r + 1}`] = cells;
       }
+
       return NextResponse.json({
         error: 'Could not find header row with month columns (Q-W). Expected MM-YYYY format (e.g. "05-2026").',
         debug,
