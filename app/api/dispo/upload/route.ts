@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadDispoData, saveDispoData, DispoUploadMeta } from '@/lib/dispoData';
+import { loadStores, saveStores } from '@/lib/storeData';
+import { writeJson } from '@/lib/blob';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -8,6 +10,7 @@ export const runtime = 'nodejs';
 
 // Column indices (0-based)
 const COL_ARTICLE_DESC = 9;   // J
+const COL_SITE_CODE = 26;     // AA — "Site"
 const COL_SITE_NAME = 27;     // AB
 const COL_YTD = 23;           // X — "Curr Y/S" (YTD sales)
 const COL_SOH = 30;           // AE
@@ -68,6 +71,18 @@ function parseMonthFromHeader(header: unknown): string | null {
 }
 
 /**
+ * Parse export date from cell A1 — format is typically DD.MM.YYYY or DD/MM/YYYY
+ */
+function parseExportDate(val: unknown): string | null {
+  if (!val) return null;
+  const str = String(val).trim();
+  // Match DD.MM.YYYY or DD/MM/YYYY
+  const m = str.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+  if (m) return `${m[1].padStart(2, '0')}.${m[2].padStart(2, '0')}.${m[3]}`;
+  return null;
+}
+
+/**
  * Scan the first N rows to find the header row — the one that has
  * parseable month values in columns Q-W.
  */
@@ -114,6 +129,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'File has insufficient rows' }, { status: 400 });
     }
 
+    // Duplicate check: read cell A1 for export date
+    const exportDateRaw = rows[0]?.[0];
+    const exportDate = parseExportDate(exportDateRaw);
+
+    // Load existing data
+    const data = await loadDispoData();
+    if (!data.ytd) data.ytd = {};
+
+    // Check if this export date already exists in uploads
+    if (exportDate) {
+      const existing = data.uploads.find(u => (u as any).exportDate === exportDate);
+      if (existing) {
+        return NextResponse.json({
+          error: `DISPO data for ${exportDate} has already been uploaded (file: ${existing.fileName}, uploaded ${new Date(existing.uploadedAt).toLocaleDateString('en-ZA')}).`,
+        }, { status: 409 });
+      }
+    }
+
     // Find the header row dynamically (headers may not be in row 1)
     const found = findHeaderRow(rows);
     if (!found) {
@@ -137,7 +170,6 @@ export async function POST(req: NextRequest) {
 
     const { headerIdx, monthMap } = found;
     // Data starts after the header row, skipping any blank rows
-    // Find the first data row: has a value in the Article Desc column (J)
     let dataStartIdx = headerIdx + 1;
     while (dataStartIdx < rows.length) {
       const row = rows[dataStartIdx] as unknown[];
@@ -150,13 +182,17 @@ export async function POST(req: NextRequest) {
     const currentMonthCol = sortedCols[sortedCols.length - 1];
     const currentMonthKey = monthMap[currentMonthCol];
 
-    // Load existing data (ensure ytd exists for backwards compat)
-    const data = await loadDispoData();
-    if (!data.ytd) data.ytd = {};
-
     const allStores = new Set<string>();
     const allProducts = new Set<string>();
     let rowCount = 0;
+
+    // Raw rows for rebuild-on-delete
+    const rawRows: { articleDesc: string; siteName: string; siteCode: string; sales: Record<string, number>; ytd: number; soh: number; soo: number; inclSP: number; promSP: number }[] = [];
+
+    // Load store master for new-store detection
+    const storeMaster = await loadStores();
+    const existingStoreNames = new Set(storeMaster.map(s => s.storeName));
+    const newStoreEntries: { siteCode: string; storeName: string }[] = [];
 
     // Process data rows
     for (let i = dataStartIdx; i < rows.length; i++) {
@@ -164,6 +200,7 @@ export async function POST(req: NextRequest) {
       if (!row) continue;
       const articleDesc = row[COL_ARTICLE_DESC] ? String(row[COL_ARTICLE_DESC]).trim() : '';
       const siteName = row[COL_SITE_NAME] ? String(row[COL_SITE_NAME]).trim() : '';
+      const siteCode = row[COL_SITE_CODE] ? String(row[COL_SITE_CODE]).trim() : '';
 
       if (!articleDesc || !siteName) continue;
 
@@ -171,11 +208,21 @@ export async function POST(req: NextRequest) {
       allProducts.add(articleDesc);
       rowCount++;
 
+      // Track new stores
+      if (!existingStoreNames.has(siteName)) {
+        existingStoreNames.add(siteName);
+        newStoreEntries.push({ siteCode, storeName: siteName });
+      }
+
+      const rowSales: Record<string, number> = {};
+
       // Parse sales for each month column
       for (const colStr of Object.keys(monthMap)) {
         const col = Number(colStr);
         const monthKey = monthMap[col];
         const units = Number(row[col]) || 0;
+
+        rowSales[monthKey] = units;
 
         if (units === 0 && col !== currentMonthCol) continue;
 
@@ -208,11 +255,15 @@ export async function POST(req: NextRequest) {
       if (inclSP > 0 || promSP > 0) {
         data.prices[articleDesc] = { inclSP, promSP };
       }
+
+      // Save raw row for rebuild
+      rawRows.push({ articleDesc, siteName, siteCode, sales: rowSales, ytd: ytdUnits, soh, soo, inclSP, promSP });
     }
 
     // Log the upload
-    const uploadMeta: DispoUploadMeta = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    const uploadId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const uploadMeta: DispoUploadMeta & { exportDate?: string } = {
+      id: uploadId,
       fileName: file.name,
       uploadedAt: new Date().toISOString(),
       uploadedBy: user.email,
@@ -221,7 +272,19 @@ export async function POST(req: NextRequest) {
       products: allProducts.size,
       stores: allStores.size,
     };
+    if (exportDate) (uploadMeta as any).exportDate = exportDate;
     data.uploads.push(uploadMeta);
+
+    // Save raw data for rebuild-on-delete
+    await writeJson(`dispo/raw/${uploadId}.json`, { rows: rawRows, monthMap });
+
+    // Update store master with new stores
+    if (newStoreEntries.length > 0) {
+      for (const entry of newStoreEntries) {
+        storeMaster.push({ siteCode: entry.siteCode, storeName: entry.storeName, channelId: '' });
+      }
+      await saveStores(storeMaster);
+    }
 
     await saveDispoData(data);
 
@@ -234,6 +297,7 @@ export async function POST(req: NextRequest) {
       currentMonth: currentMonthKey,
       headerRow: headerIdx + 1,
       dataStartRow: dataStartIdx + 1,
+      newStoreNames: newStoreEntries.map(e => e.storeName),
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('DISPO upload error:', err);

@@ -12,20 +12,26 @@ interface NavItem {
   roles: Role[];
 }
 
-const NAV_ITEMS: NavItem[] = [
+const CLIENT_ITEMS: NavItem[] = [
   { label: 'Leaderboard', href: '/leaderboard', icon: '🏆', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Visit Analytics', href: '/dashboard', icon: '📊', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Score Entry', href: '/scores', icon: '✏️', roles: ['super_admin', 'admin'] },
   { label: 'Sales & Stock', href: '/sales', icon: '💰', roles: ['super_admin', 'admin', 'client'] },
-  { label: 'Data Upload', href: '/upload', icon: '📤', roles: ['super_admin', 'admin'] },
-  { label: 'Users', href: '/users', icon: '👥', roles: ['super_admin', 'admin'] },
-  { label: 'Roles', href: '/roles', icon: '🔑', roles: ['super_admin'] },
-  { label: 'Settings', href: '/settings', icon: '⚙️', roles: ['super_admin'] },
   { label: 'Scoring Guide', href: '/guide', icon: '📖', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Account', href: '/account', icon: '👤', roles: ['super_admin', 'admin', 'client'] },
 ];
 
+const CONTROL_ITEMS: NavItem[] = [
+  { label: 'Data Upload', href: '/upload', icon: '📤', roles: ['super_admin', 'admin'] },
+  { label: 'Channels', href: '/admin/channels', icon: '📡', roles: ['super_admin'] },
+  { label: 'Stores', href: '/admin/stores', icon: '🏪', roles: ['super_admin', 'admin'] },
+  { label: 'Users', href: '/users', icon: '👥', roles: ['super_admin', 'admin'] },
+  { label: 'Roles', href: '/roles', icon: '🔑', roles: ['super_admin'] },
+  { label: 'Settings', href: '/settings', icon: '⚙️', roles: ['super_admin'] },
+];
+
 const SIDEBAR_KEY = 'haier_sidebar_open';
+const CONTROL_KEY = 'haier_control_open';
 const SIDEBAR_W = 240;
 const TOPBAR_H = 52;
 
@@ -54,13 +60,34 @@ function CloseIcon() {
   );
 }
 
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}
+    >
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
+
 export default function Sidebar({ role, name, onLogout }: SidebarProps) {
   const pathname = usePathname();
-  const visibleItems = NAV_ITEMS.filter(item => item.roles.includes(role));
+  const visibleClientItems = CLIENT_ITEMS.filter(item => item.roles.includes(role));
+  const visibleControlItems = CONTROL_ITEMS.filter(item => item.roles.includes(role));
+  const showControlCentre = visibleControlItems.length > 0;
 
   const [open, setOpen] = useState(() => {
     if (typeof window === 'undefined') return true;
     return localStorage.getItem(SIDEBAR_KEY) !== 'false';
+  });
+
+  const [controlOpen, setControlOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = localStorage.getItem(CONTROL_KEY);
+    if (stored !== null) return stored !== 'false';
+    return role === 'super_admin' || role === 'admin';
   });
 
   // Sync body data attribute for CSS margin/padding rules
@@ -74,6 +101,47 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
       localStorage.setItem(SIDEBAR_KEY, String(next));
       return next;
     });
+  }
+
+  function toggleControl() {
+    setControlOpen(prev => {
+      const next = !prev;
+      localStorage.setItem(CONTROL_KEY, String(next));
+      return next;
+    });
+  }
+
+  function renderNavItem(item: NavItem) {
+    const active = pathname === item.href;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.6rem',
+          padding: '0.6rem 0.75rem',
+          borderRadius: 8,
+          color: active ? '#fff' : 'rgba(255,255,255,0.65)',
+          background: active ? '#0054A6' : 'transparent',
+          textDecoration: 'none',
+          fontSize: '0.85rem',
+          fontWeight: active ? 600 : 400,
+          marginBottom: 2,
+          transition: 'background 0.15s, color 0.15s',
+        }}
+        onMouseEnter={e => {
+          if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)';
+        }}
+        onMouseLeave={e => {
+          if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent';
+        }}
+      >
+        <span style={{ fontSize: '1rem' }}>{item.icon}</span>
+        {item.label}
+      </Link>
+    );
   }
 
   return (
@@ -152,39 +220,47 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
         </div>
 
         {/* Nav */}
-        <nav style={{ flex: 1, padding: '0.75rem 0.5rem' }}>
-          {visibleItems.map(item => {
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.6rem',
-                  padding: '0.6rem 0.75rem',
-                  borderRadius: 8,
-                  color: active ? '#fff' : 'rgba(255,255,255,0.65)',
-                  background: active ? '#0054A6' : 'transparent',
-                  textDecoration: 'none',
-                  fontSize: '0.85rem',
-                  fontWeight: active ? 600 : 400,
-                  marginBottom: 2,
-                  transition: 'background 0.15s, color 0.15s',
-                }}
-                onMouseEnter={e => {
-                  if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)';
-                }}
-                onMouseLeave={e => {
-                  if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent';
-                }}
-              >
-                <span style={{ fontSize: '1rem' }}>{item.icon}</span>
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav style={{ flex: 1, padding: '0.75rem 0.5rem', overflowY: 'auto' }}>
+          {/* Client-facing items */}
+          {visibleClientItems.map(renderNavItem)}
+
+          {/* Control Centre — collapsible */}
+          {showControlCentre && (
+            <>
+              <div style={{ marginTop: '0.75rem', marginBottom: '0.25rem' }}>
+                <button
+                  onClick={toggleControl}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.45)',
+                    fontSize: '0.7rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    borderRadius: 6,
+                    transition: 'color 0.15s',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.7)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.45)'; }}
+                >
+                  <ChevronIcon open={controlOpen} />
+                  Control Centre
+                </button>
+              </div>
+              {controlOpen && (
+                <div style={{ paddingLeft: '0.25rem' }}>
+                  {visibleControlItems.map(renderNavItem)}
+                </div>
+              )}
+            </>
+          )}
         </nav>
 
         {/* Atomic Marketing section */}

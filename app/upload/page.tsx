@@ -40,6 +40,9 @@ export default function UploadPage() {
   const [dispoDragOver, setDispoDragOver] = useState(false);
   const dispoFileRef = useRef<HTMLInputElement>(null);
 
+  // New stores modal
+  const [newStoresModal, setNewStoresModal] = useState<string[] | null>(null);
+
   const loadUploads = useCallback(async () => {
     try {
       const res = await authFetch('/api/visits/uploads');
@@ -117,6 +120,10 @@ export default function UploadPage() {
         setDispoFile(null);
         if (dispoFileRef.current) dispoFileRef.current.value = '';
         loadDispoUploads();
+        // Show new stores popup if any
+        if (result.newStoreNames && result.newStoreNames.length > 0) {
+          setNewStoresModal(result.newStoreNames);
+        }
       } else {
         const debugInfo = result.debug ? `\n${JSON.stringify(result.debug)}` : '';
         setToast({ msg: (result.error || 'Upload failed') + debugInfo, type: 'error' });
@@ -137,6 +144,22 @@ export default function UploadPage() {
         loadUploads();
       } else {
         setToast({ msg: 'Delete failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Delete failed', type: 'error' });
+    }
+  }
+
+  async function handleDispoDelete(id: string) {
+    if (!confirm('Delete this DISPO upload? All its data will be removed.')) return;
+    try {
+      const res = await authFetch(`/api/dispo/delete/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setToast({ msg: 'DISPO upload deleted', type: 'success' });
+        loadDispoUploads();
+      } else {
+        const result = await res.json().catch(() => ({}));
+        setToast({ msg: result.error || 'Delete failed', type: 'error' });
       }
     } catch {
       setToast({ msg: 'Delete failed', type: 'error' });
@@ -336,20 +359,29 @@ export default function UploadPage() {
               <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
                 Upload History
               </h3>
-              <div style={{ maxHeight: 250, overflow: 'auto' }}>
+              <div style={{ maxHeight: 300, overflow: 'auto' }}>
                 {dispoUploads.slice().reverse().map(u => (
                   <div
                     key={u.id}
                     style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid #f3f4f6', fontSize: '0.8rem' }}
                   >
-                    <div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 500, color: '#374151' }}>{u.fileName}</div>
                       <div style={{ color: '#9ca3af', fontSize: '0.7rem' }}>
                         {new Date(u.uploadedAt).toLocaleString('en-ZA')} — {u.rowCount} rows, {u.stores} stores, {u.products} products
                       </div>
                     </div>
-                    <div style={{ color: '#6b7280', fontSize: '0.7rem', whiteSpace: 'nowrap', marginLeft: '1rem' }}>
-                      {u.months?.join(', ')}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '1rem', flexShrink: 0 }}>
+                      <span style={{ color: '#6b7280', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>
+                        {u.months?.join(', ')}
+                      </span>
+                      <button
+                        className="btn btn-danger"
+                        style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+                        onClick={() => handleDispoDelete(u.id)}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -367,6 +399,49 @@ export default function UploadPage() {
       </main>
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+
+      {/* New Stores Modal */}
+      {newStoresModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 12, padding: '1.5rem', maxWidth: 480, width: '90%',
+            maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+          }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+              New Stores Detected
+            </h3>
+            <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem' }}>
+              The following {newStoresModal.length} store{newStoresModal.length > 1 ? 's are' : ' is'} new and need{newStoresModal.length === 1 ? 's' : ''} channel assignment:
+            </p>
+            <div style={{ flex: 1, overflow: 'auto', marginBottom: '1rem', border: '1px solid #e5e7eb', borderRadius: 8, padding: '0.5rem 0.75rem' }}>
+              {newStoresModal.map((name, i) => (
+                <div key={i} style={{ padding: '0.3rem 0', borderBottom: i < newStoresModal.length - 1 ? '1px solid #f3f4f6' : 'none', fontSize: '0.8rem', color: '#374151' }}>
+                  {name}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <a
+                href="/admin/stores"
+                className="btn btn-primary"
+                style={{ textDecoration: 'none', fontSize: '0.8rem' }}
+              >
+                Assign Channels
+              </a>
+              <button
+                className="btn btn-outline"
+                onClick={() => setNewStoresModal(null)}
+                style={{ fontSize: '0.8rem' }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
