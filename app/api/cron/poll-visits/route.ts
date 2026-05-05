@@ -231,7 +231,18 @@ export async function GET(req: NextRequest) {
     }
 
     // Map and deduplicate
-    const visits: Visit[] = rawVisits.map(mapPerigeeVisit).filter(v => v.storeName || v.repName);
+    const mappedVisits: Visit[] = rawVisits.map(mapPerigeeVisit).filter(v => v.storeName || v.repName);
+
+    // Deduplicate within this batch (Perigee returns same GUID 2+ times)
+    const batchSeen = new Set<string>();
+    const visits: Visit[] = [];
+    for (const v of mappedVisits) {
+      if (v.visitId) {
+        if (batchSeen.has(v.visitId)) continue;
+        batchSeen.add(v.visitId);
+      }
+      visits.push(v);
+    }
 
     const index = await loadVisitIndex();
     const existingVisitIds = new Set<string>();
@@ -243,7 +254,7 @@ export async function GET(req: NextRequest) {
     }
 
     const newVisits = visits.filter(v => !v.visitId || !existingVisitIds.has(v.visitId));
-    const skipped = visits.length - newVisits.length;
+    const skipped = mappedVisits.length - newVisits.length;
 
     if (newVisits.length === 0) {
       logEntry.result = 'All duplicates';

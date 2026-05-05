@@ -234,9 +234,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const visits: Visit[] = rawVisits
+    const mappedVisits: Visit[] = rawVisits
       .map(mapPerigeeVisit)
       .filter(v => v.storeName || v.repName);
+
+    // Deduplicate within this batch (Perigee returns same GUID 2+ times)
+    const batchSeen = new Set<string>();
+    const visits: Visit[] = [];
+    for (const v of mappedVisits) {
+      if (v.visitId) {
+        if (batchSeen.has(v.visitId)) continue;
+        batchSeen.add(v.visitId);
+      }
+      visits.push(v);
+    }
 
     // Deduplication: build set of existing visitIds across all uploads
     const index = await loadVisitIndex();
@@ -248,9 +259,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Filter out duplicates
+    // Filter out duplicates against previously saved data
     const newVisits = visits.filter(v => !v.visitId || !existingVisitIds.has(v.visitId));
-    const skippedDuplicates = visits.length - newVisits.length;
+    const skippedDuplicates = mappedVisits.length - newVisits.length;
 
     if (newVisits.length === 0) {
       return NextResponse.json({
