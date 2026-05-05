@@ -26,12 +26,34 @@ export async function GET(req: NextRequest) {
     // Deduplicate by visitId (guards against overlapping imports)
     const seenIds = new Set<string>();
     const deduped: Visit[] = [];
+    let dupCount = 0;
     for (const v of allVisits) {
       if (v.visitId) {
-        if (seenIds.has(v.visitId)) continue;
+        if (seenIds.has(v.visitId)) { dupCount++; continue; }
         seenIds.add(v.visitId);
       }
       deduped.push(v);
+    }
+
+    // Debug mode: return data stats
+    if (url.searchParams.get('debug') === '1') {
+      const noId = allVisits.filter(v => !v.visitId).length;
+      // Find Cape Gate sample
+      const capeGate = allVisits.filter(v =>
+        (v.storeName || '').toLowerCase().includes('cape gate')
+      );
+      const capeGateIds = capeGate.map(v => v.visitId || '(no id)');
+      return NextResponse.json({
+        totalRaw: allVisits.length,
+        uniqueVisitIds: seenIds.size,
+        withoutVisitId: noId,
+        duplicatesRemoved: dupCount,
+        afterDedup: deduped.length,
+        uploadBatches: index.length,
+        batchSizes: index.map(m => ({ id: m.id.slice(0, 8), file: m.fileName, rows: m.rowCount })),
+        capeGateRaw: capeGate.length,
+        capeGateVisitIds: capeGateIds,
+      }, { headers: noCacheHeaders() });
     }
 
     // Apply date filter
