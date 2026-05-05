@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { readJson, writeJson } from '@/lib/blob';
-import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData } from '@/lib/visitData';
+import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData } from '@/lib/visitData';
+import { seedScoresFromVisits } from '@/lib/seedScores';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -16,17 +17,45 @@ interface PerigeeConfig {
 
 const CONFIG_KEY = 'config/perigee-api.json';
 
+/**
+ * Calculate visit duration from check-in/check-out times.
+ * Returns formatted string like "2h 15m" or "45m", or empty if not calculable.
+ */
+function calcDuration(checkInTime: string, checkOutTime: string, startDateFull: string, endDateFull: string): string {
+  if (!checkInTime || !checkOutTime) return '';
+
+  // Try simple time-based calculation first (same day)
+  const inParts = checkInTime.split(':').map(Number);
+  const outParts = checkOutTime.split(':').map(Number);
+
+  if (inParts.length >= 2 && outParts.length >= 2) {
+    let diffMin: number;
+
+    // If we have full date-times spanning midnight, use those
+    if (startDateFull && endDateFull && startDateFull.includes(' ') && endDateFull.includes(' ')) {
+      const startMs = new Date(startDateFull.replace(' ', 'T')).getTime();
+      const endMs = new Date(endDateFull.replace(' ', 'T')).getTime();
+      if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+        diffMin = Math.round((endMs - startMs) / 60000);
+      } else {
+        return '';
+      }
+    } else {
+      // Same-day calculation
+      diffMin = (outParts[0] * 60 + outParts[1]) - (inParts[0] * 60 + inParts[1]);
+    }
+
+    if (diffMin > 0) {
+      const h = Math.floor(diffMin / 60);
+      const m = diffMin % 60;
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+  }
+
+  return '';
+}
+
 // Map Perigee API response fields to our Visit interface
-// Perigee visit record fields (from actual API):
-//   store / Store Full Name — "STORE NAME - CODE"
-//   channel / Channel
-//   username / Username — email
-//   displayName — rep full name
-//   startDateFull — "2026-05-04 16:39:02"
-//   endDateFull — ""
-//   startTime — "16:39"
-//   endTime — ""
-//   callStatus — "VISITED"
 function mapPerigeeVisit(row: Record<string, unknown>): Visit {
   const str = (key: string) => String(row[key] ?? '').trim();
   const num = (key: string) => parseInt(String(row[key] ?? '0')) || 0;
@@ -45,8 +74,8 @@ function mapPerigeeVisit(row: Record<string, unknown>): Visit {
 
   // Extract check-in date from startDateFull "2026-05-04 16:39:02" or checkInDate or date
   let checkInDate = str('checkInDate') || '';
+  const startDateFull = str('startDateFull');
   if (!checkInDate) {
-    const startDateFull = str('startDateFull');
     if (startDateFull && startDateFull.includes(' ')) {
       checkInDate = startDateFull.split(' ')[0]; // "2026-05-04"
     } else {
@@ -56,8 +85,8 @@ function mapPerigeeVisit(row: Record<string, unknown>): Visit {
 
   // Extract check-out date similarly
   let checkOutDate = str('checkOutDate') || '';
+  const endDateFull = str('endDateFull');
   if (!checkOutDate) {
-    const endDateFull = str('endDateFull');
     if (endDateFull && endDateFull.includes(' ')) {
       checkOutDate = endDateFull.split(' ')[0];
     }
@@ -79,6 +108,13 @@ function mapPerigeeVisit(row: Record<string, unknown>): Visit {
   // Status
   const status = str('status') || str('callStatus') || '';
 
+  // Visit ID for deduplication
+  const visitId = str('visitGuid') || str('guid') || str('visitId') || '';
+
+  // Calculate duration from times if not provided directly
+  const rawDuration = str('visitDuration') || str('timeAtPlace') || '';
+  const visitDuration = rawDuration || calcDuration(checkInTime, checkOutTime, startDateFull, endDateFull);
+
   return {
     email,
     repName,
@@ -91,11 +127,12 @@ function mapPerigeeVisit(row: Record<string, unknown>): Visit {
     checkOutTime,
     checkInDistance: str('checkInDistance') || '',
     checkOutDistance: str('checkOutDistance') || '',
-    visitDuration: str('visitDuration') || str('timeAtPlace') || '',
+    visitDuration,
     formsCompleted: num('formsCompleted'),
     picsUploaded: num('picsUploaded'),
     status,
     networkOnCheckIn: str('networkOnCheckIn') || '',
+    visitId: visitId || undefined,
   };
 }
 
@@ -151,13 +188,10 @@ export async function POST(req: NextRequest) {
     await writeJson(CONFIG_KEY, { ...config, lastPolledAt: new Date().toISOString() });
 
     // Determine the visits array from the response
-    // Perigee returns: { valid, visits: { total, data: [...] }, timestamp, metadata }
-    // Or possibly: { visits: [...] } or just an array
     let rawVisits: Record<string, unknown>[] = [];
     if (Array.isArray(perigeeData)) {
       rawVisits = perigeeData;
     } else if (perigeeData.visits && Array.isArray(perigeeData.visits.data)) {
-      // Perigee standard: { visits: { total, data: [...], ... } }
       rawVisits = perigeeData.visits.data;
     } else if (Array.isArray(perigeeData.visits)) {
       rawVisits = perigeeData.visits;
@@ -169,13 +203,10 @@ export async function POST(req: NextRequest) {
       // Return a preview — raw response keys + sample + count + debug info
       const sample = rawVisits.slice(0, 3);
       const responseKeys = rawVisits.length > 0 ? Object.keys(rawVisits[0]) : [];
-      // Map the sample to show what would be imported
       const mappedSample = sample.map(mapPerigeeVisit);
-      // Include non-visits metadata for debugging
       const meta: Record<string, unknown> = {};
       for (const k of Object.keys(perigeeData)) {
         if (k === 'visits' && typeof perigeeData[k] === 'object' && !Array.isArray(perigeeData[k])) {
-          // Include visits metadata (total, redFlags, etc.) but not the full data array
           const { data, ...visitsMeta } = perigeeData[k] as Record<string, unknown>;
           meta['visits'] = visitsMeta;
         } else if (k !== 'visits') {
@@ -195,7 +226,7 @@ export async function POST(req: NextRequest) {
       }, { headers: noCacheHeaders() });
     }
 
-    // mode === 'import' — map and save
+    // mode === 'import' — map, deduplicate, and save
     if (rawVisits.length === 0) {
       return NextResponse.json(
         { ok: true, mode: 'import', message: 'No visits returned for this date range', totalRows: 0 },
@@ -207,25 +238,55 @@ export async function POST(req: NextRequest) {
       .map(mapPerigeeVisit)
       .filter(v => v.storeName || v.repName);
 
-    const uploadId = crypto.randomUUID();
-    await saveVisitData(uploadId, visits);
-
+    // Deduplication: build set of existing visitIds across all uploads
     const index = await loadVisitIndex();
+    const existingVisitIds = new Set<string>();
+    for (const meta of index) {
+      const existingVisits = await loadVisitData(meta.id);
+      for (const ev of existingVisits) {
+        if (ev.visitId) existingVisitIds.add(ev.visitId);
+      }
+    }
+
+    // Filter out duplicates
+    const newVisits = visits.filter(v => !v.visitId || !existingVisitIds.has(v.visitId));
+    const skippedDuplicates = visits.length - newVisits.length;
+
+    if (newVisits.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        mode: 'import',
+        message: 'All visits already imported (duplicates skipped)',
+        totalRows: rawVisits.length,
+        importedRows: 0,
+        skippedDuplicates,
+      }, { headers: noCacheHeaders() });
+    }
+
+    // Save the new visits
+    const uploadId = crypto.randomUUID();
+    await saveVisitData(uploadId, newVisits);
+
     index.unshift({
       id: uploadId,
       fileName: `perigee-api-${perigeeBody.startDate}.json`,
       uploadedAt: new Date().toISOString(),
       uploadedBy: `${user.name} ${user.surname} (API)`,
-      rowCount: visits.length,
+      rowCount: newVisits.length,
     });
     await saveVisitIndex(index);
+
+    // Auto-seed scores after import
+    const seedResult = await seedScoresFromVisits(`${user.name} ${user.surname} (auto-seed)`);
 
     return NextResponse.json({
       ok: true,
       mode: 'import',
       uploadId,
       totalRows: rawVisits.length,
-      importedRows: visits.length,
+      importedRows: newVisits.length,
+      skippedDuplicates,
+      scoresSeeded: seedResult,
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Perigee poll error:', err);

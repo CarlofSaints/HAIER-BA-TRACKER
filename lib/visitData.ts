@@ -17,6 +17,7 @@ export interface Visit {
   picsUploaded: number;
   status: string;
   networkOnCheckIn: string;
+  visitId?: string;
 }
 
 export interface VisitUploadMeta {

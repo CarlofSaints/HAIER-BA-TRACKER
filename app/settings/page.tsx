@@ -6,6 +6,18 @@ import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
 import Footer from '@/components/Footer';
 
+interface PollSlot {
+  id: string;
+  time: string;
+  type: 'short' | 'long';
+  enabled: boolean;
+}
+
+interface PollSchedule {
+  slots: PollSlot[];
+  timezone: string;
+}
+
 interface PerigeeConfig {
   apiKey: string;
   endpoint: string;
@@ -57,6 +69,8 @@ export default function SettingsPage() {
   const [importing, setImporting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [schedule, setSchedule] = useState<PollSchedule>({ slots: [], timezone: 'Africa/Johannesburg' });
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   useEffect(() => {
     if (!session) return;
@@ -67,6 +81,10 @@ export default function SettingsPage() {
         setForm({ apiKey: '', endpoint: data.endpoint || '', enabled: data.enabled || false });
         if (data.requestBody) setRequestBody(data.requestBody);
       })
+      .catch(() => {});
+    authFetch('/api/config/perigee-schedule')
+      .then(r => r.json())
+      .then(data => { if (data.slots) setSchedule(data); })
       .catch(() => {});
   }, [session]);
 
@@ -160,6 +178,44 @@ export default function SettingsPage() {
     } finally {
       setTesting(false);
       setImporting(false);
+    }
+  }
+
+  function addPollSlot() {
+    setSchedule(s => ({
+      ...s,
+      slots: [...s.slots, { id: crypto.randomUUID(), time: '08:00', type: 'short', enabled: true }],
+    }));
+  }
+
+  function updateSlot(id: string, field: keyof PollSlot, value: string | boolean) {
+    setSchedule(s => ({
+      ...s,
+      slots: s.slots.map(sl => sl.id === id ? { ...sl, [field]: value } : sl),
+    }));
+  }
+
+  function removeSlot(id: string) {
+    setSchedule(s => ({ ...s, slots: s.slots.filter(sl => sl.id !== id) }));
+  }
+
+  async function saveSchedule() {
+    setSavingSchedule(true);
+    try {
+      const res = await authFetch('/api/config/perigee-schedule', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(schedule),
+      });
+      if (res.ok) {
+        setToast({ msg: 'Poll schedule saved', type: 'success' });
+      } else {
+        setToast({ msg: 'Failed to save schedule', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Failed to save schedule', type: 'error' });
+    } finally {
+      setSavingSchedule(false);
     }
   }
 
@@ -309,6 +365,64 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+        {/* Polling Schedule */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 620, marginTop: '1.5rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
+            Polling Schedule
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
+            Configure automated polling times (SAST). Cron runs every 30 minutes and fires on matching slots.
+          </p>
+
+          {schedule.slots.length === 0 ? (
+            <p style={{ color: '#6b7280', fontSize: '0.8rem', fontStyle: 'italic' }}>No poll slots configured.</p>
+          ) : (
+            <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              {schedule.slots.map(slot => (
+                <div key={slot.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', background: '#f9fafb', borderRadius: 8 }}>
+                  <input
+                    type="time"
+                    value={slot.time}
+                    onChange={e => updateSlot(slot.id, 'time', e.target.value)}
+                    style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8rem' }}
+                  />
+                  <select
+                    value={slot.type}
+                    onChange={e => updateSlot(slot.id, 'type', e.target.value)}
+                    style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8rem' }}
+                  >
+                    <option value="short">Short (today only)</option>
+                    <option value="long">Long (last 7 days)</option>
+                  </select>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: '#374151', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={slot.enabled}
+                      onChange={e => updateSlot(slot.id, 'enabled', e.target.checked)}
+                    />
+                    Enabled
+                  </label>
+                  <button
+                    onClick={() => removeSlot(slot.id)}
+                    style={{ marginLeft: 'auto', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', padding: '4px 8px' }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+            <button className="btn btn-outline" onClick={addPollSlot}>
+              + Add Poll Slot
+            </button>
+            <button className="btn btn-primary" onClick={saveSchedule} disabled={savingSchedule}>
+              {savingSchedule ? 'Saving...' : 'Save Schedule'}
+            </button>
+          </div>
+        </div>
+
         <Footer />
       </main>
 
