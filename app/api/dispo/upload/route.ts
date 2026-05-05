@@ -9,6 +9,7 @@ export const runtime = 'nodejs';
 // Column indices (0-based)
 const COL_ARTICLE_DESC = 9;   // J
 const COL_SITE_NAME = 27;     // AB
+const COL_YTD = 23;           // X — "Curr Y/S" (YTD sales)
 const COL_SOH = 30;           // AE
 const COL_SOO = 31;           // AF
 const COL_INCL_SP = 41;       // AP
@@ -18,34 +19,31 @@ const SALES_COL_START = 16;   // Q
 const SALES_COL_END = 22;     // W
 
 function parseMonthFromHeader(header: string): string | null {
-  // Expected formats: "Mar 2026", "Apr 2026", "May 2026", "March 2026", etc.
   if (!header || typeof header !== 'string') return null;
-  const cleaned = header.trim();
+  const cleaned = String(header).trim();
+
+  // Format: "MM-YYYY" (e.g. "05-2026", "12-2025")
+  const mmyyyyMatch = cleaned.match(/^(\d{2})-(\d{4})$/);
+  if (mmyyyyMatch) return `${mmyyyyMatch[1]}-${mmyyyyMatch[2]}`;
+
+  // Format: "YYYY-MM" (e.g. "2026-05")
+  const yyyymmMatch = cleaned.match(/^(\d{4})-(\d{2})$/);
+  if (yyyymmMatch) return `${yyyymmMatch[2]}-${yyyymmMatch[1]}`;
+
+  // Format: "Mon YYYY" or "Month YYYY" (e.g. "Mar 2026")
   const months: Record<string, string> = {
-    jan: '01', january: '01',
-    feb: '02', february: '02',
-    mar: '03', march: '03',
-    apr: '04', april: '04',
-    may: '05',
-    jun: '06', june: '06',
-    jul: '07', july: '07',
-    aug: '08', august: '08',
-    sep: '09', september: '09',
-    oct: '10', october: '10',
-    nov: '11', november: '11',
+    jan: '01', january: '01', feb: '02', february: '02',
+    mar: '03', march: '03', apr: '04', april: '04',
+    may: '05', jun: '06', june: '06', jul: '07', july: '07',
+    aug: '08', august: '08', sep: '09', september: '09',
+    oct: '10', october: '10', nov: '11', november: '11',
     dec: '12', december: '12',
   };
-
-  // Try "Mon YYYY" or "Month YYYY"
-  const match = cleaned.match(/^([A-Za-z]+)\s+(\d{4})$/);
-  if (match) {
-    const mm = months[match[1].toLowerCase()];
-    if (mm) return `${mm}-${match[2]}`;
+  const wordMatch = cleaned.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (wordMatch) {
+    const mm = months[wordMatch[1].toLowerCase()];
+    if (mm) return `${mm}-${wordMatch[2]}`;
   }
-
-  // Try "YYYY-MM" format
-  const isoMatch = cleaned.match(/^(\d{4})-(\d{2})$/);
-  if (isoMatch) return `${isoMatch[2]}-${isoMatch[1]}`;
 
   return null;
 }
@@ -87,7 +85,7 @@ export async function POST(req: NextRequest) {
 
     if (Object.keys(monthMap).length === 0) {
       return NextResponse.json({
-        error: 'Could not parse month headers from columns Q-W. Expected format: "Mar 2026", "Apr 2026", etc.',
+        error: 'Could not parse month headers from columns Q-W. Expected format: "MM-YYYY" (e.g. "05-2026").',
       }, { status: 400 });
     }
 
@@ -96,8 +94,9 @@ export async function POST(req: NextRequest) {
     const currentMonthCol = sortedCols[sortedCols.length - 1];
     const currentMonthKey = monthMap[currentMonthCol];
 
-    // Load existing data
+    // Load existing data (ensure ytd exists for backwards compat)
     const data = await loadDispoData();
+    if (!data.ytd) data.ytd = {};
 
     const allStores = new Set<string>();
     const allProducts = new Set<string>();
@@ -137,6 +136,11 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+
+      // Update YTD sales (Col X — "Curr Y/S", always overwrite with latest)
+      const ytdUnits = Number(row[COL_YTD]) || 0;
+      if (!data.ytd[siteName]) data.ytd[siteName] = {};
+      data.ytd[siteName][articleDesc] = ytdUnits;
 
       // Update stock (latest snapshot)
       const soh = Number(row[COL_SOH]) || 0;

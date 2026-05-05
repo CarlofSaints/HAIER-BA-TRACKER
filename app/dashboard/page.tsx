@@ -32,6 +32,7 @@ interface DispoSalesData {
   sales: Record<string, Record<string, Record<string, number>>>;
   stock: Record<string, Record<string, { soh: number; soo: number }>>;
   prices: Record<string, { inclSP: number; promSP: number }>;
+  ytd: Record<string, Record<string, number>>;
   uploads: unknown[];
 }
 

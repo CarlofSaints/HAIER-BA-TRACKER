@@ -9,6 +9,7 @@ interface DispoSalesData {
   sales: Record<string, Record<string, Record<string, number>>>;
   stock: Record<string, Record<string, { soh: number; soo: number }>>;
   prices: Record<string, { inclSP: number; promSP: number }>;
+  ytd: Record<string, Record<string, number>>;
   uploads: { id: string; fileName: string; uploadedAt: string; rowCount: number }[];
 }
 
@@ -65,7 +66,7 @@ export default function SalesPage() {
   // Store summary
   const storeSummary = useMemo(() => {
     if (!data) return [];
-    const storeMap = new Map<string, { units: number; value: number; soh: number; soo: number }>();
+    const storeMap = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number }>();
 
     const monthsToUse = monthFilter === 'all' ? Object.keys(data.sales) : [monthFilter];
 
@@ -73,7 +74,7 @@ export default function SalesPage() {
       const monthData = data.sales[month];
       if (!monthData) continue;
       for (const [store, products] of Object.entries(monthData)) {
-        if (!storeMap.has(store)) storeMap.set(store, { units: 0, value: 0, soh: 0, soo: 0 });
+        if (!storeMap.has(store)) storeMap.set(store, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
         const entry = storeMap.get(store)!;
         for (const [article, units] of Object.entries(products)) {
           entry.units += units;
@@ -82,13 +83,22 @@ export default function SalesPage() {
       }
     }
 
-    // Add stock data
+    // Add stock + YTD data
     for (const [store, products] of Object.entries(data.stock)) {
-      if (!storeMap.has(store)) storeMap.set(store, { units: 0, value: 0, soh: 0, soo: 0 });
+      if (!storeMap.has(store)) storeMap.set(store, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
       const entry = storeMap.get(store)!;
       for (const { soh, soo } of Object.values(products)) {
         entry.soh += soh;
         entry.soo += soo;
+      }
+    }
+    if (data.ytd) {
+      for (const [store, products] of Object.entries(data.ytd)) {
+        if (!storeMap.has(store)) storeMap.set(store, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
+        const entry = storeMap.get(store)!;
+        for (const units of Object.values(products)) {
+          entry.ytd += units;
+        }
       }
     }
 
@@ -100,7 +110,7 @@ export default function SalesPage() {
   // Product summary
   const productSummary = useMemo(() => {
     if (!data) return [];
-    const prodMap = new Map<string, { units: number; value: number; soh: number; soo: number }>();
+    const prodMap = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number }>();
 
     const monthsToUse = monthFilter === 'all' ? Object.keys(data.sales) : [monthFilter];
 
@@ -109,7 +119,7 @@ export default function SalesPage() {
       if (!monthData) continue;
       for (const products of Object.values(monthData)) {
         for (const [article, units] of Object.entries(products)) {
-          if (!prodMap.has(article)) prodMap.set(article, { units: 0, value: 0, soh: 0, soo: 0 });
+          if (!prodMap.has(article)) prodMap.set(article, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
           const entry = prodMap.get(article)!;
           entry.units += units;
           entry.value += calcValue(units, data.prices[article]);
@@ -117,13 +127,21 @@ export default function SalesPage() {
       }
     }
 
-    // Add stock data
+    // Add stock + YTD data
     for (const products of Object.values(data.stock)) {
       for (const [article, { soh, soo }] of Object.entries(products)) {
-        if (!prodMap.has(article)) prodMap.set(article, { units: 0, value: 0, soh: 0, soo: 0 });
+        if (!prodMap.has(article)) prodMap.set(article, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
         const entry = prodMap.get(article)!;
         entry.soh += soh;
         entry.soo += soo;
+      }
+    }
+    if (data.ytd) {
+      for (const products of Object.values(data.ytd)) {
+        for (const [article, units] of Object.entries(products)) {
+          if (!prodMap.has(article)) prodMap.set(article, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
+          prodMap.get(article)!.ytd += units;
+        }
       }
     }
 
@@ -135,7 +153,7 @@ export default function SalesPage() {
   // Detail table
   const detailRows = useMemo(() => {
     if (!data) return [];
-    const rows: { store: string; article: string; units: number; value: number; soh: number; soo: number; monthUnits: Record<string, number> }[] = [];
+    const rows: { store: string; article: string; units: number; value: number; ytd: number; soh: number; soo: number; monthUnits: Record<string, number> }[] = [];
 
     const monthsToUse = monthFilter === 'all' ? Object.keys(data.sales) : [monthFilter];
 
@@ -160,11 +178,13 @@ export default function SalesPage() {
     for (const [key, d] of combos.entries()) {
       const [store, article] = key.split('|||');
       const stockEntry = data.stock[store]?.[article];
+      const ytdVal = data.ytd?.[store]?.[article] || 0;
       rows.push({
         store,
         article,
         units: d.units,
         value: d.value,
+        ytd: ytdVal,
         soh: stockEntry?.soh || 0,
         soo: stockEntry?.soo || 0,
         monthUnits: d.monthUnits,
@@ -181,23 +201,23 @@ export default function SalesPage() {
     let wsData: unknown[][] = [];
 
     if (tableType === 'store') {
-      wsData = [['Store', 'Total Units', 'Total Value', 'SOH', 'SOO']];
+      wsData = [['Store', 'Total Units', 'Total Value', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of storeSummary) {
-        wsData.push([r.store, r.units, r.value, r.soh, r.soo]);
+        wsData.push([r.store, r.units, r.value, r.ytd, r.soh, r.soo]);
       }
     } else if (tableType === 'product') {
-      wsData = [['Article', 'Total Units', 'Total Value', 'SOH', 'SOO']];
+      wsData = [['Article', 'Total Units', 'Total Value', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of productSummary) {
-        wsData.push([r.article, r.units, r.value, r.soh, r.soo]);
+        wsData.push([r.article, r.units, r.value, r.ytd, r.soh, r.soo]);
       }
     } else {
       const monthCols = monthFilter === 'all' ? months : [monthFilter];
-      wsData = [['Store', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Total Value', 'SOH', 'SOO']];
+      wsData = [['Store', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Total Value', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of detailRows) {
         wsData.push([
           r.store, r.article,
           ...monthCols.map(m => r.monthUnits[m] || 0),
-          r.units, r.value, r.soh, r.soo,
+          r.units, r.value, r.ytd, r.soh, r.soo,
         ]);
       }
     }
@@ -296,6 +316,7 @@ export default function SalesPage() {
                         <th>Store</th>
                         <th style={{ textAlign: 'right' }}>Units</th>
                         <th style={{ textAlign: 'right' }}>Value</th>
+                        <th style={{ textAlign: 'right' }}>YTD Sales</th>
                         <th style={{ textAlign: 'right' }}>SOH</th>
                         <th style={{ textAlign: 'right' }}>SOO</th>
                       </tr>
@@ -306,6 +327,7 @@ export default function SalesPage() {
                           <td>{r.store}</td>
                           <td style={{ textAlign: 'right' }}>{r.units.toLocaleString()}</td>
                           <td style={{ textAlign: 'right' }}>{formatCurrency(r.value)}</td>
+                          <td style={{ textAlign: 'right' }}>{r.ytd.toLocaleString()}</td>
                           <td style={{ textAlign: 'right' }}>{r.soh.toLocaleString()}</td>
                           <td style={{ textAlign: 'right' }}>{r.soo.toLocaleString()}</td>
                         </tr>
@@ -321,6 +343,7 @@ export default function SalesPage() {
                         <th>Article</th>
                         <th style={{ textAlign: 'right' }}>Units</th>
                         <th style={{ textAlign: 'right' }}>Value</th>
+                        <th style={{ textAlign: 'right' }}>YTD Sales</th>
                         <th style={{ textAlign: 'right' }}>SOH</th>
                         <th style={{ textAlign: 'right' }}>SOO</th>
                       </tr>
@@ -331,6 +354,7 @@ export default function SalesPage() {
                           <td>{r.article}</td>
                           <td style={{ textAlign: 'right' }}>{r.units.toLocaleString()}</td>
                           <td style={{ textAlign: 'right' }}>{formatCurrency(r.value)}</td>
+                          <td style={{ textAlign: 'right' }}>{r.ytd.toLocaleString()}</td>
                           <td style={{ textAlign: 'right' }}>{r.soh.toLocaleString()}</td>
                           <td style={{ textAlign: 'right' }}>{r.soo.toLocaleString()}</td>
                         </tr>
@@ -350,6 +374,7 @@ export default function SalesPage() {
                         ))}
                         <th style={{ textAlign: 'right' }}>Total Units</th>
                         <th style={{ textAlign: 'right' }}>Value</th>
+                        <th style={{ textAlign: 'right' }}>YTD Sales</th>
                         <th style={{ textAlign: 'right' }}>SOH</th>
                         <th style={{ textAlign: 'right' }}>SOO</th>
                       </tr>
@@ -364,6 +389,7 @@ export default function SalesPage() {
                           ))}
                           <td style={{ textAlign: 'right' }}>{r.units.toLocaleString()}</td>
                           <td style={{ textAlign: 'right' }}>{formatCurrency(r.value)}</td>
+                          <td style={{ textAlign: 'right' }}>{r.ytd.toLocaleString()}</td>
                           <td style={{ textAlign: 'right' }}>{r.soh.toLocaleString()}</td>
                           <td style={{ textAlign: 'right' }}>{r.soo.toLocaleString()}</td>
                         </tr>

@@ -18,6 +18,8 @@ export interface DispoSalesData {
   stock: Record<string, Record<string, { soh: number; soo: number }>>;
   // prices[articleDesc] = { inclSP, promSP }  (latest)
   prices: Record<string, { inclSP: number; promSP: number }>;
+  // ytd[storeName][articleDesc] = YTD sales units (Col X "Curr Y/S")
+  ytd: Record<string, Record<string, number>>;
   // upload log
   uploads: DispoUploadMeta[];
 }
@@ -28,6 +30,7 @@ const EMPTY_DATA: DispoSalesData = {
   sales: {},
   stock: {},
   prices: {},
+  ytd: {},
   uploads: [],
 };
 
