@@ -16,6 +16,7 @@ export const ALL_PERMISSIONS = [
   { key: 'roles.manage', label: 'Manage Roles & Permissions' },
   { key: 'settings.view', label: 'View Settings' },
   { key: 'settings.manage', label: 'Edit Settings' },
+  { key: 'upload.dispo', label: 'Upload Sales/Stock Data (DISPO)' },
 ];
 
 const DEFAULT_ROLES: RoleConfig[] = [

@@ -6,6 +6,13 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 
+interface DispoSalesData {
+  sales: Record<string, Record<string, Record<string, number>>>;
+  stock: Record<string, Record<string, { soh: number; soo: number }>>;
+  prices: Record<string, { inclSP: number; promSP: number }>;
+  uploads: unknown[];
+}
+
 interface MonthScore {
   total: number;
   grandTotal: number;
@@ -72,9 +79,11 @@ export default function LeaderboardPage() {
   const [sortField, setSortField] = useState<SortField>('grandTotal');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   const trendMonths = useMemo(() => getLastNMonths(6), []);
+  const [dispoData, setDispoData] = useState<DispoSalesData | null>(null);
+  const [visitsData, setVisitsData] = useState<{ email: string; repName: string; storeName: string; formsCompleted: number }[]>([]);
 
   // Column resize state
-  const DEFAULT_WIDTHS = useMemo(() => [60, 180, 160, 200, 80, 60, 100], []);
+  const DEFAULT_WIDTHS = useMemo(() => [60, 180, 160, 200, 80, 60, 100, 80, 100], []);
   const [colWidths, setColWidths] = useState<number[]>(DEFAULT_WIDTHS);
   const [trendColWidth, setTrendColWidth] = useState(70);
   const dragRef = useRef<{ colIdx: number; startX: number; startW: number; isTrend: boolean } | null>(null);
@@ -132,8 +141,14 @@ export default function LeaderboardPage() {
   const loadData = useCallback(async () => {
     setLoadingData(true);
     try {
-      const res = await authFetch('/api/scores/leaderboard?months=12');
-      if (res.ok) setData(await res.json());
+      const [lbRes, dispoRes, visitsRes] = await Promise.all([
+        authFetch('/api/scores/leaderboard?months=12'),
+        authFetch('/api/dispo'),
+        authFetch('/api/visits'),
+      ]);
+      if (lbRes.ok) setData(await lbRes.json());
+      if (dispoRes.ok) setDispoData(await dispoRes.json());
+      if (visitsRes.ok) setVisitsData(await visitsRes.json());
     } catch { /* ignore */ }
     setLoadingData(false);
   }, []);
@@ -161,6 +176,60 @@ export default function LeaderboardPage() {
 
     return entries;
   }, [data, selectedMonth, sortField, sortDir]);
+
+  // DISPO sales per store (all products combined)
+  const storeSales = useMemo(() => {
+    if (!dispoData) return new Map<string, { vol: number; val: number }>();
+    const map = new Map<string, { vol: number; val: number }>();
+    for (const monthData of Object.values(dispoData.sales)) {
+      for (const [store, products] of Object.entries(monthData)) {
+        if (!map.has(store)) map.set(store, { vol: 0, val: 0 });
+        const entry = map.get(store)!;
+        for (const [article, units] of Object.entries(products)) {
+          entry.vol += units;
+          const p = dispoData.prices[article];
+          if (p) {
+            const price = p.promSP > 0 ? p.promSP : p.inclSP;
+            entry.val += units * price;
+          }
+        }
+      }
+    }
+    return map;
+  }, [dispoData]);
+
+  const hasDispoData = storeSales.size > 0;
+
+  // Top Sales Store (store with highest total sales value)
+  const topSalesStore = useMemo(() => {
+    if (!hasDispoData) return null;
+    let best: { store: string; val: number; ba: string } | null = null;
+    for (const [store, { val }] of storeSales.entries()) {
+      if (!best || val > best.val) {
+        // Find BA assigned to this store
+        const ba = data.find(d => d.storeName === store);
+        best = { store, val, ba: ba?.repName || '' };
+      }
+    }
+    return best;
+  }, [storeSales, hasDispoData, data]);
+
+  // Top Form Compliance (BA with most forms completed)
+  const topFormBA = useMemo(() => {
+    if (visitsData.length === 0) return null;
+    const formMap = new Map<string, { name: string; forms: number }>();
+    for (const v of visitsData) {
+      const key = (v.email || v.repName || '').toLowerCase();
+      if (!key) continue;
+      if (!formMap.has(key)) formMap.set(key, { name: v.repName || v.email || key, forms: 0 });
+      formMap.get(key)!.forms += v.formsCompleted || 0;
+    }
+    let best: { name: string; forms: number } | null = null;
+    for (const entry of formMap.values()) {
+      if (!best || entry.forms > best.forms) best = entry;
+    }
+    return best;
+  }, [visitsData]);
 
   // KPI summary cards
   const kpis = useMemo(() => {
@@ -250,6 +319,30 @@ export default function LeaderboardPage() {
                 <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>BAs at Risk (&lt;60%)</div>
                 <div style={{ fontSize: '1.5rem', fontWeight: 700, color: kpis.atRisk > 0 ? '#dc2626' : '#059669' }}>{kpis.atRisk}</div>
               </div>
+              {topSalesStore && (
+                <div className="kpi-card">
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Top Sales Store</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#059669', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {topSalesStore.store}
+                  </div>
+                  {topSalesStore.ba && (
+                    <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {topSalesStore.ba}
+                    </div>
+                  )}
+                </div>
+              )}
+              {topFormBA && (
+                <div className="kpi-card">
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Top Form Compliance</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0054A6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {topFormBA.name}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: 2 }}>
+                    {topFormBA.forms.toLocaleString()} forms
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Ranking Table */}
@@ -278,6 +371,12 @@ export default function LeaderboardPage() {
                       <th style={{ textAlign: 'center', cursor: 'pointer', position: 'relative' }} onClick={() => toggleSort('grandTotal')}>
                         Grand Total{sortArrow('grandTotal')}{resizeHandle(6)}
                       </th>
+                      {hasDispoData && (
+                        <>
+                          <th style={{ textAlign: 'right', position: 'relative' }}>Sales Vol{resizeHandle(7)}</th>
+                          <th style={{ textAlign: 'right', position: 'relative' }}>Sales Val{resizeHandle(8)}</th>
+                        </>
+                      )}
                       {showTrend && trendMonths.slice(1).map(m => (
                         <th key={m} style={{ textAlign: 'center', fontSize: '0.7rem', position: 'relative' }}>
                           {formatMonth(m)}{resizeHandle(0, true)}
@@ -288,7 +387,7 @@ export default function LeaderboardPage() {
                   <tbody>
                     {ranked.length === 0 ? (
                       <tr>
-                        <td colSpan={7 + (showTrend ? trendMonths.length - 1 : 0)} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                        <td colSpan={7 + (hasDispoData ? 2 : 0) + (showTrend ? trendMonths.length - 1 : 0)} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                           No scores for {formatMonth(selectedMonth)}
                         </td>
                       </tr>
@@ -336,6 +435,19 @@ export default function LeaderboardPage() {
                           <td style={{ textAlign: 'center', fontWeight: 700, color: '#0054A6', fontSize: '1rem' }}>
                             {entry.grandTotal}
                           </td>
+                          {hasDispoData && (() => {
+                            const ss = storeSales.get(entry.storeName);
+                            return (
+                              <>
+                                <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
+                                  {ss ? ss.vol.toLocaleString() : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
+                                  {ss ? `R ${ss.val.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}` : '-'}
+                                </td>
+                              </>
+                            );
+                          })()}
                           {showTrend && trendMonths.slice(1).map(m => {
                             const ms = data.find(d => d.email === entry.email)?.scores[m];
                             return (
@@ -351,6 +463,13 @@ export default function LeaderboardPage() {
                 </table>
               </div>
             </div>
+
+            {/* DISPO sales warning */}
+            {hasDispoData && (
+              <div style={{ marginTop: '1rem', padding: '0.5rem 0.75rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: '0.7rem', color: '#92400e' }}>
+                Sales value is calculated (units x price) and not supplied directly from channel.
+              </div>
+            )}
           </>
         )}
 

@@ -28,6 +28,13 @@ interface Visit {
   networkOnCheckIn: string;
 }
 
+interface DispoSalesData {
+  sales: Record<string, Record<string, Record<string, number>>>;
+  stock: Record<string, Record<string, { soh: number; soo: number }>>;
+  prices: Record<string, { inclSP: number; promSP: number }>;
+  uploads: unknown[];
+}
+
 const PIE_COLORS = ['#0054A6', '#00A0E9', '#1A1A2E', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
 const PAGE_SIZE = 100;
 
@@ -43,6 +50,7 @@ export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>('checkInDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [dispoData, setDispoData] = useState<DispoSalesData | null>(null);
 
   const loadVisits = useCallback(async () => {
     setLoadingData(true);
@@ -57,7 +65,13 @@ export default function DashboardPage() {
   }, [fromDate, toDate]);
 
   useEffect(() => {
-    if (session) loadVisits();
+    if (session) {
+      loadVisits();
+      authFetch('/api/dispo')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setDispoData(d); })
+        .catch(() => {});
+    }
   }, [session, loadVisits]);
 
   // Channel filter applied client-side
@@ -97,6 +111,26 @@ export default function DashboardPage() {
 
     return { totalVisits, uniqueStores, uniqueReps, totalForms, totalPics, avgDurStr };
   }, [filtered]);
+
+  // DISPO sales KPIs
+  const dispoKpis = useMemo(() => {
+    if (!dispoData || !dispoData.sales) return { volume: 0, value: 0 };
+    let totalUnits = 0;
+    let totalValue = 0;
+    for (const monthData of Object.values(dispoData.sales)) {
+      for (const products of Object.values(monthData)) {
+        for (const [article, units] of Object.entries(products)) {
+          totalUnits += units;
+          const p = dispoData.prices[article];
+          if (p) {
+            const price = p.promSP > 0 ? p.promSP : p.inclSP;
+            totalValue += units * price;
+          }
+        }
+      }
+    }
+    return { volume: totalUnits, value: totalValue };
+  }, [dispoData]);
 
   // Chart: visits per day
   const visitsPerDay = useMemo(() => {
@@ -253,7 +287,26 @@ export default function DashboardPage() {
                 <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Active Reps</div>
                 <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{kpis.uniqueReps.toLocaleString()}</div>
               </div>
+              {dispoData && dispoKpis.volume > 0 && (
+                <>
+                  <div className="kpi-card">
+                    <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Sales Volume (units)</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#059669' }}>{dispoKpis.volume.toLocaleString()}</div>
+                  </div>
+                  <div className="kpi-card">
+                    <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Sales Value</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#059669' }}>R {dispoKpis.value.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* DISPO sales warning */}
+            {dispoData && dispoKpis.volume > 0 && (
+              <div style={{ marginBottom: '1.5rem', padding: '0.5rem 0.75rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: '0.7rem', color: '#92400e' }}>
+                Sales value is calculated (units x price) and not supplied directly from channel.
+              </div>
+            )}
 
             {/* Charts */}
             {filtered.length > 0 && (
