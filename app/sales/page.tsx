@@ -29,6 +29,8 @@ interface VisitRecord {
   storeName: string;
   storeCode: string;
   checkInDate: string;
+  email?: string;
+  repName?: string;
 }
 
 type ViewMode = 'store' | 'product' | 'detail';
@@ -200,8 +202,8 @@ export default function SalesPage() {
     return map;
   }, [storeMaster]);
 
-  // Visit counts per storeName (filtered by month), matched via storeCode → siteCode
-  const storeVisitCounts = useMemo(() => {
+  // Check-in counts per storeName (filtered by month), matched via storeCode → siteCode
+  const storeCheckinCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const v of visits) {
       // checkInDate is YYYY-MM-DD; monthFilter is MM-YYYY
@@ -213,6 +215,27 @@ export default function SalesPage() {
       // Match visit.storeCode to store master siteCode → storeName
       const storeName = siteCodeToStoreName[v.storeCode];
       if (storeName) {
+        counts[storeName] = (counts[storeName] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [visits, monthFilter, siteCodeToStoreName]);
+
+  // Unique visit counts per storeName (deduplicated: max 1 per user+store+date)
+  const storeVisitCounts = useMemo(() => {
+    const seen = new Set<string>();
+    const counts: Record<string, number> = {};
+    for (const v of visits) {
+      if (monthFilter !== 'all') {
+        const [yyyy, mm] = v.checkInDate.split('-');
+        const visitMonth = `${mm}-${yyyy}`;
+        if (visitMonth !== monthFilter) continue;
+      }
+      const storeName = siteCodeToStoreName[v.storeCode];
+      if (!storeName) continue;
+      const key = `${(v.email || v.repName || '').toLowerCase()}|${storeName}|${v.checkInDate}`;
+      if (!seen.has(key)) {
+        seen.add(key);
         counts[storeName] = (counts[storeName] || 0) + 1;
       }
     }
@@ -325,6 +348,7 @@ export default function SalesPage() {
       ...r,
       channel: channelNameMap[storeChannelMap[r.store] || ''] || '',
       visits: storeVisitCounts[r.store] || 0,
+      checkins: storeCheckinCounts[r.store] || 0,
       contribVol: totalUnits > 0 ? (r.units / totalUnits) * 100 : 0,
       contribVal: totalValue > 0 ? (r.value / totalValue) * 100 : 0,
       growthLM: r.prevUnits > 0 ? ((r.curUnits - r.prevUnits) / r.prevUnits) * 100 : (r.curUnits > 0 ? null : null) as number | null,
@@ -337,7 +361,7 @@ export default function SalesPage() {
     }
 
     return sortArray(enriched, sortKey, sortDir, viewMode === 'store');
-  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts]);
+  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts, storeCheckinCounts]);
 
   // Product summary with contribution and growth
   const productSummary = useMemo(() => {
@@ -445,7 +469,7 @@ export default function SalesPage() {
       }
     }
 
-    const rows: { store: string; channel: string; article: string; visits: number; units: number; value: number; ytd: number; soh: number; soo: number; monthUnits: Record<string, number>; growthLM: number | null }[] = [];
+    const rows: { store: string; channel: string; article: string; visits: number; checkins: number; units: number; value: number; ytd: number; soh: number; soo: number; monthUnits: Record<string, number>; growthLM: number | null }[] = [];
     for (const [key, d] of combos.entries()) {
       const [store, article] = key.split('|||');
       const stockEntry = data.stock[store]?.[article];
@@ -459,6 +483,7 @@ export default function SalesPage() {
         channel: channelNameMap[storeChannelMap[store] || ''] || '',
         article,
         visits: storeVisitCounts[store] || 0,
+        checkins: storeCheckinCounts[store] || 0,
         units: d.units,
         value: d.value,
         ytd: ytdVal,
@@ -470,7 +495,7 @@ export default function SalesPage() {
     }
 
     return sortArray(rows, sortKey, sortDir, viewMode === 'detail');
-  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts]);
+  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts, storeCheckinCounts]);
 
   // DC data (separate section) — now sortable
   const dcRows = useMemo(() => {
@@ -543,16 +568,16 @@ export default function SalesPage() {
     let wsData: unknown[][] = [];
 
     if (viewMode === 'store') {
-      wsData = [['Channel', 'Store', 'Visits', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
-      for (const r of storeSummary) wsData.push([r.channel, r.store, r.visits, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
+      wsData = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      for (const r of storeSummary) wsData.push([r.channel, r.store, r.visits, r.checkins, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
     } else if (viewMode === 'product') {
       wsData = [['Article', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of productSummary) wsData.push([r.article, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
     } else {
       const monthCols = monthFilter === 'all' ? months : [monthFilter];
-      wsData = [['Channel', 'Store', 'Visits', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      wsData = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of detailRows) {
-        wsData.push([r.channel, r.store, r.visits, r.article, ...monthCols.map(m => r.monthUnits[m] || 0), r.units, r.value, r.growthLM, r.ytd, r.soh, r.soo]);
+        wsData.push([r.channel, r.store, r.visits, r.checkins, r.article, ...monthCols.map(m => r.monthUnits[m] || 0), r.units, r.value, r.growthLM, r.ytd, r.soh, r.soo]);
       }
     }
 
@@ -568,7 +593,7 @@ export default function SalesPage() {
     const wb = XLSX.utils.book_new();
 
     // Store Summary (unfiltered, non-DC)
-    const storeData: unknown[][] = [['Channel', 'Store', 'Visits', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+    const storeData: unknown[][] = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const allMonths = Object.keys(data.sales);
     const storeAgg = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number; curUnits: number; prevUnits: number }>();
     for (const month of allMonths) {
@@ -602,7 +627,7 @@ export default function SalesPage() {
     const totalValueS = storeArr.reduce((s, [, d]) => s + d.value, 0);
     for (const [store, d] of storeArr) {
       const g = d.prevUnits > 0 ? ((d.curUnits - d.prevUnits) / d.prevUnits) * 100 : null;
-      storeData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, storeVisitCounts[store] || 0, d.units, d.value, totalUnitsS > 0 ? (d.units / totalUnitsS * 100) : 0, totalValueS > 0 ? (d.value / totalValueS * 100) : 0, g, d.ytd, d.soh, d.soo]);
+      storeData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, storeVisitCounts[store] || 0, storeCheckinCounts[store] || 0, d.units, d.value, totalUnitsS > 0 ? (d.units / totalUnitsS * 100) : 0, totalValueS > 0 ? (d.value / totalValueS * 100) : 0, g, d.ytd, d.soh, d.soo]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(storeData), 'Store Summary');
 
@@ -647,7 +672,7 @@ export default function SalesPage() {
 
     // Detail
     const sortedMonths = months;
-    const detData: unknown[][] = [['Channel', 'Store', 'Visits', 'Article', ...sortedMonths.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+    const detData: unknown[][] = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Article', ...sortedMonths.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const detCombos = new Map<string, { units: number; value: number; monthUnits: Record<string, number> }>();
     for (const month of allMonths) {
       for (const [store, products] of Object.entries(data.sales[month])) {
@@ -669,7 +694,7 @@ export default function SalesPage() {
       const cur = currentMonth ? (d.monthUnits[currentMonth] || 0) : 0;
       const prev = prevMonth ? (d.monthUnits[prevMonth] || 0) : 0;
       const g = prev > 0 ? ((cur - prev) / prev) * 100 : null;
-      detData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, storeVisitCounts[store] || 0, article, ...sortedMonths.map(m => d.monthUnits[m] || 0), d.units, d.value, g, ytdVal, stock?.soh || 0, stock?.soo || 0]);
+      detData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, storeVisitCounts[store] || 0, storeCheckinCounts[store] || 0, article, ...sortedMonths.map(m => d.monthUnits[m] || 0), d.units, d.value, g, ytdVal, stock?.soh || 0, stock?.soo || 0]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detData), 'Detail');
 
@@ -762,9 +787,9 @@ export default function SalesPage() {
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Channel</label>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Sales Channel</label>
             <select className="select" value={channelFilter} onChange={e => setChannelFilter(e.target.value)} style={{ minWidth: 140 }}>
-              <option value="all">All Channels</option>
+              <option value="all">All Sales Channels</option>
               {channels.filter(c => c.id !== 'dc').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
@@ -880,9 +905,10 @@ export default function SalesPage() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        {renderSortHeader('Channel', 'channel')}
+                        {renderSortHeader('Sales Channel', 'channel')}
                         {renderSortHeader('Store', 'store')}
                         {renderSortHeader('Visits', 'visits', 'center')}
+                        {renderSortHeader('Check-ins', 'checkins', 'center')}
                         {renderSortHeader('Units', 'units', 'center')}
                         {renderSortHeader('Value', 'value', 'right')}
                         {renderSortHeader('Contrib Vol%', 'contribVol', 'center')}
@@ -899,6 +925,7 @@ export default function SalesPage() {
                           <td>{r.channel}</td>
                           <td>{r.store}</td>
                           <td style={ctr}>{r.visits}</td>
+                          <td style={ctr}>{r.checkins}</td>
                           <td style={ctr}>{r.units.toLocaleString()}</td>
                           <td style={rgt}>{formatCurrency(r.value)}</td>
                           <td style={ctr}>{formatPct(r.contribVol)}</td>
@@ -950,9 +977,10 @@ export default function SalesPage() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        {renderSortHeader('Channel', 'channel')}
+                        {renderSortHeader('Sales Channel', 'channel')}
                         {renderSortHeader('Store', 'store')}
                         {renderSortHeader('Visits', 'visits', 'center')}
+                        {renderSortHeader('Check-ins', 'checkins', 'center')}
                         {renderSortHeader('Article', 'article')}
                         {(monthFilter === 'all' ? months : [monthFilter]).map(m => (
                           <th key={m} style={{ textAlign: 'center' }}>{formatMonthLabel(m)}</th>
@@ -971,6 +999,7 @@ export default function SalesPage() {
                           <td>{r.channel}</td>
                           <td>{r.store}</td>
                           <td style={ctr}>{r.visits}</td>
+                          <td style={ctr}>{r.checkins}</td>
                           <td>{r.article}</td>
                           {(monthFilter === 'all' ? months : [monthFilter]).map(m => (
                             <td key={m} style={ctr}>{(r.monthUnits[m] || 0).toLocaleString()}</td>

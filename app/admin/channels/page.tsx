@@ -78,10 +78,10 @@ export default function ChannelsPage() {
       <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
       <main style={{ flex: 1, padding: '2rem', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
-          Channels
+          Sales Channels
         </h1>
         <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-          Manage sales channels (e.g. Makro, Walmart, DC)
+          Manage sales channels (e.g. Makro, Walmart, DC). These group stores for DISPO sales reporting.
         </p>
 
         {/* Add channel */}

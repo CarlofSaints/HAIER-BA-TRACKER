@@ -250,9 +250,9 @@ export default function DashboardPage() {
             <input className="input" type="date" value={toDate} onChange={e => { setToDate(e.target.value); setPage(1); }} style={{ width: 160 }} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Channel</label>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Visit Channel</label>
             <select className="select" value={channelFilter} onChange={e => { setChannelFilter(e.target.value); setPage(1); }} style={{ minWidth: 160 }}>
-              <option value="">All Channels</option>
+              <option value="">All Visit Channels</option>
               {channels.map(ch => <option key={ch} value={ch}>{ch}</option>)}
             </select>
           </div>
@@ -332,9 +332,9 @@ export default function DashboardPage() {
                   </ResponsiveContainer>
                 </div>
 
-                {/* Visits by channel */}
+                {/* Check-ins by visit channel */}
                 <div style={{ background: 'white', borderRadius: 12, padding: '1.25rem', border: '1px solid #e5e7eb' }}>
-                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Visits by Channel</h3>
+                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Check-ins by Visit Channel</h3>
                   <ResponsiveContainer width="100%" height={240}>
                     <PieChart>
                       <Pie data={visitsByChannel} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
@@ -386,7 +386,7 @@ export default function DashboardPage() {
                   <thead>
                     <tr>
                       <th onClick={() => toggleSort('repName')}>Rep{sortArrow('repName')}</th>
-                      <th onClick={() => toggleSort('channel')}>Channel{sortArrow('channel')}</th>
+                      <th onClick={() => toggleSort('channel')}>Visit Channel{sortArrow('channel')}</th>
                       <th onClick={() => toggleSort('storeName')}>Store{sortArrow('storeName')}</th>
                       <th onClick={() => toggleSort('checkInDate')}>Date{sortArrow('checkInDate')}</th>
                       <th onClick={() => toggleSort('checkInTime')}>In{sortArrow('checkInTime')}</th>
