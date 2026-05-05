@@ -87,6 +87,42 @@ export default function DashboardPage() {
     return Array.from(set).sort();
   }, [visits]);
 
+  // Helper: parse "HH:MM" or "HH:MM:SS" to minutes since midnight
+  function timeToMinutes(t: string): number | null {
+    if (!t) return null;
+    const p = t.split(':').map(Number);
+    if (p.length < 2 || isNaN(p[0]) || isNaN(p[1])) return null;
+    return p[0] * 60 + p[1];
+  }
+
+  // Compute per-visit durations: earliest check-in → latest check-out per (user+store+date)
+  const visitDurations = useMemo(() => {
+    const groups = new Map<string, { minIn: number; maxOut: number }>();
+    for (const v of filtered) {
+      const key = `${(v.email || v.repName).toLowerCase()}|${v.storeCode || v.storeName}|${v.checkInDate}`;
+      const inMin = timeToMinutes(v.checkInTime);
+      const outMin = timeToMinutes(v.checkOutTime);
+      if (inMin === null && outMin === null) continue;
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          minIn: inMin ?? Infinity,
+          maxOut: outMin ?? -Infinity,
+        });
+      } else {
+        if (inMin !== null && inMin < existing.minIn) existing.minIn = inMin;
+        if (outMin !== null && outMin > existing.maxOut) existing.maxOut = outMin;
+      }
+    }
+    const durations: number[] = [];
+    for (const { minIn, maxOut } of groups.values()) {
+      if (minIn !== Infinity && maxOut !== -Infinity && maxOut > minIn) {
+        durations.push(maxOut - minIn);
+      }
+    }
+    return durations;
+  }, [filtered]);
+
   // KPIs
   const kpis = useMemo(() => {
     const totalVisits = filtered.length;
@@ -98,23 +134,16 @@ export default function DashboardPage() {
       filtered.map(v => `${(v.email || v.repName).toLowerCase()}|${v.storeCode || v.storeName}|${v.checkInDate}`)
     ).size;
 
-    // Avg visit duration — parse "HH:MM" or "MM:SS" format
-    let totalMinutes = 0;
-    let durCount = 0;
-    for (const v of filtered) {
-      if (v.visitDuration) {
-        const parts = v.visitDuration.split(':').map(Number);
-        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-          totalMinutes += parts[0] * 60 + parts[1];
-          durCount++;
-        }
-      }
-    }
-    const avgDurMin = durCount > 0 ? Math.round(totalMinutes / durCount) : 0;
-    const avgDurStr = durCount > 0 ? `${Math.floor(avgDurMin / 60)}h ${avgDurMin % 60}m` : 'N/A';
+    // Avg visit duration from computed per-visit durations
+    const avgDurMin = visitDurations.length > 0
+      ? Math.round(visitDurations.reduce((s, d) => s + d, 0) / visitDurations.length)
+      : 0;
+    const avgDurStr = visitDurations.length > 0
+      ? `${Math.floor(avgDurMin / 60)}h ${avgDurMin % 60}m`
+      : 'N/A';
 
     return { totalVisits, uniqueVisits, uniqueStores, uniqueReps, totalForms, totalPics, avgDurStr };
-  }, [filtered]);
+  }, [filtered, visitDurations]);
 
   // DISPO sales KPIs
   const dispoKpis = useMemo(() => {
@@ -174,16 +203,12 @@ export default function DashboardPage() {
       .map(([name, forms]) => ({ name: name.length > 20 ? name.slice(0, 18) + '...' : name, forms }));
   }, [filtered]);
 
-  // Chart: visit duration distribution
+  // Chart: visit duration distribution (based on computed per-visit durations)
   const durationDist = useMemo(() => {
     const buckets: Record<string, number> = {
       '0-5m': 0, '5-15m': 0, '15-30m': 0, '30-60m': 0, '1-2h': 0, '2h+': 0,
     };
-    for (const v of filtered) {
-      if (!v.visitDuration) continue;
-      const parts = v.visitDuration.split(':').map(Number);
-      if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) continue;
-      const mins = parts[0] * 60 + parts[1];
+    for (const mins of visitDurations) {
       if (mins < 5) buckets['0-5m']++;
       else if (mins < 15) buckets['5-15m']++;
       else if (mins < 30) buckets['15-30m']++;
@@ -192,7 +217,7 @@ export default function DashboardPage() {
       else buckets['2h+']++;
     }
     return Object.entries(buckets).map(([range, count]) => ({ range, count }));
-  }, [filtered]);
+  }, [visitDurations]);
 
   // Sorted + paginated data
   const sortedData = useMemo(() => {
