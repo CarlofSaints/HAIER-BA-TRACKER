@@ -23,15 +23,16 @@ export async function GET(req: NextRequest) {
       allVisits.push(...visits);
     }
 
-    // Deduplicate by visitId (guards against overlapping imports)
-    const seenIds = new Set<string>();
+    // Deduplicate: by visitId when present, otherwise by composite key
+    const seenKeys = new Set<string>();
     const deduped: Visit[] = [];
     let dupCount = 0;
     for (const v of allVisits) {
-      if (v.visitId) {
-        if (seenIds.has(v.visitId)) { dupCount++; continue; }
-        seenIds.add(v.visitId);
-      }
+      const key = v.visitId
+        ? `id:${v.visitId}`
+        : `comp:${(v.email || v.repName || '').toLowerCase()}|${(v.storeCode || v.storeName || '').toLowerCase()}|${v.checkInDate || ''}|${v.checkInTime || ''}`;
+      if (seenKeys.has(key)) { dupCount++; continue; }
+      seenKeys.add(key);
       deduped.push(v);
     }
 
@@ -39,20 +40,22 @@ export async function GET(req: NextRequest) {
     if (url.searchParams.get('debug') === '1') {
       const noId = allVisits.filter(v => !v.visitId).length;
       // Find Cape Gate sample
-      const capeGate = allVisits.filter(v =>
+      const capeGate = deduped.filter(v =>
         (v.storeName || '').toLowerCase().includes('cape gate')
       );
-      const capeGateIds = capeGate.map(v => v.visitId || '(no id)');
+      const capeGateMay = capeGate.filter(v => (v.checkInDate || '').startsWith('2026-05'));
       return NextResponse.json({
         totalRaw: allVisits.length,
-        uniqueVisitIds: seenIds.size,
         withoutVisitId: noId,
         duplicatesRemoved: dupCount,
         afterDedup: deduped.length,
         uploadBatches: index.length,
         batchSizes: index.map(m => ({ id: m.id.slice(0, 8), file: m.fileName, rows: m.rowCount })),
-        capeGateRaw: capeGate.length,
-        capeGateVisitIds: capeGateIds,
+        capeGateAfterDedup: capeGate.length,
+        capeGateMay: capeGateMay.length,
+        capeGateMayDetails: capeGateMay.map(v => ({
+          date: v.checkInDate, time: v.checkInTime, rep: v.email || v.repName, id: v.visitId || '(no id)',
+        })),
       }, { headers: noCacheHeaders() });
     }
 
