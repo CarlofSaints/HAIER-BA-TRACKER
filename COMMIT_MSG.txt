@@ -1,1 +1,0 @@
-Perigee API fixes: auto-seed leaderboard, visit dedup, duration calc, scheduled polling with cron and UI 

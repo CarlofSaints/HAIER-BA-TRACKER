@@ -94,6 +94,9 @@ export default function DashboardPage() {
     const uniqueReps = new Set(filtered.map(v => v.email || v.repName)).size;
     const totalForms = filtered.reduce((s, v) => s + v.formsCompleted, 0);
     const totalPics = filtered.reduce((s, v) => s + v.picsUploaded, 0);
+    const uniqueVisits = new Set(
+      filtered.map(v => `${(v.email || v.repName).toLowerCase()}|${v.storeCode || v.storeName}|${v.checkInDate}`)
+    ).size;
 
     // Avg visit duration — parse "HH:MM" or "MM:SS" format
     let totalMinutes = 0;
@@ -110,7 +113,7 @@ export default function DashboardPage() {
     const avgDurMin = durCount > 0 ? Math.round(totalMinutes / durCount) : 0;
     const avgDurStr = durCount > 0 ? `${Math.floor(avgDurMin / 60)}h ${avgDurMin % 60}m` : 'N/A';
 
-    return { totalVisits, uniqueStores, uniqueReps, totalForms, totalPics, avgDurStr };
+    return { totalVisits, uniqueVisits, uniqueStores, uniqueReps, totalForms, totalPics, avgDurStr };
   }, [filtered]);
 
   // DISPO sales KPIs
@@ -265,7 +268,11 @@ export default function DashboardPage() {
             {/* KPI Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
               <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Total Visits</div>
+                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Visits</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{kpis.uniqueVisits.toLocaleString()}</div>
+              </div>
+              <div className="kpi-card">
+                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Check-ins</div>
                 <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{kpis.totalVisits.toLocaleString()}</div>
               </div>
               <div className="kpi-card">
@@ -314,7 +321,7 @@ export default function DashboardPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
                 {/* Visits per day */}
                 <div style={{ background: 'white', borderRadius: 12, padding: '1.25rem', border: '1px solid #e5e7eb' }}>
-                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Visits per Day</h3>
+                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Check-ins per Day</h3>
                   <ResponsiveContainer width="100%" height={240}>
                     <BarChart data={visitsPerDay}>
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
@@ -371,7 +378,7 @@ export default function DashboardPage() {
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
               <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', margin: 0 }}>
-                  All Visits ({filtered.length.toLocaleString()} rows)
+                  All Check-ins ({filtered.length.toLocaleString()} rows)
                 </h3>
               </div>
               <div style={{ overflowX: 'auto', maxHeight: 500 }}>
