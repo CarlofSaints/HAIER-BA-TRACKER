@@ -1,14 +1,25 @@
 import { loadVisitIndex, loadVisitData, Visit } from './visitData';
 import { loadScores, saveScores, BAScore } from './scoreData';
+import { loadScoringConfig } from './scoringConfig';
 
 /**
  * Seed leaderboard scores from visit data.
  * Called by both the manual "Seed from Visits" button and the Perigee auto-import.
- * Returns the number of months and BAs processed.
+ *
+ * Check-in on Time formula:
+ *   score = max(0, round(onTime% × 10) - round(earlyCheckout% × 10))
+ *
+ * - onTime% = visits where checkInTime <= lateCheckinTime threshold / total visits
+ * - earlyCheckout% = visits where checkOutTime < earlyCheckoutTime threshold / total visits
+ * - All visits counted regardless of status
  */
 export async function seedScoresFromVisits(
   triggeredBy: string
 ): Promise<{ months: number; bas: number }> {
+  // Load scoring thresholds
+  const scoringConfig = await loadScoringConfig();
+  const { lateCheckinTime, earlyCheckoutTime } = scoringConfig;
+
   // Load all visits
   const index = await loadVisitIndex();
   const allVisits: Visit[] = [];
@@ -42,22 +53,25 @@ export async function seedScoresFromVisits(
     }
 
     // Group visits by BA for this month
-    const baMap = new Map<string, { repName: string; total: number; onTime: number }>();
+    const baMap = new Map<string, { repName: string; total: number; onTime: number; earlyOut: number }>();
     for (const v of visits) {
       const email = (v.email || '').toLowerCase();
       if (!email) continue;
       if (!baMap.has(email)) {
-        baMap.set(email, { repName: v.repName || v.email, total: 0, onTime: 0 });
+        baMap.set(email, { repName: v.repName || v.email, total: 0, onTime: 0, earlyOut: 0 });
       }
       const entry = baMap.get(email)!;
       if (v.repName) entry.repName = v.repName;
       entry.total++;
 
-      // Accept CHECKED_OUT (manual upload) or VISITED (Perigee API) as completed
-      const isCompleted = ['CHECKED_OUT', 'VISITED'].includes((v.status || '').toUpperCase());
-      const isOnTime = v.checkInTime && v.checkInTime <= '09:00';
-      if (isCompleted && isOnTime) {
+      // On time: checkInTime <= lateCheckinTime threshold
+      if (v.checkInTime && v.checkInTime <= lateCheckinTime) {
         entry.onTime++;
+      }
+
+      // Early check-out: checkOutTime is present AND < earlyCheckoutTime threshold
+      if (v.checkOutTime && v.checkOutTime < earlyCheckoutTime) {
+        entry.earlyOut++;
       }
     }
 
@@ -66,7 +80,10 @@ export async function seedScoresFromVisits(
     const scores: BAScore[] = [];
 
     for (const [email, data] of baMap) {
-      const checkInScore = data.total > 0 ? Math.round((data.onTime / data.total) * 10) : 0;
+      // Formula: max(0, round(onTime% × 10) - round(earlyCheckout% × 10))
+      const onTimePts = data.total > 0 ? Math.round((data.onTime / data.total) * 10) : 0;
+      const earlyOutPts = data.total > 0 ? Math.round((data.earlyOut / data.total) * 10) : 0;
+      const checkInScore = Math.max(0, onTimePts - earlyOutPts);
 
       if (existingMap.has(email)) {
         // Existing score: update checkInOnTime + repName (preserve manual KPIs)

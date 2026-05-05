@@ -71,6 +71,8 @@ export default function SettingsPage() {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [schedule, setSchedule] = useState<PollSchedule>({ slots: [], timezone: 'Africa/Johannesburg' });
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const [scoringThresholds, setScoringThresholds] = useState({ lateCheckinTime: '09:10', earlyCheckoutTime: '16:50' });
+  const [savingScoring, setSavingScoring] = useState(false);
 
   useEffect(() => {
     if (!session) return;
@@ -85,6 +87,10 @@ export default function SettingsPage() {
     authFetch('/api/config/perigee-schedule')
       .then(r => r.json())
       .then(data => { if (data.slots) setSchedule(data); })
+      .catch(() => {});
+    authFetch('/api/config/scoring')
+      .then(r => r.json())
+      .then(data => { if (data.lateCheckinTime) setScoringThresholds(data); })
       .catch(() => {});
   }, [session]);
 
@@ -219,6 +225,27 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveScoring() {
+    setSavingScoring(true);
+    try {
+      const res = await authFetch('/api/config/scoring', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scoringThresholds),
+      });
+      if (res.ok) {
+        setToast({ msg: 'Scoring thresholds saved', type: 'success' });
+      } else {
+        const data = await res.json();
+        setToast({ msg: data.error || 'Failed to save', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Failed to save scoring thresholds', type: 'error' });
+    } finally {
+      setSavingScoring(false);
+    }
+  }
+
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
@@ -277,6 +304,53 @@ export default function SettingsPage() {
                 {saving ? 'Saving...' : 'Save Settings'}
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Scoring Thresholds */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 620, marginTop: '1.5rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
+            Scoring Thresholds
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
+            Check-in on Time KPI: score = max(0, onTime% &times; 10 &minus; earlyCheckout% &times; 10)
+          </p>
+
+          <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: '1fr 1fr' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
+                Late Check-in After
+              </label>
+              <input
+                className="input"
+                type="time"
+                value={scoringThresholds.lateCheckinTime}
+                onChange={e => setScoringThresholds(s => ({ ...s, lateCheckinTime: e.target.value }))}
+              />
+              <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 2 }}>
+                Check-in after this time = late
+              </div>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
+                Early Check-out Before
+              </label>
+              <input
+                className="input"
+                type="time"
+                value={scoringThresholds.earlyCheckoutTime}
+                onChange={e => setScoringThresholds(s => ({ ...s, earlyCheckoutTime: e.target.value }))}
+              />
+              <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 2 }}>
+                Check-out before this time = early
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '1rem' }}>
+            <button className="btn btn-primary" onClick={saveScoring} disabled={savingScoring}>
+              {savingScoring ? 'Saving...' : 'Save Thresholds'}
+            </button>
           </div>
         </div>
 

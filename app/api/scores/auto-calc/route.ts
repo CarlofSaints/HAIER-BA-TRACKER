@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
+import { loadScoringConfig } from '@/lib/scoringConfig';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -11,6 +12,9 @@ interface AutoCalcResult {
   score: number;
   totalVisits: number;
   onTimeVisits: number;
+  earlyCheckouts: number;
+  onTimePts: number;
+  earlyOutPts: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -23,6 +27,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid month format (YYYY-MM)' }, { status: 400 });
     }
 
+    // Load scoring thresholds
+    const { lateCheckinTime, earlyCheckoutTime } = await loadScoringConfig();
+
     // Load all visits
     const index = await loadVisitIndex();
     const allVisits = [];
@@ -32,38 +39,47 @@ export async function POST(req: NextRequest) {
     }
 
     // Filter visits for the target month
-    // checkInDate is "YYYY-MM-DD" — match first 7 chars to month
     const monthVisits = allVisits.filter(v => v.checkInDate && v.checkInDate.substring(0, 7) === month);
 
     // Group by BA email
-    const baMap = new Map<string, { repName: string; total: number; onTime: number }>();
+    const baMap = new Map<string, { repName: string; total: number; onTime: number; earlyOut: number }>();
 
     for (const v of monthVisits) {
       const key = (v.email || '').toLowerCase();
       if (!key) continue;
 
       if (!baMap.has(key)) {
-        baMap.set(key, { repName: v.repName || v.email, total: 0, onTime: 0 });
+        baMap.set(key, { repName: v.repName || v.email, total: 0, onTime: 0, earlyOut: 0 });
       }
       const entry = baMap.get(key)!;
       if (v.repName) entry.repName = v.repName;
       entry.total++;
 
-      // "On time" = checkInTime <= "09:00" AND status = "CHECKED_OUT"
-      const isCheckedOut = (v.status || '').toUpperCase() === 'CHECKED_OUT';
-      const isOnTime = v.checkInTime && v.checkInTime <= '09:00';
-      if (isCheckedOut && isOnTime) {
+      // On time: checkInTime <= lateCheckinTime threshold
+      if (v.checkInTime && v.checkInTime <= lateCheckinTime) {
         entry.onTime++;
+      }
+
+      // Early check-out: checkOutTime present AND < earlyCheckoutTime threshold
+      if (v.checkOutTime && v.checkOutTime < earlyCheckoutTime) {
+        entry.earlyOut++;
       }
     }
 
-    const results: AutoCalcResult[] = Array.from(baMap.entries()).map(([email, data]) => ({
-      email,
-      repName: data.repName,
-      totalVisits: data.total,
-      onTimeVisits: data.onTime,
-      score: data.total > 0 ? Math.round((data.onTime / data.total) * 10) : 0,
-    }));
+    const results: AutoCalcResult[] = Array.from(baMap.entries()).map(([email, data]) => {
+      const onTimePts = data.total > 0 ? Math.round((data.onTime / data.total) * 10) : 0;
+      const earlyOutPts = data.total > 0 ? Math.round((data.earlyOut / data.total) * 10) : 0;
+      return {
+        email,
+        repName: data.repName,
+        totalVisits: data.total,
+        onTimeVisits: data.onTime,
+        earlyCheckouts: data.earlyOut,
+        onTimePts,
+        earlyOutPts,
+        score: Math.max(0, onTimePts - earlyOutPts),
+      };
+    });
 
     return NextResponse.json(results, { headers: noCacheHeaders() });
   } catch (err) {

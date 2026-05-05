@@ -62,7 +62,7 @@ const KPI_ROWS: KPIRow[] = [
     name: 'Check-in on Time',
     maxPts: 10,
     source: 'Auto-calculated from visits',
-    description: 'Percentage of visits where check-in was before 09:00 with CHECKED_OUT status, scaled 0–10. Can be overridden manually.',
+    description: 'Score = max(0, onTime% × 10 − earlyCheckout% × 10). On time = checked in before threshold (default 09:10). Early checkout penalty = checked out before threshold (default 16:50). Thresholds are configurable in Settings.',
   },
   {
     num: 4,
