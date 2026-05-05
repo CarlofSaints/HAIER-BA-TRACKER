@@ -120,9 +120,10 @@ export async function POST(req: NextRequest) {
 
     const XLSX = require('xlsx');
     const buffer = Buffer.from(await file.arrayBuffer());
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const workbook = XLSX.read(buffer, { type: 'buffer', bookVBA: true });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
+    const range = sheet['!ref'] || 'unknown';
     const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
 
     if (rows.length < 3) {
@@ -152,10 +153,14 @@ export async function POST(req: NextRequest) {
     if (!found) {
       // Gather debug info from first 10 rows, columns Q-W
       const debug: Record<string, unknown> = {};
+      debug['_sheetRef'] = range;
+      debug['_totalRows'] = rows.length;
+      debug['_sheetNames'] = workbook.SheetNames;
       for (let r = 0; r < Math.min(10, rows.length); r++) {
         const row = rows[r] as unknown[];
-        if (!row) continue;
+        if (!row) { debug[`row${r + 1}`] = 'null/undefined'; continue; }
         const cells: Record<string, string> = {};
+        cells['_len'] = String(row.length);
         for (let col = SALES_COL_START; col <= SALES_COL_END; col++) {
           const letter = String.fromCharCode(65 + col);
           cells[letter] = `${typeof row[col]}: ${row[col]}`;
