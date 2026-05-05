@@ -1,0 +1,8 @@
+Sales page grid enhancements: frozen headers, DC sort/resize, channel column, contribution %, growth on LM%, centre-aligned numerics
+
+- Frozen column headers (sticky) in both main and DC grids
+- DC grid: sortable and resizable columns
+- Store and Detail grids: Channel field added before store name
+- Store and Product grids: Contrib Vol% and Contrib Val% columns
+- All grids except DC: Growth on LM% column (green/red colour coding)
+- All numeric non-currency values centre-aligned

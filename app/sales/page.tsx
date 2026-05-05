@@ -44,6 +44,11 @@ function formatMonthLabel(key: string): string {
   return `${names[parseInt(mm, 10) - 1]} ${yyyy}`;
 }
 
+function formatPct(val: number | null): string {
+  if (val === null) return '—';
+  return val.toFixed(1) + '%';
+}
+
 export default function SalesPage() {
   const { session, loading: authLoading, logout } = useAuth();
   const [data, setData] = useState<DispoSalesData | null>(null);
@@ -63,6 +68,10 @@ export default function SalesPage() {
   // Sort
   const [sortKey, setSortKey] = useState<string>('');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  // DC Sort
+  const [dcSortKey, setDcSortKey] = useState<string>('');
+  const [dcSortDir, setDcSortDir] = useState<SortDir>('asc');
 
   // Column resize
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
@@ -145,7 +154,14 @@ export default function SalesPage() {
     return map;
   }, [storeMaster]);
 
-  // Available months from data
+  // Channel name lookup
+  const channelNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const c of channels) map[c.id] = c.name;
+    return map;
+  }, [channels]);
+
+  // Available months from data (sorted newest first)
   const months = useMemo(() => {
     if (!data) return [];
     return Object.keys(data.sales).sort((a, b) => {
@@ -155,6 +171,16 @@ export default function SalesPage() {
       return bm - am;
     });
   }, [data]);
+
+  // Current month and previous month for Growth on LM%
+  const { currentMonth, prevMonth } = useMemo(() => {
+    if (months.length === 0) return { currentMonth: '', prevMonth: '' };
+    if (monthFilter !== 'all') {
+      const idx = months.indexOf(monthFilter);
+      return { currentMonth: monthFilter, prevMonth: idx < months.length - 1 ? months[idx + 1] : '' };
+    }
+    return { currentMonth: months[0], prevMonth: months.length > 1 ? months[1] : '' };
+  }, [months, monthFilter]);
 
   // Available store names (non-DC)
   const availableStores = useMemo(() => {
@@ -188,10 +214,10 @@ export default function SalesPage() {
     return true;
   }
 
-  // Store summary
+  // Store summary with channel, contribution, growth
   const storeSummary = useMemo(() => {
     if (!data) return [];
-    const storeMap = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number }>();
+    const storeMap = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number; curUnits: number; prevUnits: number }>();
     const monthsToUse = monthFilter === 'all' ? Object.keys(data.sales) : [monthFilter];
 
     for (const month of monthsToUse) {
@@ -199,7 +225,7 @@ export default function SalesPage() {
       if (!monthData) continue;
       for (const [store, products] of Object.entries(monthData)) {
         if (!storePassesFilter(store)) continue;
-        if (!storeMap.has(store)) storeMap.set(store, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
+        if (!storeMap.has(store)) storeMap.set(store, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0, curUnits: 0, prevUnits: 0 });
         const entry = storeMap.get(store)!;
         for (const [article, units] of Object.entries(products)) {
           if (productFilter.length > 0 && !productFilter.includes(article)) continue;
@@ -209,7 +235,29 @@ export default function SalesPage() {
       }
     }
 
-    // Add stock + YTD data
+    // Current month and previous month units for growth calc
+    if (currentMonth && data.sales[currentMonth]) {
+      for (const [store, products] of Object.entries(data.sales[currentMonth])) {
+        if (!storeMap.has(store)) continue;
+        const entry = storeMap.get(store)!;
+        for (const [article, units] of Object.entries(products)) {
+          if (productFilter.length > 0 && !productFilter.includes(article)) continue;
+          entry.curUnits += units;
+        }
+      }
+    }
+    if (prevMonth && data.sales[prevMonth]) {
+      for (const [store, products] of Object.entries(data.sales[prevMonth])) {
+        if (!storeMap.has(store)) continue;
+        const entry = storeMap.get(store)!;
+        for (const [article, units] of Object.entries(products)) {
+          if (productFilter.length > 0 && !productFilter.includes(article)) continue;
+          entry.prevUnits += units;
+        }
+      }
+    }
+
+    // Stock + YTD
     for (const [store, products] of Object.entries(data.stock)) {
       if (!storePassesFilter(store)) continue;
       if (!storeMap.has(store)) continue;
@@ -233,13 +281,30 @@ export default function SalesPage() {
     }
 
     const arr = Array.from(storeMap.entries()).map(([store, d]) => ({ store, ...d }));
-    return sortArray(arr, sortKey, sortDir, viewMode === 'store');
-  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode]);
+    const totalUnits = arr.reduce((s, r) => s + r.units, 0);
+    const totalValue = arr.reduce((s, r) => s + r.value, 0);
 
-  // Product summary
+    const enriched = arr.map(r => ({
+      ...r,
+      channel: channelNameMap[storeChannelMap[r.store] || ''] || '',
+      contribVol: totalUnits > 0 ? (r.units / totalUnits) * 100 : 0,
+      contribVal: totalValue > 0 ? (r.value / totalValue) * 100 : 0,
+      growthLM: r.prevUnits > 0 ? ((r.curUnits - r.prevUnits) / r.prevUnits) * 100 : (r.curUnits > 0 ? null : null) as number | null,
+    }));
+
+    // Fix growthLM: if prev=0 and cur>0, show null (new). If both 0, show 0.
+    for (const r of enriched) {
+      if (r.prevUnits === 0 && r.curUnits > 0) r.growthLM = null;
+      else if (r.prevUnits === 0 && r.curUnits === 0) r.growthLM = 0;
+    }
+
+    return sortArray(enriched, sortKey, sortDir, viewMode === 'store');
+  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap]);
+
+  // Product summary with contribution and growth
   const productSummary = useMemo(() => {
     if (!data) return [];
-    const prodMap = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number }>();
+    const prodMap = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number; curUnits: number; prevUnits: number }>();
     const monthsToUse = monthFilter === 'all' ? Object.keys(data.sales) : [monthFilter];
 
     for (const month of monthsToUse) {
@@ -249,10 +314,32 @@ export default function SalesPage() {
         if (!storePassesFilter(store)) continue;
         for (const [article, units] of Object.entries(products)) {
           if (productFilter.length > 0 && !productFilter.includes(article)) continue;
-          if (!prodMap.has(article)) prodMap.set(article, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
+          if (!prodMap.has(article)) prodMap.set(article, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0, curUnits: 0, prevUnits: 0 });
           const entry = prodMap.get(article)!;
           entry.units += units;
           entry.value += calcValue(units, data.prices[article]);
+        }
+      }
+    }
+
+    // Growth calc
+    if (currentMonth && data.sales[currentMonth]) {
+      for (const [store, products] of Object.entries(data.sales[currentMonth])) {
+        if (!storePassesFilter(store)) continue;
+        for (const [article, units] of Object.entries(products)) {
+          if (productFilter.length > 0 && !productFilter.includes(article)) continue;
+          if (!prodMap.has(article)) continue;
+          prodMap.get(article)!.curUnits += units;
+        }
+      }
+    }
+    if (prevMonth && data.sales[prevMonth]) {
+      for (const [store, products] of Object.entries(data.sales[prevMonth])) {
+        if (!storePassesFilter(store)) continue;
+        for (const [article, units] of Object.entries(products)) {
+          if (productFilter.length > 0 && !productFilter.includes(article)) continue;
+          if (!prodMap.has(article)) continue;
+          prodMap.get(article)!.prevUnits += units;
         }
       }
     }
@@ -279,10 +366,25 @@ export default function SalesPage() {
     }
 
     const arr = Array.from(prodMap.entries()).map(([article, d]) => ({ article, ...d }));
-    return sortArray(arr, sortKey, sortDir, viewMode === 'product');
-  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode]);
+    const totalUnits = arr.reduce((s, r) => s + r.units, 0);
+    const totalValue = arr.reduce((s, r) => s + r.value, 0);
 
-  // Detail table
+    const enriched = arr.map(r => ({
+      ...r,
+      contribVol: totalUnits > 0 ? (r.units / totalUnits) * 100 : 0,
+      contribVal: totalValue > 0 ? (r.value / totalValue) * 100 : 0,
+      growthLM: r.prevUnits > 0 ? ((r.curUnits - r.prevUnits) / r.prevUnits) * 100 : (r.curUnits > 0 ? null : 0) as number | null,
+    }));
+
+    for (const r of enriched) {
+      if (r.prevUnits === 0 && r.curUnits > 0) r.growthLM = null;
+      else if (r.prevUnits === 0 && r.curUnits === 0) r.growthLM = 0;
+    }
+
+    return sortArray(enriched, sortKey, sortDir, viewMode === 'product');
+  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth]);
+
+  // Detail table with channel and growth
   const detailRows = useMemo(() => {
     if (!data) return [];
     const monthsToUse = monthFilter === 'all' ? Object.keys(data.sales) : [monthFilter];
@@ -305,18 +407,33 @@ export default function SalesPage() {
       }
     }
 
-    const rows: { store: string; article: string; units: number; value: number; ytd: number; soh: number; soo: number; monthUnits: Record<string, number> }[] = [];
+    const rows: { store: string; channel: string; article: string; units: number; value: number; ytd: number; soh: number; soo: number; monthUnits: Record<string, number>; growthLM: number | null }[] = [];
     for (const [key, d] of combos.entries()) {
       const [store, article] = key.split('|||');
       const stockEntry = data.stock[store]?.[article];
       const ytdVal = data.ytd?.[store]?.[article] || 0;
-      rows.push({ store, article, units: d.units, value: d.value, ytd: ytdVal, soh: stockEntry?.soh || 0, soo: stockEntry?.soo || 0, monthUnits: d.monthUnits });
+      const curUnits = currentMonth ? (d.monthUnits[currentMonth] || 0) : 0;
+      const prevUnits = prevMonth ? (d.monthUnits[prevMonth] || 0) : 0;
+      let growthLM: number | null = prevUnits > 0 ? ((curUnits - prevUnits) / prevUnits) * 100 : null;
+      if (prevUnits === 0 && curUnits === 0) growthLM = 0;
+      rows.push({
+        store,
+        channel: channelNameMap[storeChannelMap[store] || ''] || '',
+        article,
+        units: d.units,
+        value: d.value,
+        ytd: ytdVal,
+        soh: stockEntry?.soh || 0,
+        soo: stockEntry?.soo || 0,
+        monthUnits: d.monthUnits,
+        growthLM,
+      });
     }
 
     return sortArray(rows, sortKey, sortDir, viewMode === 'detail');
-  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode]);
+  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap]);
 
-  // DC data (separate section)
+  // DC data (separate section) — now sortable
   const dcRows = useMemo(() => {
     if (!data) return [];
     const rows: { store: string; article: string; soh: number; soo: number }[] = [];
@@ -327,8 +444,16 @@ export default function SalesPage() {
         rows.push({ store, article, soh, soo });
       }
     }
+    if (dcSortKey) {
+      return [...rows].sort((a, b) => {
+        const av = (a as any)[dcSortKey];
+        const bv = (b as any)[dcSortKey];
+        if (typeof av === 'string') return dcSortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+        return dcSortDir === 'asc' ? (av - bv) : (bv - av);
+      });
+    }
     return rows.sort((a, b) => a.store.localeCompare(b.store) || a.article.localeCompare(b.article));
-  }, [data, dcStoreNames, productFilter]);
+  }, [data, dcStoreNames, productFilter, dcSortKey, dcSortDir]);
 
   // Sort helper
   function sortArray<T>(arr: T[], key: string, dir: SortDir, active: boolean): T[] {
@@ -336,6 +461,9 @@ export default function SalesPage() {
     return [...arr].sort((a, b) => {
       const av = (a as any)[key];
       const bv = (b as any)[key];
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
       if (typeof av === 'string') {
         return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
       }
@@ -349,6 +477,15 @@ export default function SalesPage() {
     } else {
       setSortKey(key);
       setSortDir('desc');
+    }
+  }
+
+  function toggleDcSort(key: string) {
+    if (dcSortKey === key) {
+      setDcSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setDcSortKey(key);
+      setDcSortDir('asc');
     }
   }
 
@@ -367,16 +504,16 @@ export default function SalesPage() {
     let wsData: unknown[][] = [];
 
     if (viewMode === 'store') {
-      wsData = [['Store', 'Total Units', 'Total Value', 'YTD Sales', 'SOH', 'SOO']];
-      for (const r of storeSummary) wsData.push([r.store, r.units, r.value, r.ytd, r.soh, r.soo]);
+      wsData = [['Channel', 'Store', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      for (const r of storeSummary) wsData.push([r.channel, r.store, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
     } else if (viewMode === 'product') {
-      wsData = [['Article', 'Total Units', 'Total Value', 'YTD Sales', 'SOH', 'SOO']];
-      for (const r of productSummary) wsData.push([r.article, r.units, r.value, r.ytd, r.soh, r.soo]);
+      wsData = [['Article', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      for (const r of productSummary) wsData.push([r.article, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
     } else {
       const monthCols = monthFilter === 'all' ? months : [monthFilter];
-      wsData = [['Store', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Total Value', 'YTD Sales', 'SOH', 'SOO']];
+      wsData = [['Channel', 'Store', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of detailRows) {
-        wsData.push([r.store, r.article, ...monthCols.map(m => r.monthUnits[m] || 0), r.units, r.value, r.ytd, r.soh, r.soo]);
+        wsData.push([r.channel, r.store, r.article, ...monthCols.map(m => r.monthUnits[m] || 0), r.units, r.value, r.growthLM, r.ytd, r.soh, r.soo]);
       }
     }
 
@@ -392,17 +529,19 @@ export default function SalesPage() {
     const wb = XLSX.utils.book_new();
 
     // Store Summary (unfiltered, non-DC)
-    const storeData: unknown[][] = [['Store', 'Total Units', 'Total Value', 'YTD Sales', 'SOH', 'SOO']];
+    const storeData: unknown[][] = [['Channel', 'Store', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const allMonths = Object.keys(data.sales);
-    const storeAgg = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number }>();
+    const storeAgg = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number; curUnits: number; prevUnits: number }>();
     for (const month of allMonths) {
       for (const [store, products] of Object.entries(data.sales[month])) {
         if (dcStoreNames.has(store)) continue;
-        if (!storeAgg.has(store)) storeAgg.set(store, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
+        if (!storeAgg.has(store)) storeAgg.set(store, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0, curUnits: 0, prevUnits: 0 });
         const entry = storeAgg.get(store)!;
         for (const [article, units] of Object.entries(products)) {
           entry.units += units;
           entry.value += calcValue(units, data.prices[article]);
+          if (month === currentMonth) entry.curUnits += units;
+          if (month === prevMonth) entry.prevUnits += units;
         }
       }
     }
@@ -419,22 +558,28 @@ export default function SalesPage() {
         for (const units of Object.values(products)) storeAgg.get(store)!.ytd += units;
       }
     }
-    for (const [store, d] of Array.from(storeAgg.entries()).sort((a, b) => b[1].value - a[1].value)) {
-      storeData.push([store, d.units, d.value, d.ytd, d.soh, d.soo]);
+    const storeArr = Array.from(storeAgg.entries()).sort((a, b) => b[1].value - a[1].value);
+    const totalUnitsS = storeArr.reduce((s, [, d]) => s + d.units, 0);
+    const totalValueS = storeArr.reduce((s, [, d]) => s + d.value, 0);
+    for (const [store, d] of storeArr) {
+      const g = d.prevUnits > 0 ? ((d.curUnits - d.prevUnits) / d.prevUnits) * 100 : null;
+      storeData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, d.units, d.value, totalUnitsS > 0 ? (d.units / totalUnitsS * 100) : 0, totalValueS > 0 ? (d.value / totalValueS * 100) : 0, g, d.ytd, d.soh, d.soo]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(storeData), 'Store Summary');
 
-    // Product Summary (unfiltered, non-DC)
-    const prodData: unknown[][] = [['Article', 'Total Units', 'Total Value', 'YTD Sales', 'SOH', 'SOO']];
-    const prodAgg = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number }>();
+    // Product Summary
+    const prodData: unknown[][] = [['Article', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+    const prodAgg = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number; curUnits: number; prevUnits: number }>();
     for (const month of allMonths) {
       for (const [store, products] of Object.entries(data.sales[month])) {
         if (dcStoreNames.has(store)) continue;
         for (const [article, units] of Object.entries(products)) {
-          if (!prodAgg.has(article)) prodAgg.set(article, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0 });
+          if (!prodAgg.has(article)) prodAgg.set(article, { units: 0, value: 0, ytd: 0, soh: 0, soo: 0, curUnits: 0, prevUnits: 0 });
           const entry = prodAgg.get(article)!;
           entry.units += units;
           entry.value += calcValue(units, data.prices[article]);
+          if (month === currentMonth) entry.curUnits += units;
+          if (month === prevMonth) entry.prevUnits += units;
         }
       }
     }
@@ -452,14 +597,18 @@ export default function SalesPage() {
         }
       }
     }
-    for (const [article, d] of Array.from(prodAgg.entries()).sort((a, b) => b[1].value - a[1].value)) {
-      prodData.push([article, d.units, d.value, d.ytd, d.soh, d.soo]);
+    const prodArr = Array.from(prodAgg.entries()).sort((a, b) => b[1].value - a[1].value);
+    const totalUnitsP = prodArr.reduce((s, [, d]) => s + d.units, 0);
+    const totalValueP = prodArr.reduce((s, [, d]) => s + d.value, 0);
+    for (const [article, d] of prodArr) {
+      const g = d.prevUnits > 0 ? ((d.curUnits - d.prevUnits) / d.prevUnits) * 100 : null;
+      prodData.push([article, d.units, d.value, totalUnitsP > 0 ? (d.units / totalUnitsP * 100) : 0, totalValueP > 0 ? (d.value / totalValueP * 100) : 0, g, d.ytd, d.soh, d.soo]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(prodData), 'Product Summary');
 
-    // Detail (unfiltered, non-DC)
+    // Detail
     const sortedMonths = months;
-    const detData: unknown[][] = [['Store', 'Article', ...sortedMonths.map(formatMonthLabel), 'Total Units', 'Total Value', 'YTD Sales', 'SOH', 'SOO']];
+    const detData: unknown[][] = [['Channel', 'Store', 'Article', ...sortedMonths.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const detCombos = new Map<string, { units: number; value: number; monthUnits: Record<string, number> }>();
     for (const month of allMonths) {
       for (const [store, products] of Object.entries(data.sales[month])) {
@@ -478,7 +627,10 @@ export default function SalesPage() {
       const [store, article] = key.split('|||');
       const ytdVal = data.ytd?.[store]?.[article] || 0;
       const stock = data.stock[store]?.[article];
-      detData.push([store, article, ...sortedMonths.map(m => d.monthUnits[m] || 0), d.units, d.value, ytdVal, stock?.soh || 0, stock?.soo || 0]);
+      const cur = currentMonth ? (d.monthUnits[currentMonth] || 0) : 0;
+      const prev = prevMonth ? (d.monthUnits[prevMonth] || 0) : 0;
+      const g = prev > 0 ? ((cur - prev) / prev) * 100 : null;
+      detData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, article, ...sortedMonths.map(m => d.monthUnits[m] || 0), d.units, d.value, g, ytdVal, stock?.soh || 0, stock?.soo || 0]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detData), 'Detail');
 
@@ -486,16 +638,22 @@ export default function SalesPage() {
     setExportMenuOpen(false);
   }
 
+  // Sticky header style (already handled by .data-table th CSS, kept for month headers)
+  const stickyTh: React.CSSProperties = {};
+  // Alignment helpers
+  const ctr: React.CSSProperties = { textAlign: 'center' };  // numeric non-currency
+  const rgt: React.CSSProperties = { textAlign: 'right' };   // currency values
+
   // Render helpers
-  function renderSortHeader(label: string, key: string, align: 'left' | 'right' = 'left') {
+  function renderSortHeader(label: string, key: string, align: 'left' | 'center' | 'right' = 'left') {
     const active = sortKey === key;
-    const arrow = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const arrow = active ? (sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
     const w = colWidths[key];
     return (
       <th
         key={key}
         onClick={() => toggleSort(key)}
-        style={{ textAlign: align, cursor: 'pointer', userSelect: 'none', position: 'relative', width: w || undefined, minWidth: 60 }}
+        style={{ textAlign: align, cursor: 'pointer', userSelect: 'none', width: w || undefined, minWidth: 60 }}
       >
         {label}{arrow}
         <span
@@ -504,6 +662,32 @@ export default function SalesPage() {
         />
       </th>
     );
+  }
+
+  function renderDcSortHeader(label: string, key: string, align: 'left' | 'center' | 'right' = 'left') {
+    const active = dcSortKey === key;
+    const arrow = active ? (dcSortDir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
+    const w = colWidths[`dc_${key}`];
+    return (
+      <th
+        key={key}
+        onClick={() => toggleDcSort(key)}
+        style={{ textAlign: align, cursor: 'pointer', userSelect: 'none', width: w || undefined, minWidth: 60 }}
+      >
+        {label}{arrow}
+        <span
+          onMouseDown={e => startResize(`dc_${key}`, e)}
+          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, cursor: 'col-resize' }}
+        />
+      </th>
+    );
+  }
+
+  // Growth cell style (green positive, red negative) — centre aligned
+  function growthCell(val: number | null) {
+    if (val === null) return <td style={{ textAlign: 'center', color: '#9ca3af' }}>New</td>;
+    const color = val > 0 ? '#059669' : val < 0 ? '#dc2626' : '#6b7280';
+    return <td style={{ textAlign: 'center', color }}>{val.toFixed(1)}%</td>;
   }
 
   if (authLoading || !session) {
@@ -578,7 +762,7 @@ export default function SalesPage() {
           {/* Export dropdown */}
           <div ref={exportRef} style={{ position: 'relative', marginLeft: 'auto' }}>
             <button className="btn btn-outline" onClick={() => setExportMenuOpen(prev => !prev)}>
-              Export to Excel ▾
+              Export to Excel &#x25BE;
             </button>
             {exportMenuOpen && (
               <div style={{
@@ -649,30 +833,39 @@ export default function SalesPage() {
                 <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', margin: 0 }}>
                   {viewMode === 'store' ? 'Store Summary' : viewMode === 'product' ? 'Product Summary' : 'Detail View'}
                   {' '}({viewMode === 'store' ? storeSummary.length : viewMode === 'product' ? productSummary.length : detailRows.length} rows)
+                  {currentMonth && <span style={{ fontWeight: 400, color: '#6b7280', fontSize: '0.8rem' }}> — Growth vs {prevMonth ? formatMonthLabel(prevMonth) : 'N/A'}</span>}
                 </h3>
               </div>
-              <div style={{ overflowX: 'auto', maxHeight: 600 }}>
+              <div style={{ overflowX: 'auto', maxHeight: 600, overflowY: 'auto' }}>
                 {viewMode === 'store' && (
                   <table className="data-table">
                     <thead>
                       <tr>
+                        {renderSortHeader('Channel', 'channel')}
                         {renderSortHeader('Store', 'store')}
-                        {renderSortHeader('Units', 'units', 'right')}
+                        {renderSortHeader('Units', 'units', 'center')}
                         {renderSortHeader('Value', 'value', 'right')}
-                        {renderSortHeader('YTD Sales', 'ytd', 'right')}
-                        {renderSortHeader('SOH', 'soh', 'right')}
-                        {renderSortHeader('SOO', 'soo', 'right')}
+                        {renderSortHeader('Contrib Vol%', 'contribVol', 'center')}
+                        {renderSortHeader('Contrib Val%', 'contribVal', 'center')}
+                        {renderSortHeader('Growth on LM%', 'growthLM', 'center')}
+                        {renderSortHeader('YTD Sales', 'ytd', 'center')}
+                        {renderSortHeader('SOH', 'soh', 'center')}
+                        {renderSortHeader('SOO', 'soo', 'center')}
                       </tr>
                     </thead>
                     <tbody>
                       {storeSummary.map((r, i) => (
                         <tr key={i}>
+                          <td>{r.channel}</td>
                           <td>{r.store}</td>
-                          <td style={{ textAlign: 'right' }}>{r.units.toLocaleString()}</td>
-                          <td style={{ textAlign: 'right' }}>{formatCurrency(r.value)}</td>
-                          <td style={{ textAlign: 'right' }}>{r.ytd.toLocaleString()}</td>
-                          <td style={{ textAlign: 'right' }}>{r.soh.toLocaleString()}</td>
-                          <td style={{ textAlign: 'right' }}>{r.soo.toLocaleString()}</td>
+                          <td style={ctr}>{r.units.toLocaleString()}</td>
+                          <td style={rgt}>{formatCurrency(r.value)}</td>
+                          <td style={ctr}>{formatPct(r.contribVol)}</td>
+                          <td style={ctr}>{formatPct(r.contribVal)}</td>
+                          {growthCell(r.growthLM)}
+                          <td style={ctr}>{r.ytd.toLocaleString()}</td>
+                          <td style={ctr}>{r.soh.toLocaleString()}</td>
+                          <td style={ctr}>{r.soo.toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -684,22 +877,28 @@ export default function SalesPage() {
                     <thead>
                       <tr>
                         {renderSortHeader('Article', 'article')}
-                        {renderSortHeader('Units', 'units', 'right')}
+                        {renderSortHeader('Units', 'units', 'center')}
                         {renderSortHeader('Value', 'value', 'right')}
-                        {renderSortHeader('YTD Sales', 'ytd', 'right')}
-                        {renderSortHeader('SOH', 'soh', 'right')}
-                        {renderSortHeader('SOO', 'soo', 'right')}
+                        {renderSortHeader('Contrib Vol%', 'contribVol', 'center')}
+                        {renderSortHeader('Contrib Val%', 'contribVal', 'center')}
+                        {renderSortHeader('Growth on LM%', 'growthLM', 'center')}
+                        {renderSortHeader('YTD Sales', 'ytd', 'center')}
+                        {renderSortHeader('SOH', 'soh', 'center')}
+                        {renderSortHeader('SOO', 'soo', 'center')}
                       </tr>
                     </thead>
                     <tbody>
                       {productSummary.map((r, i) => (
                         <tr key={i}>
                           <td>{r.article}</td>
-                          <td style={{ textAlign: 'right' }}>{r.units.toLocaleString()}</td>
-                          <td style={{ textAlign: 'right' }}>{formatCurrency(r.value)}</td>
-                          <td style={{ textAlign: 'right' }}>{r.ytd.toLocaleString()}</td>
-                          <td style={{ textAlign: 'right' }}>{r.soh.toLocaleString()}</td>
-                          <td style={{ textAlign: 'right' }}>{r.soo.toLocaleString()}</td>
+                          <td style={ctr}>{r.units.toLocaleString()}</td>
+                          <td style={rgt}>{formatCurrency(r.value)}</td>
+                          <td style={ctr}>{formatPct(r.contribVol)}</td>
+                          <td style={ctr}>{formatPct(r.contribVal)}</td>
+                          {growthCell(r.growthLM)}
+                          <td style={ctr}>{r.ytd.toLocaleString()}</td>
+                          <td style={ctr}>{r.soh.toLocaleString()}</td>
+                          <td style={ctr}>{r.soo.toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -710,31 +909,35 @@ export default function SalesPage() {
                   <table className="data-table">
                     <thead>
                       <tr>
+                        {renderSortHeader('Channel', 'channel')}
                         {renderSortHeader('Store', 'store')}
                         {renderSortHeader('Article', 'article')}
                         {(monthFilter === 'all' ? months : [monthFilter]).map(m => (
-                          <th key={m} style={{ textAlign: 'right' }}>{formatMonthLabel(m)}</th>
+                          <th key={m} style={{ textAlign: 'center' }}>{formatMonthLabel(m)}</th>
                         ))}
-                        {renderSortHeader('Total Units', 'units', 'right')}
+                        {renderSortHeader('Total Units', 'units', 'center')}
                         {renderSortHeader('Value', 'value', 'right')}
-                        {renderSortHeader('YTD Sales', 'ytd', 'right')}
-                        {renderSortHeader('SOH', 'soh', 'right')}
-                        {renderSortHeader('SOO', 'soo', 'right')}
+                        {renderSortHeader('Growth on LM%', 'growthLM', 'center')}
+                        {renderSortHeader('YTD Sales', 'ytd', 'center')}
+                        {renderSortHeader('SOH', 'soh', 'center')}
+                        {renderSortHeader('SOO', 'soo', 'center')}
                       </tr>
                     </thead>
                     <tbody>
                       {detailRows.slice(0, 500).map((r, i) => (
                         <tr key={i}>
+                          <td>{r.channel}</td>
                           <td>{r.store}</td>
                           <td>{r.article}</td>
                           {(monthFilter === 'all' ? months : [monthFilter]).map(m => (
-                            <td key={m} style={{ textAlign: 'right' }}>{(r.monthUnits[m] || 0).toLocaleString()}</td>
+                            <td key={m} style={ctr}>{(r.monthUnits[m] || 0).toLocaleString()}</td>
                           ))}
-                          <td style={{ textAlign: 'right' }}>{r.units.toLocaleString()}</td>
-                          <td style={{ textAlign: 'right' }}>{formatCurrency(r.value)}</td>
-                          <td style={{ textAlign: 'right' }}>{r.ytd.toLocaleString()}</td>
-                          <td style={{ textAlign: 'right' }}>{r.soh.toLocaleString()}</td>
-                          <td style={{ textAlign: 'right' }}>{r.soo.toLocaleString()}</td>
+                          <td style={ctr}>{r.units.toLocaleString()}</td>
+                          <td style={rgt}>{formatCurrency(r.value)}</td>
+                          {growthCell(r.growthLM)}
+                          <td style={ctr}>{r.ytd.toLocaleString()}</td>
+                          <td style={ctr}>{r.soh.toLocaleString()}</td>
+                          <td style={ctr}>{r.soo.toLocaleString()}</td>
                         </tr>
                       ))}
                       {detailRows.length > 500 && (
@@ -762,14 +965,14 @@ export default function SalesPage() {
                       DC stock — no sales data (DCs do not sell to consumers)
                     </p>
                   </div>
-                  <div style={{ overflowX: 'auto', maxHeight: 400 }}>
+                  <div style={{ overflowX: 'auto', maxHeight: 400, overflowY: 'auto' }}>
                     <table className="data-table">
                       <thead>
                         <tr>
-                          <th>Store</th>
-                          <th>Product</th>
-                          <th style={{ textAlign: 'right' }}>SOH</th>
-                          <th style={{ textAlign: 'right' }}>SOO</th>
+                          {renderDcSortHeader('Store', 'store')}
+                          {renderDcSortHeader('Product', 'article')}
+                          {renderDcSortHeader('SOH', 'soh', 'center')}
+                          {renderDcSortHeader('SOO', 'soo', 'center')}
                         </tr>
                       </thead>
                       <tbody>
@@ -777,8 +980,8 @@ export default function SalesPage() {
                           <tr key={i}>
                             <td>{r.store}</td>
                             <td>{r.article}</td>
-                            <td style={{ textAlign: 'right' }}>{r.soh.toLocaleString()}</td>
-                            <td style={{ textAlign: 'right' }}>{r.soo.toLocaleString()}</td>
+                            <td style={ctr}>{r.soh.toLocaleString()}</td>
+                            <td style={ctr}>{r.soo.toLocaleString()}</td>
                           </tr>
                         ))}
                       </tbody>
