@@ -25,6 +25,11 @@ interface Channel {
   name: string;
 }
 
+interface VisitRecord {
+  storeName: string;
+  checkInDate: string;
+}
+
 type ViewMode = 'store' | 'product' | 'detail';
 type SortDir = 'asc' | 'desc';
 
@@ -59,6 +64,7 @@ export default function SalesPage() {
   // Stores & channels
   const [storeMaster, setStoreMaster] = useState<StoreMasterEntry[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [visits, setVisits] = useState<VisitRecord[]>([]);
 
   // Filters
   const [storeFilter, setStoreFilter] = useState<string[]>([]);
@@ -84,14 +90,16 @@ export default function SalesPage() {
   const loadData = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [dispoRes, storesRes, channelsRes] = await Promise.all([
+      const [dispoRes, storesRes, channelsRes, visitsRes] = await Promise.all([
         authFetch('/api/dispo'),
         authFetch('/api/stores'),
         authFetch('/api/channels'),
+        authFetch('/api/visits'),
       ]);
       if (dispoRes.ok) setData(await dispoRes.json());
       if (storesRes.ok) setStoreMaster(await storesRes.json());
       if (channelsRes.ok) setChannels(await channelsRes.json());
+      if (visitsRes.ok) setVisits(await visitsRes.json());
     } catch { /* ignore */ }
     setLoadingData(false);
   }, []);
@@ -181,6 +189,21 @@ export default function SalesPage() {
     }
     return { currentMonth: months[0], prevMonth: months.length > 1 ? months[1] : '' };
   }, [months, monthFilter]);
+
+  // Visit counts per store (filtered by month)
+  const storeVisitCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const v of visits) {
+      // checkInDate is YYYY-MM-DD; monthFilter is MM-YYYY
+      if (monthFilter !== 'all') {
+        const [yyyy, mm] = v.checkInDate.split('-');
+        const visitMonth = `${mm}-${yyyy}`;
+        if (visitMonth !== monthFilter) continue;
+      }
+      counts[v.storeName] = (counts[v.storeName] || 0) + 1;
+    }
+    return counts;
+  }, [visits, monthFilter]);
 
   // Available store names (non-DC)
   const availableStores = useMemo(() => {
@@ -287,6 +310,7 @@ export default function SalesPage() {
     const enriched = arr.map(r => ({
       ...r,
       channel: channelNameMap[storeChannelMap[r.store] || ''] || '',
+      visits: storeVisitCounts[r.store] || 0,
       contribVol: totalUnits > 0 ? (r.units / totalUnits) * 100 : 0,
       contribVal: totalValue > 0 ? (r.value / totalValue) * 100 : 0,
       growthLM: r.prevUnits > 0 ? ((r.curUnits - r.prevUnits) / r.prevUnits) * 100 : (r.curUnits > 0 ? null : null) as number | null,
@@ -299,7 +323,7 @@ export default function SalesPage() {
     }
 
     return sortArray(enriched, sortKey, sortDir, viewMode === 'store');
-  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap]);
+  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts]);
 
   // Product summary with contribution and growth
   const productSummary = useMemo(() => {
@@ -407,7 +431,7 @@ export default function SalesPage() {
       }
     }
 
-    const rows: { store: string; channel: string; article: string; units: number; value: number; ytd: number; soh: number; soo: number; monthUnits: Record<string, number>; growthLM: number | null }[] = [];
+    const rows: { store: string; channel: string; article: string; visits: number; units: number; value: number; ytd: number; soh: number; soo: number; monthUnits: Record<string, number>; growthLM: number | null }[] = [];
     for (const [key, d] of combos.entries()) {
       const [store, article] = key.split('|||');
       const stockEntry = data.stock[store]?.[article];
@@ -420,6 +444,7 @@ export default function SalesPage() {
         store,
         channel: channelNameMap[storeChannelMap[store] || ''] || '',
         article,
+        visits: storeVisitCounts[store] || 0,
         units: d.units,
         value: d.value,
         ytd: ytdVal,
@@ -431,7 +456,7 @@ export default function SalesPage() {
     }
 
     return sortArray(rows, sortKey, sortDir, viewMode === 'detail');
-  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap]);
+  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts]);
 
   // DC data (separate section) — now sortable
   const dcRows = useMemo(() => {
@@ -504,16 +529,16 @@ export default function SalesPage() {
     let wsData: unknown[][] = [];
 
     if (viewMode === 'store') {
-      wsData = [['Channel', 'Store', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
-      for (const r of storeSummary) wsData.push([r.channel, r.store, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
+      wsData = [['Channel', 'Store', 'Visits', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      for (const r of storeSummary) wsData.push([r.channel, r.store, r.visits, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
     } else if (viewMode === 'product') {
       wsData = [['Article', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of productSummary) wsData.push([r.article, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
     } else {
       const monthCols = monthFilter === 'all' ? months : [monthFilter];
-      wsData = [['Channel', 'Store', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      wsData = [['Channel', 'Store', 'Visits', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of detailRows) {
-        wsData.push([r.channel, r.store, r.article, ...monthCols.map(m => r.monthUnits[m] || 0), r.units, r.value, r.growthLM, r.ytd, r.soh, r.soo]);
+        wsData.push([r.channel, r.store, r.visits, r.article, ...monthCols.map(m => r.monthUnits[m] || 0), r.units, r.value, r.growthLM, r.ytd, r.soh, r.soo]);
       }
     }
 
@@ -529,7 +554,7 @@ export default function SalesPage() {
     const wb = XLSX.utils.book_new();
 
     // Store Summary (unfiltered, non-DC)
-    const storeData: unknown[][] = [['Channel', 'Store', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+    const storeData: unknown[][] = [['Channel', 'Store', 'Visits', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const allMonths = Object.keys(data.sales);
     const storeAgg = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number; curUnits: number; prevUnits: number }>();
     for (const month of allMonths) {
@@ -563,7 +588,7 @@ export default function SalesPage() {
     const totalValueS = storeArr.reduce((s, [, d]) => s + d.value, 0);
     for (const [store, d] of storeArr) {
       const g = d.prevUnits > 0 ? ((d.curUnits - d.prevUnits) / d.prevUnits) * 100 : null;
-      storeData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, d.units, d.value, totalUnitsS > 0 ? (d.units / totalUnitsS * 100) : 0, totalValueS > 0 ? (d.value / totalValueS * 100) : 0, g, d.ytd, d.soh, d.soo]);
+      storeData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, storeVisitCounts[store] || 0, d.units, d.value, totalUnitsS > 0 ? (d.units / totalUnitsS * 100) : 0, totalValueS > 0 ? (d.value / totalValueS * 100) : 0, g, d.ytd, d.soh, d.soo]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(storeData), 'Store Summary');
 
@@ -608,7 +633,7 @@ export default function SalesPage() {
 
     // Detail
     const sortedMonths = months;
-    const detData: unknown[][] = [['Channel', 'Store', 'Article', ...sortedMonths.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+    const detData: unknown[][] = [['Channel', 'Store', 'Visits', 'Article', ...sortedMonths.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const detCombos = new Map<string, { units: number; value: number; monthUnits: Record<string, number> }>();
     for (const month of allMonths) {
       for (const [store, products] of Object.entries(data.sales[month])) {
@@ -630,7 +655,7 @@ export default function SalesPage() {
       const cur = currentMonth ? (d.monthUnits[currentMonth] || 0) : 0;
       const prev = prevMonth ? (d.monthUnits[prevMonth] || 0) : 0;
       const g = prev > 0 ? ((cur - prev) / prev) * 100 : null;
-      detData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, article, ...sortedMonths.map(m => d.monthUnits[m] || 0), d.units, d.value, g, ytdVal, stock?.soh || 0, stock?.soo || 0]);
+      detData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, storeVisitCounts[store] || 0, article, ...sortedMonths.map(m => d.monthUnits[m] || 0), d.units, d.value, g, ytdVal, stock?.soh || 0, stock?.soo || 0]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detData), 'Detail');
 
@@ -843,6 +868,7 @@ export default function SalesPage() {
                       <tr>
                         {renderSortHeader('Channel', 'channel')}
                         {renderSortHeader('Store', 'store')}
+                        {renderSortHeader('Visits', 'visits', 'center')}
                         {renderSortHeader('Units', 'units', 'center')}
                         {renderSortHeader('Value', 'value', 'right')}
                         {renderSortHeader('Contrib Vol%', 'contribVol', 'center')}
@@ -858,6 +884,7 @@ export default function SalesPage() {
                         <tr key={i}>
                           <td>{r.channel}</td>
                           <td>{r.store}</td>
+                          <td style={ctr}>{r.visits}</td>
                           <td style={ctr}>{r.units.toLocaleString()}</td>
                           <td style={rgt}>{formatCurrency(r.value)}</td>
                           <td style={ctr}>{formatPct(r.contribVol)}</td>
@@ -911,6 +938,7 @@ export default function SalesPage() {
                       <tr>
                         {renderSortHeader('Channel', 'channel')}
                         {renderSortHeader('Store', 'store')}
+                        {renderSortHeader('Visits', 'visits', 'center')}
                         {renderSortHeader('Article', 'article')}
                         {(monthFilter === 'all' ? months : [monthFilter]).map(m => (
                           <th key={m} style={{ textAlign: 'center' }}>{formatMonthLabel(m)}</th>
@@ -928,6 +956,7 @@ export default function SalesPage() {
                         <tr key={i}>
                           <td>{r.channel}</td>
                           <td>{r.store}</td>
+                          <td style={ctr}>{r.visits}</td>
                           <td>{r.article}</td>
                           {(monthFilter === 'all' ? months : [monthFilter]).map(m => (
                             <td key={m} style={ctr}>{(r.monthUnits[m] || 0).toLocaleString()}</td>
