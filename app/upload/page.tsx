@@ -118,7 +118,7 @@ export default function UploadPage() {
         if (dispoFileRef.current) dispoFileRef.current.value = '';
         loadDispoUploads();
       } else {
-        const debugInfo = result.debugHeaders ? `\nHeaders: ${JSON.stringify(result.debugHeaders)}` : '';
+        const debugInfo = result.debug ? `\n${JSON.stringify(result.debug)}` : '';
         setToast({ msg: (result.error || 'Upload failed') + debugInfo, type: 'error' });
       }
     } catch {
