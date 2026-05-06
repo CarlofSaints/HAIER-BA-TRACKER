@@ -26,6 +26,17 @@ interface PerigeeConfig {
   requestBody?: string;
 }
 
+interface CronLogEntry {
+  timestamp: string;
+  matched: boolean;
+  slotTime?: string;
+  slotType?: string;
+  result?: string;
+  imported?: number;
+  skipped?: number;
+  error?: string;
+}
+
 interface TestResult {
   ok?: boolean;
   error?: string;
@@ -73,6 +84,9 @@ export default function SettingsPage() {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scoringThresholds, setScoringThresholds] = useState({ lateCheckinTime: '09:10', earlyCheckoutTime: '16:50' });
   const [savingScoring, setSavingScoring] = useState(false);
+  const [cronLogs, setCronLogs] = useState<CronLogEntry[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [testingCron, setTestingCron] = useState(false);
 
   useEffect(() => {
     if (!session) return;
@@ -92,7 +106,36 @@ export default function SettingsPage() {
       .then(r => r.json())
       .then(data => { if (data.lateCheckinTime) setScoringThresholds(data); })
       .catch(() => {});
+    loadCronLogs();
   }, [session]);
+
+  function loadCronLogs() {
+    setLoadingLogs(true);
+    authFetch('/api/cron/logs')
+      .then(r => r.json())
+      .then(data => { if (data.logs) setCronLogs(data.logs); })
+      .catch(() => {})
+      .finally(() => setLoadingLogs(false));
+  }
+
+  async function testCronNow() {
+    setTestingCron(true);
+    try {
+      const res = await authFetch('/api/cron/poll-visits');
+      const data = await res.json();
+      setToast({
+        msg: data.ok
+          ? `Cron test: ${data.action} — imported: ${data.imported ?? 0}, skipped: ${data.skipped ?? 0}${data.reason ? ` (${data.reason})` : ''}`
+          : `Cron error: ${data.error || 'Unknown'}`,
+        type: data.ok ? (data.imported > 0 ? 'success' : 'info') : 'error',
+      });
+      loadCronLogs();
+    } catch {
+      setToast({ msg: 'Failed to trigger cron', type: 'error' });
+    } finally {
+      setTestingCron(false);
+    }
+  }
 
   // Validate JSON as user types
   function handleBodyChange(val: string) {
@@ -495,6 +538,71 @@ export default function SettingsPage() {
               {savingSchedule ? 'Saving...' : 'Save Schedule'}
             </button>
           </div>
+        </div>
+
+        {/* Cron Activity Log */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 620, marginTop: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
+                Cron Activity Log
+              </h2>
+              <p style={{ color: '#9ca3af', fontSize: '0.8rem' }}>
+                Recent automated polling attempts
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-outline" onClick={loadCronLogs} disabled={loadingLogs} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                {loadingLogs ? 'Loading...' : 'Refresh'}
+              </button>
+              <button className="btn btn-primary" onClick={testCronNow} disabled={testingCron} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                {testingCron ? 'Running...' : 'Test Cron Now'}
+              </button>
+            </div>
+          </div>
+
+          {cronLogs.length === 0 ? (
+            <p style={{ color: '#6b7280', fontSize: '0.8rem', fontStyle: 'italic' }}>
+              {loadingLogs ? 'Loading logs...' : 'No cron activity recorded yet. The cron may not have run, or logs are empty.'}
+            </p>
+          ) : (
+            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+              <table style={{ width: '100%', fontSize: '0.75rem', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e5e7eb', color: '#6b7280', textAlign: 'left' }}>
+                    <th style={{ padding: '6px 8px' }}>Time (SAST)</th>
+                    <th style={{ padding: '6px 8px' }}>Matched</th>
+                    <th style={{ padding: '6px 8px' }}>Slot</th>
+                    <th style={{ padding: '6px 8px' }}>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cronLogs.map((log, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #f3f4f6', background: log.error ? '#fef2f2' : log.imported && log.imported > 0 ? '#f0fdf4' : 'transparent' }}>
+                      <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                        {new Date(log.timestamp).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <span style={{ color: log.matched ? '#16a34a' : '#9ca3af', fontWeight: 600 }}>
+                          {log.matched ? 'Yes' : 'No'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '6px 8px' }}>
+                        {log.slotTime ? `${log.slotTime} (${log.slotType})` : '—'}
+                      </td>
+                      <td style={{ padding: '6px 8px', color: log.error ? '#dc2626' : '#374151' }}>
+                        {log.error
+                          ? log.error.slice(0, 60)
+                          : log.imported !== undefined
+                            ? `+${log.imported} imported, ${log.skipped ?? 0} skipped`
+                            : log.result || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <Footer />

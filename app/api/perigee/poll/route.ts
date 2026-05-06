@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { readJson, writeJson } from '@/lib/blob';
-import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData } from '@/lib/visitData';
+import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData, visitDedupeKey } from '@/lib/visitData';
 import { seedScoresFromVisits } from '@/lib/seedScores';
 
 export const dynamic = 'force-dynamic';
@@ -242,25 +242,24 @@ export async function POST(req: NextRequest) {
     const batchSeen = new Set<string>();
     const visits: Visit[] = [];
     for (const v of mappedVisits) {
-      if (v.visitId) {
-        if (batchSeen.has(v.visitId)) continue;
-        batchSeen.add(v.visitId);
-      }
+      const key = visitDedupeKey(v);
+      if (batchSeen.has(key)) continue;
+      batchSeen.add(key);
       visits.push(v);
     }
 
-    // Deduplication: build set of existing visitIds across all uploads
+    // Deduplication: build set of existing keys across all uploads (visitId + composite)
     const index = await loadVisitIndex();
-    const existingVisitIds = new Set<string>();
+    const existingKeys = new Set<string>();
     for (const meta of index) {
       const existingVisits = await loadVisitData(meta.id);
       for (const ev of existingVisits) {
-        if (ev.visitId) existingVisitIds.add(ev.visitId);
+        existingKeys.add(visitDedupeKey(ev));
       }
     }
 
     // Filter out duplicates against previously saved data
-    const newVisits = visits.filter(v => !v.visitId || !existingVisitIds.has(v.visitId));
+    const newVisits = visits.filter(v => !existingKeys.has(visitDedupeKey(v)));
     const skippedDuplicates = mappedVisits.length - newVisits.length;
 
     if (newVisits.length === 0) {

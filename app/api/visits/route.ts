@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAnyUser, noCacheHeaders } from '@/lib/auth';
-import { loadVisitIndex, loadVisitData, Visit } from '@/lib/visitData';
+import { loadVisitIndex, loadVisitData, Visit, visitDedupeKey } from '@/lib/visitData';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -28,9 +28,7 @@ export async function GET(req: NextRequest) {
     const deduped: Visit[] = [];
     let dupCount = 0;
     for (const v of allVisits) {
-      const key = v.visitId
-        ? `id:${v.visitId}`
-        : `comp:${(v.email || v.repName || '').toLowerCase()}|${(v.storeCode || v.storeName || '').toLowerCase()}|${v.checkInDate || ''}|${v.checkInTime || ''}`;
+      const key = visitDedupeKey(v);
       if (seenKeys.has(key)) { dupCount++; continue; }
       seenKeys.add(key);
       deduped.push(v);

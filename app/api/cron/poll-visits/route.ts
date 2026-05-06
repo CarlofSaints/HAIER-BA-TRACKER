@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readJson, writeJson } from '@/lib/blob';
-import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData } from '@/lib/visitData';
+import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData, visitDedupeKey } from '@/lib/visitData';
 import { seedScoresFromVisits } from '@/lib/seedScores';
+import { requireRole } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -118,10 +119,12 @@ function mapPerigeeVisit(row: Record<string, unknown>): Visit {
 }
 
 export async function GET(req: NextRequest) {
-  // Validate cron secret
+  // Validate cron secret OR super_admin session
   const authHeader = req.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  const isCronAuth = !cronSecret || authHeader === `Bearer ${cronSecret}`;
+  const isAdminAuth = !!(await requireRole(req, ['super_admin']));
+  if (!isCronAuth && !isAdminAuth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -237,23 +240,23 @@ export async function GET(req: NextRequest) {
     const batchSeen = new Set<string>();
     const visits: Visit[] = [];
     for (const v of mappedVisits) {
-      if (v.visitId) {
-        if (batchSeen.has(v.visitId)) continue;
-        batchSeen.add(v.visitId);
-      }
+      const key = visitDedupeKey(v);
+      if (batchSeen.has(key)) continue;
+      batchSeen.add(key);
       visits.push(v);
     }
 
+    // Build dedup set from all existing visits (by visitId AND composite key)
     const index = await loadVisitIndex();
-    const existingVisitIds = new Set<string>();
+    const existingKeys = new Set<string>();
     for (const meta of index) {
       const existingVisits = await loadVisitData(meta.id);
       for (const ev of existingVisits) {
-        if (ev.visitId) existingVisitIds.add(ev.visitId);
+        existingKeys.add(visitDedupeKey(ev));
       }
     }
 
-    const newVisits = visits.filter(v => !v.visitId || !existingVisitIds.has(v.visitId));
+    const newVisits = visits.filter(v => !existingKeys.has(visitDedupeKey(v)));
     const skipped = mappedVisits.length - newVisits.length;
 
     if (newVisits.length === 0) {

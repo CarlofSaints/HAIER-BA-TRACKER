@@ -30,6 +30,12 @@ export interface VisitUploadMeta {
 
 const INDEX_KEY = 'visits/index.json';
 
+/** Consistent dedup key: visitId when present, otherwise composite of email|store|date|time */
+export function visitDedupeKey(v: Visit): string {
+  if (v.visitId) return `id:${v.visitId}`;
+  return `comp:${(v.email || v.repName || '').toLowerCase()}|${(v.storeCode || v.storeName || '').toLowerCase()}|${v.checkInDate || ''}|${v.checkInTime || ''}`;
+}
+
 export async function loadVisitIndex(): Promise<VisitUploadMeta[]> {
   return readJson<VisitUploadMeta[]>(INDEX_KEY, []);
 }
