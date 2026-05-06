@@ -121,7 +121,7 @@ export default function SettingsPage() {
   async function testCronNow() {
     setTestingCron(true);
     try {
-      const res = await authFetch('/api/cron/poll-visits');
+      const res = await authFetch('/api/cron/poll-visits?force=true');
       const data = await res.json();
       setToast({
         msg: data.ok

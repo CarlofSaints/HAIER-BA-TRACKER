@@ -129,12 +129,13 @@ export async function GET(req: NextRequest) {
   }
 
   const logEntry: CronLogEntry = { timestamp: new Date().toISOString(), matched: false };
+  const forceRun = req.nextUrl.searchParams.get('force') === 'true';
 
   try {
     // Load schedule
     const schedule = await readJson<PollSchedule>(SCHEDULE_KEY, { slots: [], timezone: 'Africa/Johannesburg' });
 
-    if (schedule.slots.length === 0) {
+    if (schedule.slots.length === 0 && !forceRun) {
       logEntry.result = 'No slots configured';
       await appendCronLog(logEntry);
       return NextResponse.json({ ok: true, action: 'none', reason: 'No slots configured' });
@@ -147,14 +148,26 @@ export async function GET(req: NextRequest) {
     const currentMin = sastTime.getMinutes();
     const currentMins = currentHour * 60 + currentMin;
 
-    // Find matching slot (within 15-minute window)
-    const matchedSlot = schedule.slots.find(slot => {
-      if (!slot.enabled) return false;
-      const [slotH, slotM] = slot.time.split(':').map(Number);
-      const slotMins = slotH * 60 + slotM;
-      const diff = Math.abs(currentMins - slotMins);
-      return diff <= 14; // Within 14 minutes (cron runs every 30 mins, so max 14 min offset)
-    });
+    // Find matching slot (within 15-minute window) — skip if forced
+    let matchedSlot: PollSlot | undefined;
+    if (forceRun) {
+      // Use first enabled slot's type, default to 'short'
+      const firstEnabled = schedule.slots.find(s => s.enabled);
+      matchedSlot = {
+        id: 'manual',
+        time: `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`,
+        type: firstEnabled?.type || 'short',
+        enabled: true,
+      };
+    } else {
+      matchedSlot = schedule.slots.find(slot => {
+        if (!slot.enabled) return false;
+        const [slotH, slotM] = slot.time.split(':').map(Number);
+        const slotMins = slotH * 60 + slotM;
+        const diff = Math.abs(currentMins - slotMins);
+        return diff <= 14;
+      });
+    }
 
     if (!matchedSlot) {
       logEntry.result = `No matching slot at ${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')} SAST`;
