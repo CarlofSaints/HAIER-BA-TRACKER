@@ -53,8 +53,6 @@ export default function DashboardPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [dispoData, setDispoData] = useState<DispoSalesData | null>(null);
 
-  const [debugInfo, setDebugInfo] = useState<Record<string, unknown> | null>(null);
-
   const loadVisits = useCallback(async () => {
     setLoadingData(true);
     try {
@@ -63,9 +61,6 @@ export default function DashboardPage() {
       if (toDate) params.set('to', toDate);
       const res = await authFetch(`/api/visits?${params}`);
       if (res.ok) setVisits(await res.json());
-      // Fetch debug info
-      const dbg = await authFetch('/api/visits?debug=1');
-      if (dbg.ok) setDebugInfo(await dbg.json());
     } catch { /* ignore */ }
     setLoadingData(false);
   }, [fromDate, toDate]);
@@ -467,13 +462,6 @@ export default function DashboardPage() {
               )}
             </div>
           </>
-        )}
-        {/* Temporary debug panel — remove after diagnosis */}
-        {debugInfo && (
-          <details style={{ marginTop: '1.5rem', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, padding: '0.75rem 1rem', fontSize: '0.75rem' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#92400e' }}>Debug: Visit Data Stats</summary>
-            <pre style={{ marginTop: '0.5rem', whiteSpace: 'pre-wrap', color: '#78350f' }}>{JSON.stringify(debugInfo, null, 2)}</pre>
-          </details>
         )}
         <div style={{ flex: 1 }} />
         <Footer />

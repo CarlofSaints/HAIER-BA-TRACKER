@@ -34,29 +34,6 @@ export async function GET(req: NextRequest) {
       deduped.push(v);
     }
 
-    // Debug mode: return data stats
-    if (url.searchParams.get('debug') === '1') {
-      const noId = allVisits.filter(v => !v.visitId).length;
-      // Find Cape Gate sample
-      const capeGate = deduped.filter(v =>
-        (v.storeName || '').toLowerCase().includes('cape gate')
-      );
-      const capeGateMay = capeGate.filter(v => (v.checkInDate || '').startsWith('2026-05'));
-      return NextResponse.json({
-        totalRaw: allVisits.length,
-        withoutVisitId: noId,
-        duplicatesRemoved: dupCount,
-        afterDedup: deduped.length,
-        uploadBatches: index.length,
-        batchSizes: index.map(m => ({ id: m.id.slice(0, 8), file: m.fileName, rows: m.rowCount })),
-        capeGateAfterDedup: capeGate.length,
-        capeGateMay: capeGateMay.length,
-        capeGateMayDetails: capeGateMay.map(v => ({
-          date: v.checkInDate, time: v.checkInTime, rep: v.email || v.repName, id: v.visitId || '(no id)',
-        })),
-      }, { headers: noCacheHeaders() });
-    }
-
     // Apply date filter
     let filtered = deduped;
     if (from) {
