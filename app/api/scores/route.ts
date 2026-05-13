@@ -45,6 +45,8 @@ export async function PUT(req: NextRequest) {
         const val = Number(out[kpi.key]) || 0;
         (out as unknown as Record<string, unknown>)[kpi.key] = Math.max(0, Math.min(val, kpi.max));
       }
+      // Clamp trainingAuto (0–5, not in KPI_DEFS)
+      out.trainingAuto = Math.max(0, Math.min(Number(out.trainingAuto) || 0, 5));
       return out;
     });
 

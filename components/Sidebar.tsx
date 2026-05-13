@@ -26,6 +26,7 @@ const CONTROL_ITEMS: NavItem[] = [
   { label: 'Sales Channels', href: '/admin/channels', icon: '📡', roles: ['super_admin'] },
   { label: 'Stores', href: '/admin/stores', icon: '🏪', roles: ['super_admin', 'admin'] },
   { label: 'Users', href: '/users', icon: '👥', roles: ['super_admin', 'admin'] },
+  { label: 'KPI Controls', href: '/kpi-controls', icon: '🎯', roles: ['super_admin', 'admin'] },
   { label: 'Roles', href: '/roles', icon: '🔑', roles: ['super_admin'] },
   { label: 'Settings', href: '/settings', icon: '⚙️', roles: ['super_admin'] },
 ];

@@ -1,6 +1,8 @@
 import { loadVisitIndex, loadVisitData, Visit } from './visitData';
 import { loadScores, saveScores, BAScore } from './scoreData';
 import { loadScoringConfig } from './scoringConfig';
+import { countTrainingsForMonth } from './trainingData';
+import { loadKPIControls } from './kpiControls';
 
 /**
  * Seed leaderboard scores from visit data.
@@ -16,9 +18,10 @@ import { loadScoringConfig } from './scoringConfig';
 export async function seedScoresFromVisits(
   triggeredBy: string
 ): Promise<{ months: number; bas: number }> {
-  // Load scoring thresholds
+  // Load scoring thresholds and KPI controls
   const scoringConfig = await loadScoringConfig();
   const { lateCheckinTime, earlyCheckoutTime } = scoringConfig;
+  const { minTrainingsPerMonth } = await loadKPIControls();
 
   // Load all visits
   const index = await loadVisitIndex();
@@ -75,6 +78,9 @@ export async function seedScoresFromVisits(
       }
     }
 
+    // Calculate training auto-scores for this month
+    const trainingCounts = await countTrainingsForMonth(month);
+
     // Build scores array — merge with existing or create new
     const now = new Date().toISOString();
     const scores: BAScore[] = [];
@@ -85,19 +91,28 @@ export async function seedScoresFromVisits(
       const earlyOutPts = data.total > 0 ? Math.round((data.earlyOut / data.total) * 10) : 0;
       const checkInScore = Math.max(0, onTimePts - earlyOutPts);
 
+      // Training auto-score
+      const trainingInfo = trainingCounts.get(email);
+      const trainingAuto = trainingInfo
+        ? Math.min(5, Math.round((trainingInfo.count / minTrainingsPerMonth) * 5))
+        : 0;
+
       if (existingMap.has(email)) {
-        // Existing score: update checkInOnTime + repName (preserve manual KPIs)
+        // Existing score: update checkInOnTime + trainingAuto + repName (preserve manual KPIs)
         const existing = existingMap.get(email)!;
+        const existingManual = Math.max(0, (existing.training || 0) - (existing.trainingAuto ?? 0));
         scores.push({
           ...existing,
           repName: data.repName,
           checkInOnTime: checkInScore,
+          trainingAuto,
+          training: Math.min(15, trainingAuto + existingManual),
           updatedAt: now,
           updatedBy: triggeredBy,
         });
         existingMap.delete(email);
       } else {
-        // New BA: create with only check-in score populated
+        // New BA: create with check-in score + training auto populated
         scores.push({
           email,
           repName: data.repName,
@@ -108,7 +123,8 @@ export async function seedScoresFromVisits(
           feedback: 0,
           displayInspection: 0,
           weeklySummaries: 0,
-          training: 0,
+          training: trainingAuto,
+          trainingAuto,
           bonusSuggestions: 0,
           updatedAt: now,
           updatedBy: triggeredBy,

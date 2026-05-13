@@ -34,25 +34,12 @@ const KPI_ROWS: KPIRow[] = [
       </SvgIcon>
     ),
     name: 'Monthly Sales vs Target',
-    maxPts: 30,
+    maxPts: 40,
     source: 'Manual (binary)',
-    description: 'Hit monthly sales target = 30 points. Miss = 0. All-or-nothing.',
+    description: 'Hit monthly sales target = 40 points. Miss = 0. All-or-nothing.',
   },
   {
     num: 2,
-    icon: (
-      <SvgIcon>
-        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-        <polyline points="17 6 23 6 23 12" />
-      </SvgIcon>
-    ),
-    name: 'Daily Sales vs Target',
-    maxPts: 20,
-    source: 'Manual (0–20)',
-    description: 'Scored based on consistency of daily sales against target. Admin enters 0–20.',
-  },
-  {
-    num: 3,
     icon: (
       <SvgIcon>
         <circle cx="12" cy="12" r="10" />
@@ -65,19 +52,19 @@ const KPI_ROWS: KPIRow[] = [
     description: 'Score = max(0, onTime% × 10 − earlyCheckout% × 10). On time = checked in before threshold (default 09:10). Early checkout penalty = checked out before threshold (default 16:50). Thresholds are configurable in Settings.',
   },
   {
-    num: 4,
+    num: 3,
     icon: (
       <SvgIcon>
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       </SvgIcon>
     ),
     name: 'Feedback',
-    maxPts: 5,
-    source: 'Manual (0–5)',
+    maxPts: 10,
+    source: 'Manual (0–10)',
     description: 'Quality and timeliness of feedback provided by the BA to management.',
   },
   {
-    num: 5,
+    num: 4,
     icon: (
       <SvgIcon>
         <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
@@ -91,7 +78,7 @@ const KPI_ROWS: KPIRow[] = [
     description: 'Quality of in-store product display maintenance, merchandising standards, and POP material.',
   },
   {
-    num: 6,
+    num: 5,
     icon: (
       <SvgIcon>
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -106,7 +93,7 @@ const KPI_ROWS: KPIRow[] = [
     description: 'Submission and quality of weekly activity summary reports.',
   },
   {
-    num: 7,
+    num: 6,
     icon: (
       <SvgIcon>
         <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
@@ -114,12 +101,12 @@ const KPI_ROWS: KPIRow[] = [
       </SvgIcon>
     ),
     name: 'Training',
-    maxPts: 10,
-    source: 'Manual (0–10)',
-    description: 'Attendance and engagement in training sessions, product knowledge assessments.',
+    maxPts: 15,
+    source: 'Auto (5) + Manual (10)',
+    description: '5 points awarded automatically based on completed trainings vs. monthly minimum target (set in KPI Controls). 10 points awarded manually by admin for quality of training delivery.',
   },
   {
-    num: 8,
+    num: 7,
     icon: (
       <SvgIcon>
         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
@@ -158,7 +145,7 @@ export default function GuidePage() {
         }}>
           <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: '0.75rem', opacity: 0.8, marginBottom: 4 }}>Core KPIs (7)</div>
+              <div style={{ fontSize: '0.75rem', opacity: 0.8, marginBottom: 4 }}>Core KPIs (6)</div>
               <div style={{ fontSize: '2rem', fontWeight: 700 }}>100 <span style={{ fontSize: '0.9rem', fontWeight: 400, opacity: 0.8 }}>points</span></div>
             </div>
             <div style={{ fontSize: '1.5rem', opacity: 0.5 }}>+</div>
@@ -253,14 +240,18 @@ export default function GuidePage() {
             </div>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <span style={{ color: BRAND, fontWeight: 700, minWidth: 20 }}>2.</span>
-              <span>Admins manually enter the remaining 6 core KPIs and the bonus score on the <strong>Score Entry</strong> page each month.</span>
+              <span>Training form data is uploaded from Perigee. <strong>Training auto-scores</strong> (up to 5 points) are calculated based on completed trainings vs. the monthly minimum target set in KPI Controls.</span>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <span style={{ color: BRAND, fontWeight: 700, minWidth: 20 }}>3.</span>
-              <span>The <strong>Leaderboard</strong> ranks all BAs by their total score. Top 3 receive gold, silver, and bronze badges.</span>
+              <span>Admins manually enter the remaining 4 core KPIs, the training quality score (up to 10), and the bonus score on the <strong>Score Entry</strong> page each month.</span>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <span style={{ color: BRAND, fontWeight: 700, minWidth: 20 }}>4.</span>
+              <span>The <strong>Leaderboard</strong> ranks all BAs by their total score. Top 3 receive gold, silver, and bronze badges.</span>
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <span style={{ color: BRAND, fontWeight: 700, minWidth: 20 }}>5.</span>
               <span>Click any BA on the leaderboard to see their <strong>detailed breakdown</strong> with radar chart and monthly trend.</span>
             </div>
           </div>

@@ -15,6 +15,14 @@ interface AutoCalcItem {
   onTimeVisits: number;
 }
 
+interface TrainingAutoItem {
+  email: string;
+  repName: string;
+  completedCount: number;
+  minRequired: number;
+  autoPoints: number;
+}
+
 function currentMonth() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -31,6 +39,7 @@ export default function ScoreEntryPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [autoCalcing, setAutoCalcing] = useState(false);
+  const [trainingAutoCalcing, setTrainingAutoCalcing] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -77,7 +86,7 @@ export default function ScoreEntryPage() {
             email, repName, month,
             monthlySales: 0, dailySales: 0, checkInOnTime: 0,
             feedback: 0, displayInspection: 0, weeklySummaries: 0,
-            training: 0, bonusSuggestions: 0,
+            training: 0, trainingAuto: 0, bonusSuggestions: 0,
             updatedAt: '', updatedBy: '',
           });
         }
@@ -104,7 +113,7 @@ export default function ScoreEntryPage() {
 
   function calcRowTotal(s: BAScore) {
     return Math.min(
-      s.monthlySales + s.dailySales + s.checkInOnTime +
+      s.monthlySales + s.checkInOnTime +
       s.feedback + s.displayInspection + s.weeklySummaries + s.training,
       100
     );
@@ -140,6 +149,36 @@ export default function ScoreEntryPage() {
       showToast('Auto-calc failed');
     }
     setAutoCalcing(false);
+  }
+
+  async function handleTrainingAutoCalc() {
+    setTrainingAutoCalcing(true);
+    try {
+      const res = await authFetch('/api/scores/auto-calc-training', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month }),
+      });
+      if (!res.ok) throw new Error('Training auto-calc failed');
+      const results: TrainingAutoItem[] = await res.json();
+
+      setScores(prev => {
+        const next = [...prev];
+        for (const r of results) {
+          const idx = next.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
+          if (idx >= 0) {
+            const manualPart = Math.max(0, (next[idx].training || 0) - (next[idx].trainingAuto || 0));
+            const newTotal = Math.min(15, r.autoPoints + manualPart);
+            next[idx] = { ...next[idx], trainingAuto: r.autoPoints, training: newTotal };
+          }
+        }
+        return next;
+      });
+      showToast(`Training auto-scores calculated for ${results.length} BAs`);
+    } catch {
+      showToast('Training auto-calc failed');
+    }
+    setTrainingAutoCalcing(false);
   }
 
   async function handleSeedFromVisits() {
@@ -184,7 +223,6 @@ export default function ScoreEntryPage() {
   // Short labels for table header
   const kpiShortLabels: Record<string, string> = {
     monthlySales: 'Monthly Sales',
-    dailySales: 'Daily Sales',
     checkInOnTime: 'Check-in',
     feedback: 'Feedback',
     displayInspection: 'Display',
@@ -226,6 +264,14 @@ export default function ScoreEntryPage() {
             disabled={autoCalcing || loadingData}
           >
             {autoCalcing ? 'Calculating...' : 'Auto-Calculate Check-in'}
+          </button>
+          <button
+            className="btn btn-outline"
+            onClick={handleTrainingAutoCalc}
+            disabled={trainingAutoCalcing || loadingData}
+            style={{ borderColor: '#7c3aed', color: '#7c3aed' }}
+          >
+            {trainingAutoCalcing ? 'Calculating...' : 'Auto-Calculate Training'}
           </button>
           <button
             className="btn btn-outline"
@@ -273,10 +319,10 @@ export default function ScoreEntryPage() {
                   <tr>
                     <th style={{ position: 'sticky', left: 0, background: '#f9fafb', zIndex: 2, minWidth: 160 }}>BA Name</th>
                     {KPI_DEFS.map(kpi => (
-                      <th key={kpi.key} style={{ textAlign: 'center', minWidth: 80 }}>
+                      <th key={kpi.key} style={{ textAlign: 'center', minWidth: kpi.key === 'training' ? 110 : 80 }}>
                         <div>{kpiShortLabels[kpi.key]}</div>
                         <div style={{ fontSize: '0.65rem', color: '#9ca3af', fontWeight: 400 }}>
-                          max {kpi.max}{kpi.isBonus ? ' (bonus)' : ''}
+                          {kpi.key === 'training' ? 'auto 5 + manual 10' : `max ${kpi.max}${kpi.isBonus ? ' (bonus)' : ''}`}
                         </div>
                       </th>
                     ))}
@@ -297,21 +343,57 @@ export default function ScoreEntryPage() {
                         {KPI_DEFS.map(kpi => {
                           const key = kpi.key as keyof BAScore;
                           const val = Number(s[key]) || 0;
-                          // Monthly sales is checkbox (hit target = 30 or miss = 0)
+                          // Monthly sales is checkbox (hit target = 40 or miss = 0)
                           if (kpi.key === 'monthlySales') {
                             return (
                               <td key={kpi.key} style={{ textAlign: 'center' }}>
                                 <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer' }}>
                                   <input
                                     type="checkbox"
-                                    checked={val === 30}
-                                    onChange={e => updateScore(i, 'monthlySales', e.target.checked ? 30 : 0)}
+                                    checked={val === 40}
+                                    onChange={e => updateScore(i, 'monthlySales', e.target.checked ? 40 : 0)}
                                     style={{ width: 16, height: 16 }}
                                   />
-                                  <span style={{ fontSize: '0.75rem', color: val === 30 ? '#059669' : '#9ca3af' }}>
-                                    {val === 30 ? '30' : '0'}
+                                  <span style={{ fontSize: '0.75rem', color: val === 40 ? '#059669' : '#9ca3af' }}>
+                                    {val === 40 ? '40' : '0'}
                                   </span>
                                 </label>
+                              </td>
+                            );
+                          }
+                          // Training: auto badge (0–5) + manual input (0–10)
+                          if (kpi.key === 'training') {
+                            const autoVal = Number(s.trainingAuto) || 0;
+                            const manualVal = Math.max(0, val - autoVal);
+                            return (
+                              <td key={kpi.key} style={{ textAlign: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                  <span
+                                    style={{
+                                      background: '#ede9fe', color: '#7c3aed', fontSize: '0.7rem',
+                                      fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+                                      minWidth: 28, textAlign: 'center',
+                                    }}
+                                    title={`Auto-calculated: ${autoVal}/5`}
+                                  >
+                                    {autoVal}
+                                  </span>
+                                  <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={10}
+                                    value={manualVal}
+                                    onChange={e => {
+                                      const manual = clamp(Number(e.target.value) || 0, 10);
+                                      updateScore(i, 'training', Math.min(15, autoVal + manual));
+                                    }}
+                                    style={{
+                                      width: 42, textAlign: 'center', padding: '3px 4px',
+                                      border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
+                                    }}
+                                  />
+                                </div>
                               </td>
                             );
                           }

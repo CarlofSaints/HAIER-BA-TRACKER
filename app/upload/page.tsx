@@ -40,6 +40,12 @@ export default function UploadPage() {
   const [dispoDragOver, setDispoDragOver] = useState(false);
   const dispoFileRef = useRef<HTMLInputElement>(null);
 
+  // Training state
+  const [trainingUploads, setTrainingUploads] = useState<UploadMeta[]>([]);
+  const [trainingUploading, setTrainingUploading] = useState(false);
+  const [trainingDragOver, setTrainingDragOver] = useState(false);
+  const trainingFileRef = useRef<HTMLInputElement>(null);
+
   // New stores modal
   const [newStoresModal, setNewStoresModal] = useState<string[] | null>(null);
 
@@ -60,12 +66,20 @@ export default function UploadPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const loadTrainingUploads = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/training');
+      if (res.ok) setTrainingUploads(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (session) {
       loadUploads();
       loadDispoUploads();
+      loadTrainingUploads();
     }
-  }, [session, loadUploads, loadDispoUploads]);
+  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads]);
 
   async function handleFile(file: File) {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
@@ -166,6 +180,52 @@ export default function UploadPage() {
     }
   }
 
+  async function handleTrainingFile(file: File) {
+    if (!file.name.match(/\.(xlsx?|csv)$/i)) {
+      setToast({ msg: 'Please upload an Excel file (.xlsx / .xls)', type: 'error' });
+      return;
+    }
+
+    setTrainingUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await authFetch('/api/training/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ msg: data.error || 'Upload failed', type: 'error' });
+      } else {
+        setToast({ msg: `Uploaded ${data.rowCount} training rows`, type: 'success' });
+        loadTrainingUploads();
+      }
+    } catch {
+      setToast({ msg: 'Training upload failed', type: 'error' });
+    } finally {
+      setTrainingUploading(false);
+      if (trainingFileRef.current) trainingFileRef.current.value = '';
+    }
+  }
+
+  async function handleTrainingDelete(id: string) {
+    if (!confirm('Delete this training upload? All its data will be removed.')) return;
+    try {
+      const res = await authFetch(`/api/training/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setToast({ msg: 'Training upload deleted', type: 'success' });
+        loadTrainingUploads();
+      } else {
+        setToast({ msg: 'Delete failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Delete failed', type: 'error' });
+    }
+  }
+
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
@@ -178,7 +238,7 @@ export default function UploadPage() {
           Data Upload
         </h1>
         <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-          Upload visit data and DISPO sales/stock files
+          Upload visit data, DISPO sales/stock files, and training form data
         </p>
 
         {/* === VISIT DATA UPLOAD === */}
@@ -391,6 +451,104 @@ export default function UploadPage() {
           {dispoUploads.length === 0 && (
             <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
               No DISPO uploads yet
+            </div>
+          )}
+        </div>
+
+        {/* === TRAINING FORM DATA UPLOAD === */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
+            Training Form Data (Perigee)
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+            Upload Perigee training form exports. Used for auto-calculating training scores (5 pts).
+          </p>
+
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setTrainingDragOver(true); }}
+            onDragLeave={() => setTrainingDragOver(false)}
+            onDrop={e => {
+              e.preventDefault();
+              setTrainingDragOver(false);
+              const file = e.dataTransfer.files[0];
+              if (file) handleTrainingFile(file);
+            }}
+            onClick={() => trainingFileRef.current?.click()}
+            style={{
+              border: `2px dashed ${trainingDragOver ? '#7c3aed' : '#d1d5db'}`,
+              borderRadius: 10,
+              padding: '2rem 1.5rem',
+              textAlign: 'center',
+              cursor: trainingUploading ? 'not-allowed' : 'pointer',
+              background: trainingDragOver ? 'rgba(124,58,237,0.04)' : '#fafafa',
+              transition: 'border-color 0.2s, background 0.2s',
+              marginBottom: '1.25rem',
+              opacity: trainingUploading ? 0.6 : 1,
+            }}
+          >
+            <input
+              ref={trainingFileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) handleTrainingFile(file);
+              }}
+            />
+            <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>📋</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+              {trainingUploading ? 'Uploading...' : 'Drop training form Excel here or click to browse'}
+            </div>
+            <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+              Expects columns: Email, Name, Date, Visit UUID, &quot;DID YOU COMPLETE TRAINING?&quot;
+            </div>
+          </div>
+
+          {/* Upload history */}
+          {trainingUploads.length > 0 && (
+            <>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+                Upload History
+              </h3>
+              <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>File Name</th>
+                      <th>Rows</th>
+                      <th>Uploaded By</th>
+                      <th>Date</th>
+                      <th style={{ width: 80 }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trainingUploads.map(u => (
+                      <tr key={u.id}>
+                        <td>{u.fileName}</td>
+                        <td>{u.rowCount.toLocaleString()}</td>
+                        <td>{u.uploadedBy}</td>
+                        <td>{new Date(u.uploadedAt).toLocaleString('en-ZA')}</td>
+                        <td>
+                          <button
+                            className="btn btn-danger"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                            onClick={() => handleTrainingDelete(u.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+          {trainingUploads.length === 0 && (
+            <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
+              No training uploads yet
             </div>
           )}
         </div>

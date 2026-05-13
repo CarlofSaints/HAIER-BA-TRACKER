@@ -1,0 +1,128 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAuth, authFetch } from '@/lib/useAuth';
+import Sidebar from '@/components/Sidebar';
+import Toast from '@/components/Toast';
+import Footer from '@/components/Footer';
+
+export default function KPIControlsPage() {
+  const { session, loading: authLoading, logout } = useAuth(['admin', 'super_admin']);
+  const [minTrainings, setMinTrainings] = useState(4);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+  const isSuperAdmin = session?.role === 'super_admin';
+
+  useEffect(() => {
+    if (!session) return;
+    authFetch('/api/config/kpi-controls')
+      .then(r => r.json())
+      .then(data => {
+        if (data.minTrainingsPerMonth) setMinTrainings(data.minTrainingsPerMonth);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [session]);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const res = await authFetch('/api/config/kpi-controls', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minTrainingsPerMonth: minTrainings }),
+      });
+      if (res.ok) {
+        setToast({ msg: 'KPI controls saved', type: 'success' });
+      } else {
+        const data = await res.json();
+        setToast({ msg: data.error || 'Save failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Failed to save KPI controls', type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (authLoading || !session) {
+    return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
+  }
+
+  return (
+    <div style={{ display: 'flex' }}>
+      <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
+      <main style={{ flex: 1, padding: '2rem', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
+          KPI Base Controls
+        </h1>
+        <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '2rem' }}>
+          Configure thresholds used for automated KPI scoring
+        </p>
+
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>Loading...</div>
+        ) : (
+          <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 520 }}>
+            <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
+              Training Threshold
+            </h2>
+            <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
+              Minimum number of completed trainings per month for a BA to earn full auto-score points (5/5).
+              Points are proportional: if a BA completes fewer trainings, they earn a proportional share.
+            </p>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
+                Minimum Trainings per Month
+              </label>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={31}
+                value={minTrainings}
+                onChange={e => setMinTrainings(Math.max(1, Math.min(31, Number(e.target.value) || 1)))}
+                disabled={!isSuperAdmin}
+                style={{ width: 120 }}
+              />
+              <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 4 }}>
+                Range: 1–31. Default: 4
+              </div>
+            </div>
+
+            {/* Scoring example */}
+            <div style={{
+              background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8,
+              padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#0c4a6e', marginBottom: '1rem',
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Scoring Formula</div>
+              <div>autoPoints = min(5, round((completedTrainings / {minTrainings}) &times; 5))</div>
+              <div style={{ marginTop: 6, color: '#6b7280', fontSize: '0.75rem' }}>
+                Example: {minTrainings} trainings completed = 5/5 auto pts.{' '}
+                {Math.max(1, Math.floor(minTrainings / 2))} completed = {Math.min(5, Math.round((Math.max(1, Math.floor(minTrainings / 2)) / minTrainings) * 5))}/5 auto pts.
+              </div>
+            </div>
+
+            {isSuperAdmin ? (
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Save Controls'}
+              </button>
+            ) : (
+              <div style={{ fontSize: '0.8rem', color: '#9ca3af', fontStyle: 'italic' }}>
+                Only Super Admins can modify KPI controls.
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ flex: 1 }} />
+        <Footer />
+      </main>
+
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+    </div>
+  );
+}
