@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
-import { loadTargetData, getStoreTargetByName } from '@/lib/targetData';
+import { loadTargetData, getStoreTarget } from '@/lib/targetData';
 import { loadDispoData, calcSalesValue } from '@/lib/dispoData';
 import { loadStores } from '@/lib/storeData';
 import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
@@ -89,9 +89,9 @@ export async function POST(req: NextRequest) {
     // Prorate factor: if we have a mid-month export, prorate; otherwise full month
     const prorateFactor = latestExportDay !== null ? latestExportDay / totalDays : 1;
 
-    // Load all visits and group by BA email → set of storeNames visited in this month
-    // Map storeCode → storeName via store master
-    const baStoreNames = new Map<string, { repName: string; storeNames: Set<string> }>();
+    // Load all visits and group by BA email → set of stores visited in this month
+    // Track both siteCode and storeName for each store
+    const baStores = new Map<string, { repName: string; stores: Map<string, string> }>();
     for (const upload of visitIndex) {
       const visits = await loadVisitData(upload.id);
       for (const v of visits) {
@@ -99,13 +99,16 @@ export async function POST(req: NextRequest) {
         // checkInDate is YYYY-MM-DD; month is YYYY-MM
         if (!v.checkInDate.startsWith(month)) continue;
         const email = v.email.toLowerCase();
-        if (!baStoreNames.has(email)) {
-          baStoreNames.set(email, { repName: v.repName || v.email, storeNames: new Set() });
+        if (!baStores.has(email)) {
+          baStores.set(email, { repName: v.repName || v.email, stores: new Map() });
         }
-        const entry = baStoreNames.get(email)!;
+        const entry = baStores.get(email)!;
         // Resolve storeCode to storeName via store master (case-insensitive)
-        const storeName = v.storeCode ? siteCodeToName[v.storeCode.trim().toUpperCase()] : undefined;
-        if (storeName) entry.storeNames.add(storeName);
+        if (v.storeCode) {
+          const code = v.storeCode.trim().toUpperCase();
+          const storeName = siteCodeToName[code];
+          if (storeName) entry.stores.set(code, storeName);
+        }
         // Keep the latest repName
         if (v.repName) entry.repName = v.repName;
       }
@@ -131,14 +134,14 @@ export async function POST(req: NextRequest) {
       points: number;
     }[] = [];
 
-    for (const [email, { repName, storeNames: baStoreSet }] of baStoreNames) {
+    for (const [email, { repName, stores: baStoreMap }] of baStores) {
       let totalValueTarget = 0;
       let totalActualValue = 0;
-      const storeNamesList: string[] = [...baStoreSet];
+      const storeNamesList: string[] = [...baStoreMap.values()];
 
-      for (const storeName of baStoreSet) {
-        // Get target by storeName (normalized match)
-        const target = getStoreTargetByName(targetData.targets, dispoMonth, storeName);
+      for (const [siteCode, storeName] of baStoreMap) {
+        // Get target by siteCode (matches target file col B to store master siteCode)
+        const target = getStoreTarget(targetData.targets, dispoMonth, siteCode);
         if (!target) continue;
 
         totalValueTarget += target.valueTarget;

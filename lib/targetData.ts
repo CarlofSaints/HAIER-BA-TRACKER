@@ -35,18 +35,31 @@ export async function saveTargetData(data: TargetData): Promise<void> {
 }
 
 /**
- * Get the target for a specific store + month by siteCode.
+ * Get the target for a specific store + month by siteCode (case-insensitive).
  * Month format: MM-YYYY (matching DISPO).
+ * Falls back to MM-only matching if exact month not found (target headers have no year).
  */
 export function getStoreTarget(
   targets: Record<string, TargetEntry[]>,
   month: string,
   siteCode: string,
 ): TargetEntry | undefined {
-  const entries = targets[month];
+  const code = siteCode.trim().toUpperCase();
+
+  // Try exact month first
+  let entries = targets[month];
+  if (!entries) {
+    // Fallback: match by MM only (target file has no year in headers)
+    const mm = month.split('-')[0];
+    for (const [key, val] of Object.entries(targets)) {
+      if (key.startsWith(mm + '-') && val.length > 0) {
+        entries = val;
+        break;
+      }
+    }
+  }
   if (!entries) return undefined;
-  const code = siteCode.trim();
-  return entries.find(e => e.siteCode === code);
+  return entries.find(e => e.siteCode.trim().toUpperCase() === code);
 }
 
 /**

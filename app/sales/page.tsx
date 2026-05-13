@@ -976,15 +976,15 @@ export default function SalesPage() {
               </div>
             </div>
 
-            {/* Target debug info — remove after confirming */}
-            {targetDebug && (
+            {/* Target matching info */}
+            {targetDebug && targetDebug.loaded && (
               <div style={{
                 background: storeSummary.some(s => s.valTarget > 0) ? '#f0fdf4' : '#fef2f2',
                 border: `1px solid ${storeSummary.some(s => s.valTarget > 0) ? '#bbf7d0' : '#fecaca'}`,
                 borderRadius: 8, padding: '0.5rem 1rem', fontSize: '0.75rem',
                 color: storeSummary.some(s => s.valTarget > 0) ? '#166534' : '#991b1b', marginBottom: '1rem',
               }}>
-                Targets: {!targetDebug.loaded ? 'not loaded' : targetDebug.availableMonths.length === 0 ? 'no data (upload targets first)' : (
+                Targets: {targetDebug.availableMonths.length === 0 ? 'No target data — upload targets first' : (
                   <>
                     {targetDebug.targetEntries} target entries, {storeSummary.filter(s => s.valTarget > 0).length} DISPO stores matched
                     {targetDebug.fallback && ' (year fallback)'}
@@ -993,7 +993,6 @@ export default function SalesPage() {
                       <>
                         {' | '}Target stores: {targetDebug.sampleTarget.join(', ')}
                         {' | '}DISPO stores: {storeSummary.slice(0, 3).map(s => s.store).join(', ')}
-                        {' | '}Store master codes: {storeMaster.slice(0, 3).map(s => `${s.storeName} [${s.siteCode}]`).join(', ')}
                       </>
                     )}
                   </>
