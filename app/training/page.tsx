@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
@@ -32,6 +32,64 @@ interface FormDataResponse {
   rowCount: number;
 }
 
+/* ── Column filtering ── */
+
+const HIDDEN_PATTERNS = new Set([
+  'id', 'email', 'customer', 'channel', 'store code', 'time',
+  'visit uuid', 'visit id', 'visitid', 'tag', 'sync date', 'sync time',
+  'did you complete training', 'did you complete training?',
+  'rep name', 'representative name',
+]);
+
+const FIRST_NAME_PATTERNS = new Set(['first name', 'firstname', 'name']);
+const LAST_NAME_PATTERNS = new Set(['last name', 'lastname', 'surname']);
+
+function isHidden(header: string): boolean {
+  const h = header.toLowerCase().trim();
+  return HIDDEN_PATTERNS.has(h) || FIRST_NAME_PATTERNS.has(h) || LAST_NAME_PATTERNS.has(h);
+}
+
+/** Build display columns: merged Name + filtered visible headers */
+function buildDisplayColumns(headers: string[]) {
+  const firstNameCol = headers.find(h => FIRST_NAME_PATTERNS.has(h.toLowerCase().trim()));
+  const lastNameCol = headers.find(h => LAST_NAME_PATTERNS.has(h.toLowerCase().trim()));
+  const repNameCol = headers.find(h => {
+    const l = h.toLowerCase().trim();
+    return l === 'rep name' || l === 'representative name';
+  });
+
+  const visible = headers.filter(h => !isHidden(h));
+  // Prepend "Name" as first column
+  return { columns: ['Name', ...visible], firstNameCol, lastNameCol, repNameCol };
+}
+
+function getRowName(row: FormRow, firstNameCol?: string, lastNameCol?: string, repNameCol?: string): string {
+  const first = firstNameCol ? String(row[firstNameCol] ?? '').trim() : '';
+  const last = lastNameCol ? String(row[lastNameCol] ?? '').trim() : '';
+  const merged = [first, last].filter(Boolean).join(' ');
+  if (merged) return merged;
+  if (repNameCol) return String(row[repNameCol] ?? '').trim();
+  return '';
+}
+
+/* ── FSP Count ── */
+
+function findFspColumn(headers: string[]): string | undefined {
+  return headers.find(h => h.toLowerCase().includes('fsp') && h.toLowerCase().includes('train'));
+}
+
+function sumFspValues(rows: FormRow[], fspCol: string): number {
+  let total = 0;
+  for (const r of rows) {
+    const v = r[fspCol];
+    if (v !== null && v !== undefined) {
+      const n = typeof v === 'number' ? v : parseFloat(String(v));
+      if (!isNaN(n)) total += n;
+    }
+  }
+  return total;
+}
+
 /* ── Helpers ── */
 
 function currentMonth() {
@@ -45,18 +103,17 @@ function formatMonth(m: string) {
   return `${names[parseInt(mo, 10) - 1]} ${y}`;
 }
 
-const PERIGEE_PREFIX = 'https://live.perigeeportal.co.za';
-
 function isImageUrl(val: unknown): val is string {
   return typeof val === 'string' && val.startsWith('https://');
 }
 
-/** Perigee URLs still need the proxy; blob CDN URLs are used directly */
+const PERIGEE_PREFIX = 'https://live.perigeeportal.co.za';
+
 function resolveImageUrl(originalUrl: string): string {
   if (originalUrl.startsWith(PERIGEE_PREFIX)) {
     return `/api/image?url=${encodeURIComponent(originalUrl)}`;
   }
-  return originalUrl; // Vercel Blob CDN URL — use directly
+  return originalUrl;
 }
 
 /* ── Lightbox ── */
@@ -104,25 +161,46 @@ function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
   );
 }
 
+/* ── Column Resize Hook ── */
+
+function useColumnResize(defaultWidth: number) {
+  const [widths, setWidths] = useState<Record<string, number>>({});
+
+  const startResize = useCallback((col: string, startX: number) => {
+    const startW = widths[col] || defaultWidth;
+    const onMove = (e: MouseEvent) => {
+      const delta = e.clientX - startX;
+      setWidths(prev => ({ ...prev, [col]: Math.max(60, startW + delta) }));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [widths, defaultWidth]);
+
+  return { widths, startResize };
+}
+
+/* ── Sticky column constants ── */
+const NUM_COL_W = 36;
+const NAME_COL_W = 180;
+
 /* ── Main Page ── */
 
 export default function TrainingPage() {
   const { session, loading: authLoading, logout } = useAuth(['admin', 'super_admin']);
   const [month, setMonth] = useState(currentMonth());
 
-  // Summary state
   const [summaryData, setSummaryData] = useState<TrainingSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
-
-  // Form data state
   const [formData, setFormData] = useState<FormDataResponse | null>(null);
   const [formLoading, setFormLoading] = useState(false);
-
-  // Lightbox
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-
-  // Search filter for form data
   const [formSearch, setFormSearch] = useState('');
+  const { widths, startResize } = useColumnResize(150);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
@@ -145,12 +223,10 @@ export default function TrainingPage() {
   }, [month]);
 
   useEffect(() => {
-    if (session) {
-      loadSummary();
-      loadFormData();
-    }
+    if (session) { loadSummary(); loadFormData(); }
   }, [session, loadSummary, loadFormData]);
 
+  // Summary stats
   const stats = useMemo(() => {
     if (!summaryData || summaryData.bas.length === 0) {
       return { totalBAs: 0, totalSessions: 0, avgPerBA: 0, compliant: 0, complianceRate: 0 };
@@ -163,18 +239,37 @@ export default function TrainingPage() {
     return { totalBAs, totalSessions, avgPerBA: Math.round(avgPerBA * 10) / 10, compliant, complianceRate };
   }, [summaryData]);
 
-  // Filter form data rows by search
+  // Display columns (filtered + merged Name)
+  const display = useMemo(() => {
+    if (!formData) return null;
+    return buildDisplayColumns(formData.headers);
+  }, [formData]);
+
+  // FSP total from form data
+  const fspTotal = useMemo(() => {
+    if (!formData) return 0;
+    const col = findFspColumn(formData.headers);
+    if (!col) return 0;
+    return sumFspValues(formData.rows, col);
+  }, [formData]);
+
+  // Filtered rows
   const filteredFormRows = useMemo(() => {
-    if (!formData) return [];
-    if (!formSearch.trim()) return formData.rows;
+    if (!formData || !display) return [];
+    const rows = formData.rows;
+    if (!formSearch.trim()) return rows;
     const q = formSearch.toLowerCase();
-    return formData.rows.filter(row =>
-      formData.headers.some(h => {
+    return rows.filter(row => {
+      // Search across visible columns + merged name
+      const name = getRowName(row, display.firstNameCol, display.lastNameCol, display.repNameCol);
+      if (name.toLowerCase().includes(q)) return true;
+      return display.columns.some(h => {
+        if (h === 'Name') return false; // already checked
         const v = row[h];
         return v !== null && v !== undefined && String(v).toLowerCase().includes(q);
-      })
-    );
-  }, [formData, formSearch]);
+      });
+    });
+  }, [formData, display, formSearch]);
 
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
@@ -195,13 +290,7 @@ export default function TrainingPage() {
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'flex-end' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Month</label>
-            <input
-              className="input"
-              type="month"
-              value={month}
-              onChange={e => setMonth(e.target.value)}
-              style={{ width: 180 }}
-            />
+            <input className="input" type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 180 }} />
           </div>
         </div>
 
@@ -210,32 +299,33 @@ export default function TrainingPage() {
           <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280' }}>Loading summary...</div>
         ) : !summaryData || summaryData.bas.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af', marginBottom: '2rem' }}>
-            No training data for {formatMonth(month)}. Upload training forms via the Data Upload page.
+            No training data for {formatMonth(month)}.
           </div>
         ) : (
           <>
-            {/* Summary Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-              <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>BAs Trained</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{stats.totalBAs}</div>
-              </div>
-              <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Total Sessions</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{stats.totalSessions}</div>
-              </div>
-              <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Avg per BA</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{stats.avgPerBA}</div>
-                <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>Required: {summaryData.minRequired}</div>
-              </div>
-              <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Fully Compliant</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: stats.complianceRate >= 80 ? '#059669' : stats.complianceRate >= 50 ? '#d97706' : '#dc2626' }}>
-                  {stats.compliant}/{stats.totalBAs}
+            {/* Summary Cards — compact/square */}
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+              {[
+                { label: "FSP's Trained", value: fspTotal, color: '#0054A6' },
+                { label: 'Total Sessions', value: stats.totalSessions, color: '#0054A6' },
+                { label: 'Avg per BA', value: stats.avgPerBA, color: '#0054A6', sub: `Required: ${summaryData.minRequired}` },
+                {
+                  label: 'Fully Compliant',
+                  value: `${stats.compliant}/${stats.totalBAs}`,
+                  color: stats.complianceRate >= 80 ? '#059669' : stats.complianceRate >= 50 ? '#d97706' : '#dc2626',
+                  sub: `${stats.complianceRate}%`,
+                },
+              ].map(card => (
+                <div
+                  key={card.label}
+                  className="kpi-card"
+                  style={{ width: 130, minWidth: 130, maxWidth: 130, flex: 'none' }}
+                >
+                  <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: 4, lineHeight: 1.2 }}>{card.label}</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: card.color }}>{card.value}</div>
+                  {card.sub && <div style={{ fontSize: '0.65rem', color: '#9ca3af' }}>{card.sub}</div>}
                 </div>
-                <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{stats.complianceRate}%</div>
-              </div>
+              ))}
             </div>
 
             {/* Threshold info */}
@@ -268,27 +358,17 @@ export default function TrainingPage() {
                       <tr key={ba.email}>
                         <td style={{ fontWeight: 500, fontSize: '0.85rem' }}>{ba.repName}</td>
                         <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>{ba.email}</td>
-                        <td style={{ textAlign: 'center', fontWeight: 600, color: ba.compliant ? '#059669' : '#dc2626' }}>
-                          {ba.completedCount}
-                        </td>
+                        <td style={{ textAlign: 'center', fontWeight: 600, color: ba.compliant ? '#059669' : '#dc2626' }}>{ba.completedCount}</td>
                         <td style={{ textAlign: 'center', color: '#6b7280' }}>{ba.minRequired}</td>
                         <td style={{ textAlign: 'center' }}>
-                          <span style={{
-                            background: '#ede9fe', color: '#7c3aed', fontSize: '0.75rem',
-                            fontWeight: 600, padding: '2px 8px', borderRadius: 4,
-                          }}>
+                          <span style={{ background: '#ede9fe', color: '#7c3aed', fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 4 }}>
                             {ba.autoPoints}/5
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <span style={{
-                            display: 'inline-block',
-                            padding: '2px 10px',
-                            borderRadius: 12,
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            background: ba.compliant ? '#dcfce7' : '#fef2f2',
-                            color: ba.compliant ? '#166534' : '#991b1b',
+                            display: 'inline-block', padding: '2px 10px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600,
+                            background: ba.compliant ? '#dcfce7' : '#fef2f2', color: ba.compliant ? '#166534' : '#991b1b',
                           }}>
                             {ba.compliant ? 'Compliant' : 'Below Target'}
                           </span>
@@ -305,7 +385,7 @@ export default function TrainingPage() {
         {/* ── Form Data Section ── */}
         {formLoading ? (
           <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280' }}>Loading form data...</div>
-        ) : !formData || formData.rowCount === 0 ? (
+        ) : !formData || formData.rowCount === 0 || !display ? (
           <div style={{
             textAlign: 'center', padding: '2rem', color: '#9ca3af',
             background: 'white', borderRadius: 12, border: '1px solid #e5e7eb',
@@ -313,7 +393,7 @@ export default function TrainingPage() {
             No form data for {formatMonth(month)}.
             <br />
             <span style={{ fontSize: '0.8rem' }}>
-              Form data is available for files uploaded after this feature was added. Re-upload existing files to populate.
+              Re-upload training files to populate form data.
             </span>
           </div>
         ) : (
@@ -321,112 +401,151 @@ export default function TrainingPage() {
             {/* Search + count */}
             <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <input
-                className="input"
-                type="text"
-                placeholder="Search form data..."
-                value={formSearch}
-                onChange={e => setFormSearch(e.target.value)}
+                className="input" type="text" placeholder="Search form data..."
+                value={formSearch} onChange={e => setFormSearch(e.target.value)}
                 style={{ width: 260 }}
               />
               <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>
                 {filteredFormRows.length} of {formData.rowCount} records
-                {formData.imageColumns.length > 0 && (
-                  <> &middot; {formData.imageColumns.length} image column{formData.imageColumns.length > 1 ? 's' : ''} detected</>
-                )}
               </span>
             </div>
 
-            {/* Form Data Table with frozen headers */}
+            {/* Form Data Table — frozen # + Name columns, wrapped headers, resizable */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
               <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}>
                 Training Form Responses — {formatMonth(month)}
               </div>
-              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 200px)' }}>
-                <table className="data-table" style={{ minWidth: formData.headers.length * 140 }}>
+              <div ref={scrollRef} style={{ overflow: 'auto', maxHeight: 'calc(100vh - 200px)' }}>
+                <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%' }}>
                   <thead>
                     <tr>
-                      <th style={{ minWidth: 40, textAlign: 'center' }}>#</th>
-                      {formData.headers.map(h => (
-                        <th
-                          key={h}
-                          style={{
-                            minWidth: formData.imageColumns.includes(h) ? 110 : 140,
-                            fontSize: '0.75rem',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {h}
-                          {formData.imageColumns.includes(h) && (
-                            <span style={{ marginLeft: 4, fontSize: '0.65rem', color: '#9ca3af' }}>(img)</span>
-                          )}
-                        </th>
-                      ))}
+                      {/* Frozen # header */}
+                      <th style={{
+                        position: 'sticky', left: 0, top: 0, zIndex: 4,
+                        width: NUM_COL_W, minWidth: NUM_COL_W, maxWidth: NUM_COL_W,
+                        background: '#f9fafb', textAlign: 'center', fontSize: '0.75rem',
+                        padding: '8px 4px', borderBottom: '2px solid #e5e7eb', borderRight: '1px solid #e5e7eb',
+                        fontWeight: 600, color: '#6b7280',
+                      }}>
+                        #
+                      </th>
+                      {/* Frozen Name header */}
+                      <th style={{
+                        position: 'sticky', left: NUM_COL_W, top: 0, zIndex: 4,
+                        width: NAME_COL_W, minWidth: NAME_COL_W,
+                        background: '#f9fafb', fontSize: '0.75rem', fontWeight: 600, color: '#374151',
+                        padding: '8px 10px', borderBottom: '2px solid #e5e7eb', borderRight: '2px solid #d1d5db',
+                        whiteSpace: 'normal', lineHeight: 1.3,
+                      }}>
+                        Name
+                      </th>
+                      {/* Scrollable column headers */}
+                      {display.columns.slice(1).map(h => {
+                        const isImg = formData.imageColumns.includes(h);
+                        const w = widths[h] || (isImg ? 110 : 150);
+                        return (
+                          <th
+                            key={h}
+                            style={{
+                              position: 'sticky', top: 0, zIndex: 2,
+                              width: w, minWidth: 60,
+                              background: '#f9fafb', fontSize: '0.75rem', fontWeight: 600, color: '#374151',
+                              padding: '8px 10px', borderBottom: '2px solid #e5e7eb',
+                              whiteSpace: 'normal', lineHeight: 1.3,
+                              userSelect: 'none',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                              <span style={{ flex: 1 }}>{h}</span>
+                              {/* Resize handle */}
+                              <div
+                                style={{
+                                  width: 4, alignSelf: 'stretch', cursor: 'col-resize',
+                                  marginLeft: 4, marginRight: -10,
+                                  borderRight: '2px solid transparent',
+                                }}
+                                onMouseDown={e => { e.preventDefault(); startResize(h, e.clientX); }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderRightColor = '#93c5fd'; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderRightColor = 'transparent'; }}
+                              />
+                            </div>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredFormRows.map((row, idx) => (
-                      <tr key={idx}>
-                        <td style={{ textAlign: 'center', fontSize: '0.75rem', color: '#9ca3af' }}>{idx + 1}</td>
-                        {formData.headers.map(h => {
-                          const val = row[h];
-                          const isImage = formData.imageColumns.includes(h);
+                    {filteredFormRows.map((row, idx) => {
+                      const name = getRowName(row, display.firstNameCol, display.lastNameCol, display.repNameCol);
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                          {/* Frozen # cell */}
+                          <td style={{
+                            position: 'sticky', left: 0, zIndex: 1,
+                            background: 'white', textAlign: 'center', fontSize: '0.7rem', color: '#9ca3af',
+                            padding: '6px 4px', borderRight: '1px solid #e5e7eb',
+                            width: NUM_COL_W, minWidth: NUM_COL_W, maxWidth: NUM_COL_W,
+                          }}>
+                            {idx + 1}
+                          </td>
+                          {/* Frozen Name cell */}
+                          <td style={{
+                            position: 'sticky', left: NUM_COL_W, zIndex: 1,
+                            background: 'white', fontWeight: 500, fontSize: '0.82rem',
+                            padding: '6px 10px', borderRight: '2px solid #d1d5db',
+                            width: NAME_COL_W, minWidth: NAME_COL_W,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}
+                            title={name}
+                          >
+                            {name || <span style={{ color: '#d1d5db' }}>—</span>}
+                          </td>
+                          {/* Scrollable data cells */}
+                          {display.columns.slice(1).map(h => {
+                            const val = row[h];
+                            const isImg = formData.imageColumns.includes(h);
 
-                          if (isImage) {
-                            if (isImageUrl(val)) {
-                              const proxied = resolveImageUrl(val);
-                              return (
-                                <td key={h} style={{ padding: '4px 8px' }}>
-                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                            if (isImg) {
+                              if (isImageUrl(val)) {
+                                const src = resolveImageUrl(val);
+                                return (
+                                  <td key={h} style={{ padding: '4px 8px' }}>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                      src={proxied}
-                                      alt={h}
+                                      src={src} alt={h}
                                       style={{
-                                        height: 64, width: 80, objectFit: 'cover',
+                                        height: 56, width: 72, objectFit: 'cover',
                                         borderRadius: 4, border: '1px solid #e5e7eb',
                                         cursor: 'pointer', transition: 'opacity 0.15s',
                                       }}
-                                      onClick={() => setLightboxUrl(proxied)}
+                                      onClick={() => setLightboxUrl(src)}
                                       loading="lazy"
                                       onMouseOver={e => { (e.target as HTMLImageElement).style.opacity = '0.8'; }}
                                       onMouseOut={e => { (e.target as HTMLImageElement).style.opacity = '1'; }}
-                                      onError={e => {
-                                        const img = e.target as HTMLImageElement;
-                                        img.style.display = 'none';
-                                        const span = img.nextElementSibling as HTMLElement;
-                                        if (span) span.style.display = 'inline';
-                                      }}
+                                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                     />
-                                    <span style={{ display: 'none', fontSize: '0.7rem', color: '#9ca3af' }}>
-                                      Failed to load
-                                    </span>
-                                  </div>
-                                </td>
-                              );
+                                  </td>
+                                );
+                              }
+                              return <td key={h} style={{ fontSize: '0.75rem', color: '#d1d5db', padding: '4px 8px' }}>—</td>;
                             }
+
                             return (
-                              <td key={h} style={{ fontSize: '0.75rem', color: '#d1d5db', padding: '4px 8px' }}>
-                                —
+                              <td key={h} style={{ fontSize: '0.8rem', padding: '6px 10px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {val !== null && val !== undefined && val !== '' ? (
+                                  <span title={String(val)}>{String(val)}</span>
+                                ) : (
+                                  <span style={{ color: '#d1d5db' }}>—</span>
+                                )}
                               </td>
                             );
-                          }
-
-                          // Regular text cell
-                          return (
-                            <td key={h} style={{ fontSize: '0.8rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {val !== null && val !== undefined && val !== '' ? (
-                                <span title={String(val)}>{String(val)}</span>
-                              ) : (
-                                <span style={{ color: '#d1d5db' }}>—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
+                          })}
+                        </tr>
+                      );
+                    })}
                     {filteredFormRows.length === 0 && (
                       <tr>
-                        <td colSpan={formData.headers.length + 1} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                        <td colSpan={display.columns.length + 1} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                           No matching records
                         </td>
                       </tr>
@@ -442,7 +561,6 @@ export default function TrainingPage() {
         <Footer />
       </main>
 
-      {/* Lightbox overlay */}
       {lightboxUrl && <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
     </div>
   );

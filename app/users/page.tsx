@@ -43,7 +43,6 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<UserRow | null>(null);
   const [form, setForm] = useState<UserForm>({ email: '', name: '', surname: '', cellNumber: '', role: 'client', password: '', forcePasswordChange: true, sendWelcomeEmail: true });
   const [saving, setSaving] = useState(false);
-  const [purging, setPurging] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const loadUsers = useCallback(async () => {
@@ -137,39 +136,6 @@ export default function UsersPage() {
     }
   }
 
-  async function handlePurge(u: UserRow) {
-    const confirmed = confirm(
-      `PURGE ${u.name} ${u.surname} (${u.email})?\n\n` +
-      `This will permanently delete:\n` +
-      `- User account\n` +
-      `- All score records (all months)\n` +
-      `- All visit records\n` +
-      `- All training records\n\n` +
-      `This action cannot be undone.`
-    );
-    if (!confirmed) return;
-
-    setPurging(u.id);
-    try {
-      const res = await authFetch(`/api/users/${u.id}/purge`, { method: 'DELETE' });
-      const data = await res.json();
-      if (res.ok) {
-        const p = data.purged;
-        setToast({
-          msg: `Purged ${p.user}: ${p.scoresRemoved} scores, ${p.visitsRemoved} visits, ${p.trainingRemoved} training records removed`,
-          type: 'success',
-        });
-        loadUsers();
-      } else {
-        setToast({ msg: data.error || 'Purge failed', type: 'error' });
-      }
-    } catch {
-      setToast({ msg: 'Purge failed', type: 'error' });
-    } finally {
-      setPurging(null);
-    }
-  }
-
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
@@ -195,7 +161,7 @@ export default function UsersPage() {
                 <th>Cell</th>
                 <th>Role</th>
                 <th>Created</th>
-                <th style={{ width: session.role === 'super_admin' ? 210 : 140 }}>Actions</th>
+                <th style={{ width: 140 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -210,21 +176,6 @@ export default function UsersPage() {
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button className="btn btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => openEdit(u)}>Edit</button>
                       <button className="btn btn-danger" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => handleDelete(u.id)}>Delete</button>
-                      {session.role === 'super_admin' && u.id !== session.id && (
-                        <button
-                          style={{
-                            padding: '0.2rem 0.5rem', fontSize: '0.75rem',
-                            background: purging === u.id ? '#7c3aed' : '#9333ea',
-                            color: 'white', border: 'none', borderRadius: 6,
-                            cursor: purging === u.id ? 'wait' : 'pointer',
-                            opacity: purging === u.id ? 0.7 : 1,
-                          }}
-                          onClick={() => handlePurge(u)}
-                          disabled={purging !== null}
-                        >
-                          {purging === u.id ? 'Purging...' : 'Purge'}
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>

@@ -68,10 +68,10 @@ export async function POST(req: NextRequest) {
 
     const salesThreshold = kpiControls.salesThresholdPct ?? 80;
 
-    // Build store master lookup: siteCode → storeName
+    // Build store master lookup: UPPERCASE siteCode → storeName
     const siteCodeToName: Record<string, string> = {};
     for (const s of stores) {
-      if (s.siteCode) siteCodeToName[s.siteCode.trim()] = s.storeName;
+      if (s.siteCode) siteCodeToName[s.siteCode.trim().toUpperCase()] = s.storeName;
     }
 
     // Find latest DISPO export date for this month (for prorating)
@@ -103,8 +103,8 @@ export async function POST(req: NextRequest) {
           baStoreNames.set(email, { repName: v.repName || v.email, storeNames: new Set() });
         }
         const entry = baStoreNames.get(email)!;
-        // Resolve storeCode to storeName via store master
-        const storeName = v.storeCode ? siteCodeToName[v.storeCode.trim()] : undefined;
+        // Resolve storeCode to storeName via store master (case-insensitive)
+        const storeName = v.storeCode ? siteCodeToName[v.storeCode.trim().toUpperCase()] : undefined;
         if (storeName) entry.storeNames.add(storeName);
         // Keep the latest repName
         if (v.repName) entry.repName = v.repName;
@@ -112,7 +112,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Get DISPO sales for a store (by storeName) in this month
-    const monthSales = dispoData.sales[dispoMonth] || {};
+    // Build case-insensitive lookup: UPPER storeName → original key
+    const rawMonthSales = dispoData.sales[dispoMonth] || {};
+    const monthSalesNorm: Record<string, Record<string, number>> = {};
+    for (const [key, products] of Object.entries(rawMonthSales)) {
+      monthSalesNorm[key.trim().toUpperCase()] = products;
+    }
 
     // Calculate per-BA results
     const results: {
@@ -138,8 +143,8 @@ export async function POST(req: NextRequest) {
 
         totalValueTarget += target.valueTarget;
 
-        // Get actual sales from DISPO by storeName
-        const storeProducts = monthSales[storeName];
+        // Get actual sales from DISPO by storeName (case-insensitive)
+        const storeProducts = monthSalesNorm[storeName.trim().toUpperCase()];
         if (storeProducts) {
           for (const [article, units] of Object.entries(storeProducts)) {
             totalActualValue += calcSalesValue(units, dispoData.prices[article]);
