@@ -9,6 +9,7 @@ import Footer from '@/components/Footer';
 export default function KPIControlsPage() {
   const { session, loading: authLoading, logout } = useAuth(['admin', 'super_admin']);
   const [minTrainings, setMinTrainings] = useState(4);
+  const [minVisits, setMinVisits] = useState(20);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -21,6 +22,7 @@ export default function KPIControlsPage() {
       .then(r => r.json())
       .then(data => {
         if (data.minTrainingsPerMonth) setMinTrainings(data.minTrainingsPerMonth);
+        if (data.minVisitsPerMonth) setMinVisits(data.minVisitsPerMonth);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -32,7 +34,7 @@ export default function KPIControlsPage() {
       const res = await authFetch('/api/config/kpi-controls', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minTrainingsPerMonth: minTrainings }),
+        body: JSON.stringify({ minTrainingsPerMonth: minTrainings, minVisitsPerMonth: minVisits }),
       });
       if (res.ok) {
         setToast({ msg: 'KPI controls saved', type: 'success' });
@@ -103,6 +105,46 @@ export default function KPIControlsPage() {
               <div style={{ marginTop: 6, color: '#6b7280', fontSize: '0.75rem' }}>
                 Example: {minTrainings} trainings completed = 5/5 auto pts.{' '}
                 {Math.max(1, Math.floor(minTrainings / 2))} completed = {Math.min(5, Math.round((Math.max(1, Math.floor(minTrainings / 2)) / minTrainings) * 5))}/5 auto pts.
+              </div>
+            </div>
+
+            {/* Visits Threshold */}
+            <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
+              <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
+                Visits Threshold
+              </h2>
+              <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
+                Minimum number of store visits per month for a BA. Used to evaluate check-in performance.
+              </p>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
+                  Minimum Visits per Month
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={minVisits}
+                  onChange={e => setMinVisits(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+                  disabled={!isSuperAdmin}
+                  style={{ width: 120 }}
+                />
+                <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 4 }}>
+                  Range: 1–100. Default: 20
+                </div>
+              </div>
+
+              <div style={{
+                background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8,
+                padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#14532d', marginBottom: '1rem',
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>How it works</div>
+                <div>BAs are expected to complete at least {minVisits} store visits per month.</div>
+                <div style={{ marginTop: 6, color: '#6b7280', fontSize: '0.75rem' }}>
+                  Check-in scores are auto-calculated based on on-time visit check-ins relative to this threshold.
+                </div>
               </div>
             </div>
 

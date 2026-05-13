@@ -178,37 +178,52 @@ export default function LeaderboardPage() {
     return entries;
   }, [data, selectedMonth, sortField, sortDir]);
 
-  // DISPO sales per store (all products combined)
+  // Convert leaderboard month (YYYY-MM) to DISPO month key (MM-YYYY)
+  const dispoMonthKey = useMemo(() => {
+    const [y, m] = selectedMonth.split('-');
+    return `${m}-${y}`;
+  }, [selectedMonth]);
+
+  // DISPO sales per store for the selected month
   const storeSales = useMemo(() => {
     if (!dispoData) return new Map<string, { vol: number; val: number }>();
     const map = new Map<string, { vol: number; val: number }>();
-    for (const monthData of Object.values(dispoData.sales)) {
-      for (const [store, products] of Object.entries(monthData)) {
-        if (!map.has(store)) map.set(store, { vol: 0, val: 0 });
-        const entry = map.get(store)!;
-        for (const [article, units] of Object.entries(products)) {
-          entry.vol += units;
-          const p = dispoData.prices[article];
-          if (p) {
-            const price = p.promSP > 0 ? p.promSP : p.inclSP;
-            entry.val += units * price;
-          }
+    const monthData = dispoData.sales[dispoMonthKey];
+    if (!monthData) return map;
+    for (const [store, products] of Object.entries(monthData)) {
+      if (!map.has(store)) map.set(store, { vol: 0, val: 0 });
+      const entry = map.get(store)!;
+      for (const [article, units] of Object.entries(products)) {
+        entry.vol += units;
+        const p = dispoData.prices[article];
+        if (p) {
+          const price = p.promSP > 0 ? p.promSP : p.inclSP;
+          entry.val += units * price;
         }
       }
     }
     return map;
-  }, [dispoData]);
+  }, [dispoData, dispoMonthKey]);
 
-  const hasDispoData = storeSales.size > 0;
+  // Normalized (lowercase) lookup for case-insensitive store matching
+  const storeSalesNorm = useMemo(() => {
+    const map = new Map<string, { vol: number; val: number }>();
+    for (const [store, sales] of storeSales) {
+      map.set(store.toLowerCase().trim(), sales);
+    }
+    return map;
+  }, [storeSales]);
 
-  // Top Sales Store (store with highest total sales value)
+  const hasDispoData = dispoData ? Object.keys(dispoData.sales).length > 0 : false;
+
+  // Top Sales Store (store with highest total sales value for selected month)
   const topSalesStore = useMemo(() => {
-    if (!hasDispoData) return null;
+    if (!hasDispoData || storeSales.size === 0) return null;
     let best: { store: string; val: number; ba: string } | null = null;
     for (const [store, { val }] of storeSales.entries()) {
       if (!best || val > best.val) {
-        // Find BA assigned to this store
-        const ba = data.find(d => d.storeName === store);
+        const storeNorm = store.toLowerCase().trim();
+        const ba = data.find(d => (d.storeName || '').toLowerCase().trim() === storeNorm);
         best = { store, val, ba: ba?.repName || '' };
       }
     }
@@ -437,7 +452,7 @@ export default function LeaderboardPage() {
                             {entry.grandTotal}
                           </td>
                           {hasDispoData && (() => {
-                            const ss = storeSales.get(entry.storeName);
+                            const ss = storeSalesNorm.get((entry.storeName || '').toLowerCase().trim());
                             return (
                               <>
                                 <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>

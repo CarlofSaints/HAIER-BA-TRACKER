@@ -343,21 +343,47 @@ export default function ScoreEntryPage() {
                         {KPI_DEFS.map(kpi => {
                           const key = kpi.key as keyof BAScore;
                           const val = Number(s[key]) || 0;
-                          // Monthly sales is checkbox (hit target = 40 or miss = 0)
+                          // Monthly sales — locked (data-driven from DISPO)
                           if (kpi.key === 'monthlySales') {
                             return (
                               <td key={kpi.key} style={{ textAlign: 'center' }}>
-                                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={val === 40}
-                                    onChange={e => updateScore(i, 'monthlySales', e.target.checked ? 40 : 0)}
-                                    style={{ width: 16, height: 16 }}
-                                  />
-                                  <span style={{ fontSize: '0.75rem', color: val === 40 ? '#059669' : '#9ca3af' }}>
-                                    {val === 40 ? '40' : '0'}
-                                  </span>
-                                </label>
+                                <div
+                                  title="Auto-calculated from DISPO sales data"
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                    background: '#f3f4f6', borderRadius: 4, padding: '3px 8px',
+                                    fontSize: '0.8rem', fontWeight: 600, color: val === 40 ? '#059669' : '#9ca3af',
+                                    border: '1px solid #e5e7eb', minWidth: 52,
+                                  }}
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                  </svg>
+                                  {val}
+                                </div>
+                              </td>
+                            );
+                          }
+                          // Check-in — locked (auto-calculated from visit data)
+                          if (kpi.key === 'checkInOnTime') {
+                            return (
+                              <td key={kpi.key} style={{ textAlign: 'center' }}>
+                                <div
+                                  title="Auto-calculated from visit check-in data"
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                    background: '#f3f4f6', borderRadius: 4, padding: '3px 8px',
+                                    fontSize: '0.8rem', fontWeight: 600, color: val > 0 ? '#0054A6' : '#9ca3af',
+                                    border: '1px solid #e5e7eb', minWidth: 52,
+                                  }}
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                  </svg>
+                                  {val}
+                                </div>
                               </td>
                             );
                           }
