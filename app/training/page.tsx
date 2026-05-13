@@ -48,11 +48,15 @@ function formatMonth(m: string) {
 const PERIGEE_PREFIX = 'https://live.perigeeportal.co.za';
 
 function isImageUrl(val: unknown): val is string {
-  return typeof val === 'string' && val.startsWith(PERIGEE_PREFIX);
+  return typeof val === 'string' && val.startsWith('https://');
 }
 
-function proxyUrl(originalUrl: string): string {
-  return `/api/image?url=${encodeURIComponent(originalUrl)}`;
+/** Perigee URLs still need the proxy; blob CDN URLs are used directly */
+function resolveImageUrl(originalUrl: string): string {
+  if (originalUrl.startsWith(PERIGEE_PREFIX)) {
+    return `/api/image?url=${encodeURIComponent(originalUrl)}`;
+  }
+  return originalUrl; // Vercel Blob CDN URL — use directly
 }
 
 /* ── Lightbox ── */
@@ -369,7 +373,7 @@ export default function TrainingPage() {
 
                           if (isImage) {
                             if (isImageUrl(val)) {
-                              const proxied = proxyUrl(val);
+                              const proxied = resolveImageUrl(val);
                               return (
                                 <td key={h} style={{ padding: '4px 8px' }}>
                                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>

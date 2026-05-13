@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { put } from '@vercel/blob';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import {
   loadTrainingIndex,
@@ -13,6 +14,8 @@ import {
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 export const runtime = 'nodejs';
+
+const PERIGEE_PREFIX = 'https://live.perigeeportal.co.za';
 
 // Column mapping for training form exports
 const COLUMN_MAP: Record<string, string> = {
@@ -50,6 +53,66 @@ function normaliseDateDDMMYYYY(val: string): string {
   return val;
 }
 
+/**
+ * Download image from Perigee and upload to Vercel Blob.
+ * Returns the public blob CDN URL, or null on failure.
+ */
+async function cacheImageToBlob(
+  perigeeUrl: string,
+  blobKey: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch(perigeeUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://live.perigeeportal.co.za/',
+      },
+      signal: AbortSignal.timeout(15000), // 15s per image
+    });
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+    const body = await res.arrayBuffer();
+    if (body.byteLength === 0) return null;
+
+    const blob = await put(blobKey, Buffer.from(body), {
+      access: 'public',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType,
+    });
+    return blob.url;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Process images in batches with concurrency limit.
+ */
+async function downloadImagesInBatches(
+  tasks: { perigeeUrl: string; blobKey: string }[],
+  concurrency: number,
+): Promise<Map<string, string>> {
+  const urlMap = new Map<string, string>(); // perigeeUrl → blobUrl
+  for (let i = 0; i < tasks.length; i += concurrency) {
+    const batch = tasks.slice(i, i + concurrency);
+    const results = await Promise.allSettled(
+      batch.map(async t => {
+        const blobUrl = await cacheImageToBlob(t.perigeeUrl, t.blobKey);
+        if (blobUrl) urlMap.set(t.perigeeUrl, blobUrl);
+      })
+    );
+    // Log failures for debugging
+    results.forEach((r, idx) => {
+      if (r.status === 'rejected') {
+        console.warn(`Image download failed: ${batch[idx].perigeeUrl}`, r.reason);
+      }
+    });
+  }
+  return urlMap;
+}
+
 export async function POST(req: NextRequest) {
   const user = await requireRole(req, ['super_admin', 'admin']);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -77,13 +140,10 @@ export async function POST(req: NextRequest) {
     // Build header mapping
     const headers = Object.keys(rows[0]);
     const mapping: Record<string, string> = {};
-    // Find the date header for normalising dates in form data
-    let dateHeader: string | null = null;
     for (const h of headers) {
       const normalised = h.toLowerCase().trim();
       if (COLUMN_MAP[normalised]) {
         mapping[h] = COLUMN_MAP[normalised];
-        if (COLUMN_MAP[normalised] === 'date') dateHeader = h;
       }
     }
 
@@ -98,41 +158,28 @@ export async function POST(req: NextRequest) {
         parsed[field] = String(row[header] ?? '').trim();
       }
 
-      // Build repName from first + last name
       const firstName = parsed.firstName || '';
       const lastName = parsed.lastName || '';
       const repName = parsed.repName || [firstName, lastName].filter(Boolean).join(' ');
-
-      // Normalise date
       const date = parsed.date ? normaliseDateDDMMYYYY(parsed.date) : '';
-
-      // Did complete check
       const didComplete = (parsed.didComplete || '').toLowerCase() === 'yes';
-
       const email = (parsed.email || '').trim();
       const visitUUID = (parsed.visitUUID || '').trim();
 
-      // Must have at minimum email or repName, and a date
       if ((!email && !repName) || !date) continue;
 
       records.push({
-        email,
-        repName,
-        date,
-        visitUUID,
-        didComplete,
+        email, repName, date, visitUUID, didComplete,
         store: parsed.store || '',
         storeCode: parsed.storeCode || '',
         channel: parsed.channel || '',
       });
 
-      // Build form data row with ALL original columns
       const formRow: TrainingFormRow = {};
       for (const h of headers) {
         const val = row[h];
         formRow[h] = val === undefined || val === null ? null : val === '' ? null : val;
       }
-      // Inject normalised date for month filtering
       formRow['_normalizedDate'] = date;
       formRows.push(formRow);
     }
@@ -144,8 +191,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Auto-detect image columns: any column where >30% of non-empty values look like Perigee image URLs
-    const PERIGEE_PREFIX = 'https://live.perigeeportal.co.za';
+    // Auto-detect image columns
     const imageColumns: string[] = [];
     for (const h of headers) {
       let total = 0;
@@ -164,10 +210,48 @@ export async function POST(req: NextRequest) {
 
     const uploadId = crypto.randomUUID();
 
+    // ── Download Perigee images → Vercel Blob CDN ──
+    let imagesCached = 0;
+    if (imageColumns.length > 0) {
+      // Collect unique Perigee URLs and assign blob keys
+      const seen = new Set<string>();
+      const tasks: { perigeeUrl: string; blobKey: string }[] = [];
+      let imgIndex = 0;
+
+      for (const row of formRows) {
+        for (const col of imageColumns) {
+          const val = row[col];
+          if (typeof val === 'string' && val.startsWith(PERIGEE_PREFIX) && !seen.has(val)) {
+            seen.add(val);
+            tasks.push({
+              perigeeUrl: val,
+              blobKey: `training/images/${uploadId}/${imgIndex++}.jpg`,
+            });
+          }
+        }
+      }
+
+      // Download in batches of 5
+      const urlMap = await downloadImagesInBatches(tasks, 5);
+      imagesCached = urlMap.size;
+
+      // Replace Perigee URLs with blob CDN URLs in form data
+      if (urlMap.size > 0) {
+        for (const row of formRows) {
+          for (const col of imageColumns) {
+            const val = row[col];
+            if (typeof val === 'string' && urlMap.has(val)) {
+              row[col] = urlMap.get(val)!;
+            }
+          }
+        }
+      }
+    }
+
     // Save structured records (for summary view)
     await saveTrainingData(uploadId, records);
 
-    // Save raw form data (for form data view with all columns)
+    // Save raw form data (URLs now point to Vercel Blob CDN)
     const rawFormData: TrainingFormData = { headers, imageColumns, rows: formRows };
     await saveTrainingFormData(uploadId, rawFormData);
 
@@ -185,6 +269,8 @@ export async function POST(req: NextRequest) {
       ok: true,
       uploadId,
       rowCount: records.length,
+      imagesCached,
+      imageColumns: imageColumns.length,
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Training upload error:', err);
