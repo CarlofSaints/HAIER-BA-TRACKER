@@ -163,19 +163,27 @@ export default function ScoreEntryPage() {
       if (!res.ok) throw new Error('Training auto-calc failed');
       const results: TrainingAutoItem[] = await res.json();
 
-      setScores(prev => {
-        const next = [...prev];
-        for (const r of results) {
-          const idx = next.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
-          if (idx >= 0) {
-            const manualPart = Math.max(0, (next[idx].training || 0) - (next[idx].trainingAuto || 0));
-            const newTotal = Math.min(15, r.autoPoints + manualPart);
-            next[idx] = { ...next[idx], trainingAuto: r.autoPoints, training: newTotal };
-          }
+      // Build updated scores array
+      const updated = [...scores];
+      for (const r of results) {
+        const idx = updated.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
+        if (idx >= 0) {
+          const manualPart = Math.max(0, (updated[idx].training || 0) - (updated[idx].trainingAuto || 0));
+          const newTotal = Math.min(15, r.autoPoints + manualPart);
+          updated[idx] = { ...updated[idx], trainingAuto: r.autoPoints, training: newTotal };
         }
-        return next;
+      }
+      setScores(updated);
+
+      // Auto-save to persist to leaderboard
+      const saveRes = await authFetch('/api/scores', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, scores: updated }),
       });
-      showToast(`Training auto-scores calculated for ${results.length} BAs`);
+      if (!saveRes.ok) throw new Error('Failed to save scores');
+
+      showToast(`Training auto-scores calculated and saved for ${results.length} BAs`);
     } catch {
       showToast('Training auto-calc failed');
     }
@@ -196,19 +204,27 @@ export default function ScoreEntryPage() {
       }
       const results: { email: string; repName: string; points: number; variance: number }[] = await res.json();
 
+      // Build updated scores array
+      const updated = [...scores];
       let updatedCount = 0;
-      setScores(prev => {
-        const next = [...prev];
-        for (const r of results) {
-          const idx = next.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
-          if (idx >= 0) {
-            next[idx] = { ...next[idx], monthlySales: r.points };
-            updatedCount++;
-          }
+      for (const r of results) {
+        const idx = updated.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
+        if (idx >= 0) {
+          updated[idx] = { ...updated[idx], monthlySales: r.points };
+          updatedCount++;
         }
-        return next;
+      }
+      setScores(updated);
+
+      // Auto-save to persist to leaderboard
+      const saveRes = await authFetch('/api/scores', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, scores: updated }),
       });
-      showToast(`Sales scores calculated for ${updatedCount} BAs`);
+      if (!saveRes.ok) throw new Error('Failed to save scores');
+
+      showToast(`Sales scores calculated and saved for ${updatedCount} BAs`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Sales auto-calc failed');
     }
