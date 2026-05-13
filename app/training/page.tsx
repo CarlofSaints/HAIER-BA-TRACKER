@@ -278,7 +278,7 @@ export default function TrainingPage() {
   return (
     <div style={{ display: 'flex' }}>
       <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
-      <main style={{ flex: 1, padding: '2rem', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <main style={{ flex: 1, padding: '2rem', minHeight: '100vh', display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
           Training
         </h1>
@@ -411,11 +411,11 @@ export default function TrainingPage() {
             </div>
 
             {/* Form Data Table — frozen # + Name columns, wrapped headers, resizable */}
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-              <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}>
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.85rem', fontWeight: 600, color: '#374151', flexShrink: 0 }}>
                 Training Form Responses — {formatMonth(month)}
               </div>
-              <div ref={scrollRef} style={{ overflow: 'auto', maxHeight: 'calc(100vh - 200px)' }}>
+              <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
                 <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%' }}>
                   <thead>
                     <tr>
@@ -557,7 +557,6 @@ export default function TrainingPage() {
           </>
         )}
 
-        <div style={{ flex: 1 }} />
         <Footer />
       </main>
 
