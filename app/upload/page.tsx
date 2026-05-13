@@ -25,6 +25,16 @@ interface DispoUploadMeta {
   stores: number;
 }
 
+interface TargetUploadMeta {
+  id: string;
+  fileName: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  sheetNames: string[];
+  months: string[];
+  storeCount: number;
+}
+
 export default function UploadPage() {
   const { session, loading: authLoading, logout } = useAuth(['super_admin', 'admin']);
   const [uploads, setUploads] = useState<UploadMeta[]>([]);
@@ -45,6 +55,12 @@ export default function UploadPage() {
   const [trainingUploading, setTrainingUploading] = useState(false);
   const [trainingDragOver, setTrainingDragOver] = useState(false);
   const trainingFileRef = useRef<HTMLInputElement>(null);
+
+  // Target state
+  const [targetUploads, setTargetUploads] = useState<TargetUploadMeta[]>([]);
+  const [targetUploading, setTargetUploading] = useState(false);
+  const [targetDragOver, setTargetDragOver] = useState(false);
+  const targetFileRef = useRef<HTMLInputElement>(null);
 
   // New stores modal
   const [newStoresModal, setNewStoresModal] = useState<string[] | null>(null);
@@ -73,13 +89,24 @@ export default function UploadPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const loadTargetUploads = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/targets');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.uploads) setTargetUploads(data.uploads);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (session) {
       loadUploads();
       loadDispoUploads();
       loadTrainingUploads();
+      loadTargetUploads();
     }
-  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads]);
+  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads]);
 
   async function handleFile(file: File) {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
@@ -226,6 +253,53 @@ export default function UploadPage() {
     }
   }
 
+  async function handleTargetFile(file: File) {
+    if (!file.name.match(/\.(xlsx?)$/i)) {
+      setToast({ msg: 'Please upload an Excel file (.xlsx / .xls)', type: 'error' });
+      return;
+    }
+
+    setTargetUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await authFetch('/api/targets/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ msg: data.error || 'Upload failed', type: 'error' });
+      } else {
+        setToast({ msg: `Targets uploaded — ${data.storeCount} stores, ${data.months?.length || 0} months (${data.months?.join(', ')})`, type: 'success' });
+        loadTargetUploads();
+      }
+    } catch {
+      setToast({ msg: 'Target upload failed', type: 'error' });
+    } finally {
+      setTargetUploading(false);
+      if (targetFileRef.current) targetFileRef.current.value = '';
+    }
+  }
+
+  async function handleTargetDelete(id: string) {
+    if (!confirm('Delete this target upload? Target data will be rebuilt from remaining files.')) return;
+    try {
+      const res = await authFetch(`/api/targets/delete/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setToast({ msg: 'Target upload deleted', type: 'success' });
+        loadTargetUploads();
+      } else {
+        const result = await res.json().catch(() => ({}));
+        setToast({ msg: result.error || 'Delete failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Delete failed', type: 'error' });
+    }
+  }
+
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
@@ -238,7 +312,7 @@ export default function UploadPage() {
           Data Upload
         </h1>
         <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-          Upload visit data, DISPO sales/stock files, and training form data
+          Upload visit data, DISPO sales/stock files, training form data, and sales targets
         </p>
 
         {/* === VISIT DATA UPLOAD === */}
@@ -549,6 +623,99 @@ export default function UploadPage() {
           {trainingUploads.length === 0 && (
             <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
               No training uploads yet
+            </div>
+          )}
+        </div>
+
+        {/* === SALES TARGETS UPLOAD === */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
+            Sales Targets
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+            Upload monthly store-level sales targets. Used for auto-calculating Monthly Sales KPI (40 pts).
+          </p>
+
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setTargetDragOver(true); }}
+            onDragLeave={() => setTargetDragOver(false)}
+            onDrop={e => {
+              e.preventDefault();
+              setTargetDragOver(false);
+              const file = e.dataTransfer.files[0];
+              if (file) handleTargetFile(file);
+            }}
+            onClick={() => targetFileRef.current?.click()}
+            style={{
+              border: `2px dashed ${targetDragOver ? '#d97706' : '#d1d5db'}`,
+              borderRadius: 10,
+              padding: '2rem 1.5rem',
+              textAlign: 'center',
+              cursor: targetUploading ? 'not-allowed' : 'pointer',
+              background: targetDragOver ? 'rgba(217,119,6,0.04)' : '#fafafa',
+              transition: 'border-color 0.2s, background 0.2s',
+              marginBottom: '1.25rem',
+              opacity: targetUploading ? 0.6 : 1,
+            }}
+          >
+            <input
+              ref={targetFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) handleTargetFile(file);
+              }}
+            />
+            <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>🎯</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+              {targetUploading ? 'Uploading...' : 'Drop target Excel here or click to browse'}
+            </div>
+            <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+              Expects row 7 headers with month targets (e.g. &quot;April Target&quot;), data from row 10
+            </div>
+          </div>
+
+          {/* Upload history */}
+          {targetUploads.length > 0 && (
+            <>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+                Upload History
+              </h3>
+              <div style={{ maxHeight: 300, overflow: 'auto' }}>
+                {targetUploads.slice().reverse().map(u => (
+                  <div
+                    key={u.id}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid #f3f4f6', fontSize: '0.8rem' }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, color: '#374151' }}>{u.fileName}</div>
+                      <div style={{ color: '#9ca3af', fontSize: '0.7rem' }}>
+                        {new Date(u.uploadedAt).toLocaleString('en-ZA')} — {u.storeCount} stores
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '1rem', flexShrink: 0 }}>
+                      <span style={{ color: '#6b7280', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>
+                        {u.months?.join(', ')}
+                      </span>
+                      <button
+                        className="btn btn-danger"
+                        style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+                        onClick={() => handleTargetDelete(u.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {targetUploads.length === 0 && (
+            <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
+              No target uploads yet
             </div>
           )}
         </div>

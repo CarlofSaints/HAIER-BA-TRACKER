@@ -16,6 +16,7 @@ const CLIENT_ITEMS: NavItem[] = [
   { label: 'Leaderboard', href: '/leaderboard', icon: '🏆', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Visit Analytics', href: '/dashboard', icon: '📊', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Score Entry', href: '/scores', icon: '✏️', roles: ['super_admin', 'admin'] },
+  { label: 'Training', href: '/training', icon: '📋', roles: ['super_admin', 'admin'] },
   { label: 'Sales & Stock', href: '/sales', icon: '💰', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Scoring Guide', href: '/guide', icon: '📖', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Account', href: '/account', icon: '👤', roles: ['super_admin', 'admin', 'client'] },

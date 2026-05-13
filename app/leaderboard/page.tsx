@@ -6,17 +6,11 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 
-interface DispoSalesData {
-  sales: Record<string, Record<string, Record<string, number>>>;
-  stock: Record<string, Record<string, { soh: number; soo: number }>>;
-  prices: Record<string, { inclSP: number; promSP: number }>;
-  ytd: Record<string, Record<string, number>>;
-  uploads: unknown[];
-}
-
 interface MonthScore {
   total: number;
   grandTotal: number;
+  salesVol?: number;
+  salesVal?: number;
 }
 
 interface LeaderboardEntry {
@@ -80,7 +74,6 @@ export default function LeaderboardPage() {
   const [sortField, setSortField] = useState<SortField>('grandTotal');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   const trendMonths = useMemo(() => getLastNMonths(6), []);
-  const [dispoData, setDispoData] = useState<DispoSalesData | null>(null);
   const [visitsData, setVisitsData] = useState<{ email: string; repName: string; storeName: string; formsCompleted: number }[]>([]);
 
   // Column resize state
@@ -142,13 +135,11 @@ export default function LeaderboardPage() {
   const loadData = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [lbRes, dispoRes, visitsRes] = await Promise.all([
+      const [lbRes, visitsRes] = await Promise.all([
         authFetch('/api/scores/leaderboard?months=12'),
-        authFetch('/api/dispo'),
         authFetch('/api/visits'),
       ]);
       if (lbRes.ok) setData(await lbRes.json());
-      if (dispoRes.ok) setDispoData(await dispoRes.json());
       if (visitsRes.ok) setVisitsData(await visitsRes.json());
     } catch { /* ignore */ }
     setLoadingData(false);
@@ -162,11 +153,16 @@ export default function LeaderboardPage() {
   const ranked = useMemo(() => {
     const entries = data
       .filter(e => e.scores[selectedMonth])
-      .map(e => ({
-        ...e,
-        total: e.scores[selectedMonth]?.total ?? 0,
-        grandTotal: e.scores[selectedMonth]?.grandTotal ?? 0,
-      }));
+      .map(e => {
+        const ms = e.scores[selectedMonth];
+        return {
+          ...e,
+          total: ms?.total ?? 0,
+          grandTotal: ms?.grandTotal ?? 0,
+          salesVol: ms?.salesVol,
+          salesVal: ms?.salesVal,
+        };
+      });
 
     entries.sort((a, b) => {
       const diff = sortDir === 'desc'
@@ -178,57 +174,23 @@ export default function LeaderboardPage() {
     return entries;
   }, [data, selectedMonth, sortField, sortDir]);
 
-  // Convert leaderboard month (YYYY-MM) to DISPO month key (MM-YYYY)
-  const dispoMonthKey = useMemo(() => {
-    const [y, m] = selectedMonth.split('-');
-    return `${m}-${y}`;
-  }, [selectedMonth]);
+  // Check if any entry has sales data (from API, resolved server-side)
+  const hasDispoData = useMemo(() => {
+    return ranked.some(e => e.salesVol !== undefined || e.salesVal !== undefined);
+  }, [ranked]);
 
-  // DISPO sales per store for the selected month
-  const storeSales = useMemo(() => {
-    if (!dispoData) return new Map<string, { vol: number; val: number }>();
-    const map = new Map<string, { vol: number; val: number }>();
-    const monthData = dispoData.sales[dispoMonthKey];
-    if (!monthData) return map;
-    for (const [store, products] of Object.entries(monthData)) {
-      if (!map.has(store)) map.set(store, { vol: 0, val: 0 });
-      const entry = map.get(store)!;
-      for (const [article, units] of Object.entries(products)) {
-        entry.vol += units;
-        const p = dispoData.prices[article];
-        if (p) {
-          const price = p.promSP > 0 ? p.promSP : p.inclSP;
-          entry.val += units * price;
-        }
-      }
-    }
-    return map;
-  }, [dispoData, dispoMonthKey]);
-
-  // Normalized (lowercase) lookup for case-insensitive store matching
-  const storeSalesNorm = useMemo(() => {
-    const map = new Map<string, { vol: number; val: number }>();
-    for (const [store, sales] of storeSales) {
-      map.set(store.toLowerCase().trim(), sales);
-    }
-    return map;
-  }, [storeSales]);
-
-  const hasDispoData = dispoData ? Object.keys(dispoData.sales).length > 0 : false;
-
-  // Top Sales Store (store with highest total sales value for selected month)
+  // Top Sales Store (from ranked entries' sales data)
   const topSalesStore = useMemo(() => {
-    if (!hasDispoData || storeSales.size === 0) return null;
+    if (!hasDispoData) return null;
     let best: { store: string; val: number; ba: string } | null = null;
-    for (const [store, { val }] of storeSales.entries()) {
-      if (!best || val > best.val) {
-        const storeNorm = store.toLowerCase().trim();
-        const ba = data.find(d => (d.storeName || '').toLowerCase().trim() === storeNorm);
-        best = { store, val, ba: ba?.repName || '' };
+    for (const entry of ranked) {
+      const val = entry.salesVal ?? 0;
+      if (val > 0 && (!best || val > best.val)) {
+        best = { store: entry.storeName || '-', val, ba: entry.repName };
       }
     }
     return best;
-  }, [storeSales, hasDispoData, data]);
+  }, [ranked, hasDispoData]);
 
   // Top Form Compliance (BA with most forms completed)
   const topFormBA = useMemo(() => {
@@ -387,12 +349,8 @@ export default function LeaderboardPage() {
                       <th style={{ textAlign: 'center', cursor: 'pointer', position: 'relative' }} onClick={() => toggleSort('grandTotal')}>
                         Grand Total{sortArrow('grandTotal')}{resizeHandle(6)}
                       </th>
-                      {hasDispoData && (
-                        <>
-                          <th style={{ textAlign: 'right', position: 'relative' }}>Sales Vol{resizeHandle(7)}</th>
-                          <th style={{ textAlign: 'right', position: 'relative' }}>Sales Val{resizeHandle(8)}</th>
-                        </>
-                      )}
+                      <th style={{ textAlign: 'right', position: 'relative' }}>Sales Vol{resizeHandle(7)}</th>
+                      <th style={{ textAlign: 'right', position: 'relative' }}>Sales Val{resizeHandle(8)}</th>
                       {showTrend && trendMonths.slice(1).map(m => (
                         <th key={m} style={{ textAlign: 'center', fontSize: '0.7rem', position: 'relative' }}>
                           {formatMonth(m)}{resizeHandle(0, true)}
@@ -403,7 +361,7 @@ export default function LeaderboardPage() {
                   <tbody>
                     {ranked.length === 0 ? (
                       <tr>
-                        <td colSpan={7 + (hasDispoData ? 2 : 0) + (showTrend ? trendMonths.length - 1 : 0)} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                        <td colSpan={9 + (showTrend ? trendMonths.length - 1 : 0)} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                           No scores for {formatMonth(selectedMonth)}
                         </td>
                       </tr>
@@ -451,19 +409,12 @@ export default function LeaderboardPage() {
                           <td style={{ textAlign: 'center', fontWeight: 700, color: '#0054A6', fontSize: '1rem' }}>
                             {entry.grandTotal}
                           </td>
-                          {hasDispoData && (() => {
-                            const ss = storeSalesNorm.get((entry.storeName || '').toLowerCase().trim());
-                            return (
-                              <>
-                                <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
-                                  {ss ? ss.vol.toLocaleString() : '-'}
-                                </td>
-                                <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
-                                  {ss ? `R ${ss.val.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}` : '-'}
-                                </td>
-                              </>
-                            );
-                          })()}
+                          <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
+                            {entry.salesVol != null ? entry.salesVol.toLocaleString() : '-'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
+                            {entry.salesVal != null ? `R ${entry.salesVal.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}` : '-'}
+                          </td>
                           {showTrend && trendMonths.slice(1).map(m => {
                             const ms = data.find(d => d.email === entry.email)?.scores[m];
                             return (

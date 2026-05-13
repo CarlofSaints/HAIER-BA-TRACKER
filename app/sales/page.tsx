@@ -69,6 +69,9 @@ export default function SalesPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [visits, setVisits] = useState<VisitRecord[]>([]);
 
+  // Target data
+  const [targetData, setTargetData] = useState<{ targets: Record<string, { siteCode: string; storeName: string; valueTarget: number; volumeTarget: number }[]> } | null>(null);
+
   // Filters
   const [storeFilter, setStoreFilter] = useState<string[]>([]);
   const [productFilter, setProductFilter] = useState<string[]>([]);
@@ -93,16 +96,18 @@ export default function SalesPage() {
   const loadData = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [dispoRes, storesRes, channelsRes, visitsRes] = await Promise.all([
+      const [dispoRes, storesRes, channelsRes, visitsRes, targetsRes] = await Promise.all([
         authFetch('/api/dispo'),
         authFetch('/api/stores'),
         authFetch('/api/channels'),
         authFetch('/api/visits'),
+        authFetch('/api/targets'),
       ]);
       if (dispoRes.ok) setData(await dispoRes.json());
       if (storesRes.ok) setStoreMaster(await storesRes.json());
       if (channelsRes.ok) setChannels(await channelsRes.json());
       if (visitsRes.ok) setVisits(await visitsRes.json());
+      if (targetsRes.ok) setTargetData(await targetsRes.json());
     } catch { /* ignore */ }
     setLoadingData(false);
   }, []);
@@ -201,6 +206,28 @@ export default function SalesPage() {
     }
     return map;
   }, [storeMaster]);
+
+  // Reverse lookup: storeName → siteCode
+  const storeNameToSiteCode = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const s of storeMaster) {
+      if (s.siteCode && s.storeName) map[s.storeName] = s.siteCode;
+    }
+    return map;
+  }, [storeMaster]);
+
+  // Target lookup for a given month: siteCode → { valueTarget, volumeTarget }
+  const storeTargets = useMemo(() => {
+    if (!targetData?.targets) return {};
+    const monthKey = monthFilter !== 'all' ? monthFilter : (months.length > 0 ? months[0] : '');
+    if (!monthKey) return {};
+    const entries = targetData.targets[monthKey] || [];
+    const map: Record<string, { valueTarget: number; volumeTarget: number }> = {};
+    for (const e of entries) {
+      map[e.siteCode.trim()] = { valueTarget: e.valueTarget, volumeTarget: e.volumeTarget };
+    }
+    return map;
+  }, [targetData, monthFilter, months]);
 
   // Check-in counts per storeName (filtered by month), matched via storeCode → siteCode
   const storeCheckinCounts = useMemo(() => {
@@ -344,15 +371,27 @@ export default function SalesPage() {
     const totalUnits = arr.reduce((s, r) => s + r.units, 0);
     const totalValue = arr.reduce((s, r) => s + r.value, 0);
 
-    const enriched = arr.map(r => ({
-      ...r,
-      channel: channelNameMap[storeChannelMap[r.store] || ''] || '',
-      visits: storeVisitCounts[r.store] || 0,
-      checkins: storeCheckinCounts[r.store] || 0,
-      contribVol: totalUnits > 0 ? (r.units / totalUnits) * 100 : 0,
-      contribVal: totalValue > 0 ? (r.value / totalValue) * 100 : 0,
-      growthLM: r.prevUnits > 0 ? ((r.curUnits - r.prevUnits) / r.prevUnits) * 100 : (r.curUnits > 0 ? null : null) as number | null,
-    }));
+    const enriched = arr.map(r => {
+      const siteCode = storeNameToSiteCode[r.store] || '';
+      const target = siteCode ? storeTargets[siteCode] : undefined;
+      const valTarget = target?.valueTarget || 0;
+      const volTarget = target?.volumeTarget || 0;
+      const valVar = valTarget > 0 ? (r.value / valTarget) * 100 : null;
+      const volVar = volTarget > 0 ? (r.units / volTarget) * 100 : null;
+      return {
+        ...r,
+        channel: channelNameMap[storeChannelMap[r.store] || ''] || '',
+        visits: storeVisitCounts[r.store] || 0,
+        checkins: storeCheckinCounts[r.store] || 0,
+        contribVol: totalUnits > 0 ? (r.units / totalUnits) * 100 : 0,
+        contribVal: totalValue > 0 ? (r.value / totalValue) * 100 : 0,
+        growthLM: r.prevUnits > 0 ? ((r.curUnits - r.prevUnits) / r.prevUnits) * 100 : (r.curUnits > 0 ? null : null) as number | null,
+        valTarget,
+        volTarget,
+        valVar: valVar as number | null,
+        volVar: volVar as number | null,
+      };
+    });
 
     // Fix growthLM: if prev=0 and cur>0, show null (new). If both 0, show 0.
     for (const r of enriched) {
@@ -361,7 +400,7 @@ export default function SalesPage() {
     }
 
     return sortArray(enriched, sortKey, sortDir, viewMode === 'store');
-  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts, storeCheckinCounts]);
+  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts, storeCheckinCounts, storeNameToSiteCode, storeTargets]);
 
   // Product summary with contribution and growth
   const productSummary = useMemo(() => {
@@ -568,8 +607,8 @@ export default function SalesPage() {
     let wsData: unknown[][] = [];
 
     if (viewMode === 'store') {
-      wsData = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
-      for (const r of storeSummary) wsData.push([r.channel, r.store, r.visits, r.checkins, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
+      wsData = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value', 'Val Target', 'Vol Target', 'Val Var%', 'Vol Var%', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      for (const r of storeSummary) wsData.push([r.channel, r.store, r.visits, r.checkins, r.units, r.value, r.valTarget || '', r.volTarget || '', r.valVar, r.volVar, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
     } else if (viewMode === 'product') {
       wsData = [['Article', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of productSummary) wsData.push([r.article, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
@@ -593,7 +632,7 @@ export default function SalesPage() {
     const wb = XLSX.utils.book_new();
 
     // Store Summary (unfiltered, non-DC)
-    const storeData: unknown[][] = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+    const storeData: unknown[][] = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value', 'Val Target', 'Vol Target', 'Val Var%', 'Vol Var%', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const allMonths = Object.keys(data.sales);
     const storeAgg = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number; curUnits: number; prevUnits: number }>();
     for (const month of allMonths) {
@@ -627,7 +666,13 @@ export default function SalesPage() {
     const totalValueS = storeArr.reduce((s, [, d]) => s + d.value, 0);
     for (const [store, d] of storeArr) {
       const g = d.prevUnits > 0 ? ((d.curUnits - d.prevUnits) / d.prevUnits) * 100 : null;
-      storeData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, storeVisitCounts[store] || 0, storeCheckinCounts[store] || 0, d.units, d.value, totalUnitsS > 0 ? (d.units / totalUnitsS * 100) : 0, totalValueS > 0 ? (d.value / totalValueS * 100) : 0, g, d.ytd, d.soh, d.soo]);
+      const sc = storeNameToSiteCode[store] || '';
+      const tgt = sc ? storeTargets[sc] : undefined;
+      const vt = tgt?.valueTarget || 0;
+      const qt = tgt?.volumeTarget || 0;
+      const vv = vt > 0 ? (d.value / vt) * 100 : null;
+      const qv = qt > 0 ? (d.units / qt) * 100 : null;
+      storeData.push([channelNameMap[storeChannelMap[store] || ''] || '', store, storeVisitCounts[store] || 0, storeCheckinCounts[store] || 0, d.units, d.value, vt || '', qt || '', vv, qv, totalUnitsS > 0 ? (d.units / totalUnitsS * 100) : 0, totalValueS > 0 ? (d.value / totalValueS * 100) : 0, g, d.ytd, d.soh, d.soo]);
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(storeData), 'Store Summary');
 
@@ -911,6 +956,10 @@ export default function SalesPage() {
                         {renderSortHeader('Check-ins', 'checkins', 'center')}
                         {renderSortHeader('Units', 'units', 'center')}
                         {renderSortHeader('Value', 'value', 'right')}
+                        {renderSortHeader('Val Target', 'valTarget', 'right')}
+                        {renderSortHeader('Vol Target', 'volTarget', 'center')}
+                        {renderSortHeader('Val Var%', 'valVar', 'center')}
+                        {renderSortHeader('Vol Var%', 'volVar', 'center')}
                         {renderSortHeader('Contrib Vol%', 'contribVol', 'center')}
                         {renderSortHeader('Contrib Val%', 'contribVal', 'center')}
                         {renderSortHeader('Growth on LM%', 'growthLM', 'center')}
@@ -928,6 +977,14 @@ export default function SalesPage() {
                           <td style={ctr}>{r.checkins}</td>
                           <td style={ctr}>{r.units.toLocaleString()}</td>
                           <td style={rgt}>{formatCurrency(r.value)}</td>
+                          <td style={rgt}>{r.valTarget > 0 ? formatCurrency(r.valTarget) : '—'}</td>
+                          <td style={ctr}>{r.volTarget > 0 ? r.volTarget.toLocaleString() : '—'}</td>
+                          <td style={{ textAlign: 'center', color: r.valVar === null ? '#9ca3af' : r.valVar >= 100 ? '#059669' : r.valVar >= 80 ? '#d97706' : '#dc2626', fontWeight: r.valVar !== null ? 600 : 400 }}>
+                            {r.valVar === null ? '—' : `${r.valVar.toFixed(1)}%`}
+                          </td>
+                          <td style={{ textAlign: 'center', color: r.volVar === null ? '#9ca3af' : r.volVar >= 100 ? '#059669' : r.volVar >= 80 ? '#d97706' : '#dc2626', fontWeight: r.volVar !== null ? 600 : 400 }}>
+                            {r.volVar === null ? '—' : `${r.volVar.toFixed(1)}%`}
+                          </td>
                           <td style={ctr}>{formatPct(r.contribVol)}</td>
                           <td style={ctr}>{formatPct(r.contribVal)}</td>
                           {growthCell(r.growthLM)}

@@ -40,6 +40,7 @@ export default function ScoreEntryPage() {
   const [saving, setSaving] = useState(false);
   const [autoCalcing, setAutoCalcing] = useState(false);
   const [trainingAutoCalcing, setTrainingAutoCalcing] = useState(false);
+  const [salesAutoCalcing, setSalesAutoCalcing] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -181,6 +182,39 @@ export default function ScoreEntryPage() {
     setTrainingAutoCalcing(false);
   }
 
+  async function handleSalesAutoCalc() {
+    setSalesAutoCalcing(true);
+    try {
+      const res = await authFetch('/api/scores/auto-calc-sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Sales auto-calc failed');
+      }
+      const results: { email: string; repName: string; points: number; variance: number }[] = await res.json();
+
+      let updatedCount = 0;
+      setScores(prev => {
+        const next = [...prev];
+        for (const r of results) {
+          const idx = next.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
+          if (idx >= 0) {
+            next[idx] = { ...next[idx], monthlySales: r.points };
+            updatedCount++;
+          }
+        }
+        return next;
+      });
+      showToast(`Sales scores calculated for ${updatedCount} BAs`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Sales auto-calc failed');
+    }
+    setSalesAutoCalcing(false);
+  }
+
   async function handleSeedFromVisits() {
     setSeeding(true);
     try {
@@ -272,6 +306,14 @@ export default function ScoreEntryPage() {
             style={{ borderColor: '#7c3aed', color: '#7c3aed' }}
           >
             {trainingAutoCalcing ? 'Calculating...' : 'Auto-Calculate Training'}
+          </button>
+          <button
+            className="btn btn-outline"
+            onClick={handleSalesAutoCalc}
+            disabled={salesAutoCalcing || loadingData}
+            style={{ borderColor: '#d97706', color: '#d97706' }}
+          >
+            {salesAutoCalcing ? 'Calculating...' : 'Auto-Calculate Sales'}
           </button>
           <button
             className="btn btn-outline"

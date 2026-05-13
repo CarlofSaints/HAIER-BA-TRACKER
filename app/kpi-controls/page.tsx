@@ -10,6 +10,7 @@ export default function KPIControlsPage() {
   const { session, loading: authLoading, logout } = useAuth(['admin', 'super_admin']);
   const [minTrainings, setMinTrainings] = useState(4);
   const [minVisits, setMinVisits] = useState(20);
+  const [salesThreshold, setSalesThreshold] = useState(80);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -23,6 +24,7 @@ export default function KPIControlsPage() {
       .then(data => {
         if (data.minTrainingsPerMonth) setMinTrainings(data.minTrainingsPerMonth);
         if (data.minVisitsPerMonth) setMinVisits(data.minVisitsPerMonth);
+        if (data.salesThresholdPct) setSalesThreshold(data.salesThresholdPct);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -34,7 +36,7 @@ export default function KPIControlsPage() {
       const res = await authFetch('/api/config/kpi-controls', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minTrainingsPerMonth: minTrainings, minVisitsPerMonth: minVisits }),
+        body: JSON.stringify({ minTrainingsPerMonth: minTrainings, minVisitsPerMonth: minVisits, salesThresholdPct: salesThreshold }),
       });
       if (res.ok) {
         setToast({ msg: 'KPI controls saved', type: 'success' });
@@ -144,6 +146,54 @@ export default function KPIControlsPage() {
                 <div>BAs are expected to complete at least {minVisits} store visits per month.</div>
                 <div style={{ marginTop: 6, color: '#6b7280', fontSize: '0.75rem' }}>
                   Check-in scores are auto-calculated based on on-time visit check-ins relative to this threshold.
+                </div>
+              </div>
+            </div>
+
+            {/* Sales Threshold */}
+            <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
+              <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
+                Sales Threshold
+              </h2>
+              <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
+                Minimum % of target a BA must achieve before earning Monthly Sales points (40 pts max).
+                Below this threshold, the BA gets 0 points. At or above, points are proportional to achievement.
+              </p>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
+                  Minimum Achievement %
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  min={50}
+                  max={100}
+                  value={salesThreshold}
+                  onChange={e => setSalesThreshold(Math.max(50, Math.min(100, Number(e.target.value) || 80)))}
+                  disabled={!isSuperAdmin}
+                  style={{ width: 120 }}
+                />
+                <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 4 }}>
+                  Range: 50–100%. Default: 80%
+                </div>
+              </div>
+
+              <div style={{
+                background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
+                padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#92400e', marginBottom: '1rem',
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Scoring Formula</div>
+                <div>variance = (actualSalesValue / proratedTarget) &times; 100</div>
+                <div style={{ marginTop: 4 }}>
+                  If variance &lt; {salesThreshold}% &rarr; <strong>0 points</strong>
+                </div>
+                <div>
+                  If variance &ge; {salesThreshold}% &rarr; <strong>min(40, round(variance / 100 &times; 40))</strong>
+                </div>
+                <div style={{ marginTop: 6, color: '#6b7280', fontSize: '0.75rem' }}>
+                  Targets are prorated based on the DISPO export date for mid-month comparisons.
+                  E.g. if the DISPO was exported on the 15th of a 30-day month, the target is halved.
                 </div>
               </div>
             </div>
