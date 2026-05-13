@@ -62,6 +62,12 @@ export default function UploadPage() {
   const [targetDragOver, setTargetDragOver] = useState(false);
   const targetFileRef = useRef<HTMLInputElement>(null);
 
+  // Display state
+  const [displayUploads, setDisplayUploads] = useState<UploadMeta[]>([]);
+  const [displayUploading, setDisplayUploading] = useState(false);
+  const [displayDragOver, setDisplayDragOver] = useState(false);
+  const displayFileRef = useRef<HTMLInputElement>(null);
+
   // New stores modal
   const [newStoresModal, setNewStoresModal] = useState<string[] | null>(null);
 
@@ -99,14 +105,22 @@ export default function UploadPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const loadDisplayUploads = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/display');
+      if (res.ok) setDisplayUploads(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (session) {
       loadUploads();
       loadDispoUploads();
       loadTrainingUploads();
       loadTargetUploads();
+      loadDisplayUploads();
     }
-  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads]);
+  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads]);
 
   async function handleFile(file: File) {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
@@ -291,6 +305,53 @@ export default function UploadPage() {
       if (res.ok) {
         setToast({ msg: 'Target upload deleted', type: 'success' });
         loadTargetUploads();
+      } else {
+        const result = await res.json().catch(() => ({}));
+        setToast({ msg: result.error || 'Delete failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Delete failed', type: 'error' });
+    }
+  }
+
+  async function handleDisplayFile(file: File) {
+    if (!file.name.match(/\.(xlsx?)$/i)) {
+      setToast({ msg: 'Please upload an Excel file (.xlsx / .xls)', type: 'error' });
+      return;
+    }
+
+    setDisplayUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const res = await authFetch('/api/display/upload', {
+        method: 'POST',
+        body: fd,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ msg: data.error || 'Upload failed', type: 'error' });
+      } else {
+        setToast({ msg: `Display data uploaded — ${data.rowCount} rows, ${data.imagesCached} images cached`, type: 'success' });
+        loadDisplayUploads();
+      }
+    } catch {
+      setToast({ msg: 'Display upload failed', type: 'error' });
+    } finally {
+      setDisplayUploading(false);
+      if (displayFileRef.current) displayFileRef.current.value = '';
+    }
+  }
+
+  async function handleDisplayDelete(id: string) {
+    if (!confirm('Delete this display upload?')) return;
+    try {
+      const res = await authFetch(`/api/display/delete/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setToast({ msg: 'Display upload deleted', type: 'success' });
+        loadDisplayUploads();
       } else {
         const result = await res.json().catch(() => ({}));
         setToast({ msg: result.error || 'Delete failed', type: 'error' });
@@ -716,6 +777,94 @@ export default function UploadPage() {
           {targetUploads.length === 0 && (
             <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
               No target uploads yet
+            </div>
+          )}
+        </div>
+
+        {/* === DISPLAY DATA UPLOAD === */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
+            Display Inspections
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+            Upload Perigee display form data. Images are cached to CDN during upload.
+          </p>
+
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDisplayDragOver(true); }}
+            onDragLeave={() => setDisplayDragOver(false)}
+            onDrop={e => {
+              e.preventDefault();
+              setDisplayDragOver(false);
+              const file = e.dataTransfer.files[0];
+              if (file) handleDisplayFile(file);
+            }}
+            onClick={() => displayFileRef.current?.click()}
+            style={{
+              border: `2px dashed ${displayDragOver ? '#7c3aed' : '#d1d5db'}`,
+              borderRadius: 10,
+              padding: '2rem 1.5rem',
+              textAlign: 'center',
+              cursor: displayUploading ? 'not-allowed' : 'pointer',
+              background: displayDragOver ? 'rgba(124,58,237,0.04)' : '#fafafa',
+              transition: 'border-color 0.2s, background 0.2s',
+              marginBottom: '1.25rem',
+              opacity: displayUploading ? 0.6 : 1,
+            }}
+          >
+            <input
+              ref={displayFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) handleDisplayFile(file);
+              }}
+            />
+            <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>📋</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+              {displayUploading ? 'Uploading & caching images...' : 'Drop display form Excel here or click to browse'}
+            </div>
+            <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+              Perigee display form export (.xlsx)
+            </div>
+          </div>
+
+          {/* Upload history */}
+          {displayUploads.length > 0 && (
+            <>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+                Upload History
+              </h3>
+              <div style={{ maxHeight: 300, overflow: 'auto' }}>
+                {displayUploads.slice().reverse().map(u => (
+                  <div
+                    key={u.id}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid #f3f4f6', fontSize: '0.8rem' }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, color: '#374151' }}>{u.fileName}</div>
+                      <div style={{ color: '#9ca3af', fontSize: '0.7rem' }}>
+                        {new Date(u.uploadedAt).toLocaleString('en-ZA')} — {u.rowCount} rows
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-danger"
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', marginLeft: '1rem' }}
+                      onClick={() => handleDisplayDelete(u.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {displayUploads.length === 0 && (
+            <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
+              No display uploads yet
             </div>
           )}
         </div>
