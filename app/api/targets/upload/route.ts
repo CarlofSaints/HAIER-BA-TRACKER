@@ -5,6 +5,7 @@ import { writeJson } from '@/lib/blob';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+export const runtime = 'nodejs';
 
 const MONTH_NAMES: Record<string, string> = {
   january: '01', february: '02', march: '03', april: '04',

@@ -209,16 +209,41 @@ export default function SalesPage() {
 
   // Target lookup for a given month: normalized storeName → { valueTarget, volumeTarget }
   // Uses storeName (not siteCode) because target file siteCode differs from DISPO siteCode
-  const storeTargets = useMemo(() => {
-    if (!targetData?.targets) return {};
+  // Falls back to matching MM only (ignoring year) since target headers have no year
+  const { storeTargets, targetDebug } = useMemo(() => {
+    if (!targetData?.targets) return { storeTargets: {} as Record<string, { valueTarget: number; volumeTarget: number }>, targetDebug: { loaded: false, availableMonths: [] as string[], lookupMonth: '', matched: 0, fallback: false } };
     const monthKey = monthFilter !== 'all' ? monthFilter : (months.length > 0 ? months[0] : '');
-    if (!monthKey) return {};
-    const entries = targetData.targets[monthKey] || [];
+    if (!monthKey) return { storeTargets: {} as Record<string, { valueTarget: number; volumeTarget: number }>, targetDebug: { loaded: true, availableMonths: Object.keys(targetData.targets), lookupMonth: '', matched: 0, fallback: false } };
+
+    let entries = targetData.targets[monthKey] || [];
+    let fallback = false;
+
+    // If exact month key didn't match, try matching by MM only (target file has no year)
+    if (entries.length === 0) {
+      const mm = monthKey.split('-')[0]; // extract MM from MM-YYYY
+      for (const [tKey, tEntries] of Object.entries(targetData.targets)) {
+        if (tKey.startsWith(mm + '-') && tEntries.length > 0) {
+          entries = tEntries;
+          fallback = true;
+          break;
+        }
+      }
+    }
+
     const map: Record<string, { valueTarget: number; volumeTarget: number }> = {};
     for (const e of entries) {
       map[e.storeName.trim().toUpperCase()] = { valueTarget: e.valueTarget, volumeTarget: e.volumeTarget };
     }
-    return map;
+    return {
+      storeTargets: map,
+      targetDebug: {
+        loaded: true,
+        availableMonths: Object.keys(targetData.targets),
+        lookupMonth: monthKey,
+        matched: Object.keys(map).length,
+        fallback,
+      },
+    };
   }, [targetData, monthFilter, months]);
 
   // Check-in counts per storeName (filtered by month), matched via storeCode → siteCode
@@ -925,6 +950,36 @@ export default function SalesPage() {
                 </div>
               </div>
             </div>
+
+            {/* Target debug info — remove after confirming */}
+            {targetDebug && (
+              <div style={{
+                background: targetDebug.matched > 0 ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${targetDebug.matched > 0 ? '#bbf7d0' : '#fecaca'}`,
+                borderRadius: 8, padding: '0.5rem 1rem', fontSize: '0.75rem',
+                color: targetDebug.matched > 0 ? '#166534' : '#991b1b', marginBottom: '1rem',
+              }}>
+                Targets: {!targetDebug.loaded ? 'not loaded' : targetDebug.availableMonths.length === 0 ? 'no data (upload targets first)' : (
+                  <>
+                    {targetDebug.matched} stores matched
+                    {targetDebug.fallback && ' (year fallback)'}
+                    {' | '}Target months: [{targetDebug.availableMonths.join(', ')}]
+                    {' | '}Looking up: {targetDebug.lookupMonth}
+                    {' | '}DISPO months: [{months.join(', ')}]
+                    {targetDebug.matched === 0 && targetDebug.availableMonths.length > 0 && (
+                      <> | Sample target stores: {(() => {
+                        const firstMonth = targetDebug.availableMonths[0];
+                        const entries = targetData?.targets?.[firstMonth] || [];
+                        return entries.slice(0, 3).map(e => e.storeName).join(', ');
+                      })()}</>
+                    )}
+                    {targetDebug.matched === 0 && (
+                      <> | Sample DISPO stores: {storeSummary.slice(0, 3).map(s => s.store).join(', ')}</>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Data Table */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
