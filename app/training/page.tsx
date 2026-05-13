@@ -105,7 +105,7 @@ function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
 export default function TrainingPage() {
   const { session, loading: authLoading, logout } = useAuth(['admin', 'super_admin']);
   const [month, setMonth] = useState(currentMonth());
-  const [tab, setTab] = useState<'summary' | 'form'>('summary');
+  const [tab, setTab] = useState<'summary' | 'form'>('form');
 
   // Summary state
   const [summaryData, setSummaryData] = useState<TrainingSummary | null>(null);
@@ -219,11 +219,11 @@ export default function TrainingPage() {
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e5e7eb', marginBottom: '1.5rem' }}>
-          <button style={tabStyle(tab === 'summary')} onClick={() => setTab('summary')}>
-            Summary
-          </button>
           <button style={tabStyle(tab === 'form')} onClick={() => setTab('form')}>
             Form Data {formData ? `(${formData.rowCount})` : ''}
+          </button>
+          <button style={tabStyle(tab === 'summary')} onClick={() => setTab('summary')}>
+            Summary
           </button>
         </div>
 
