@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
-import { loadTargetData, getStoreTarget } from '@/lib/targetData';
+import { loadTargetData, getStoreTargetByName } from '@/lib/targetData';
 import { loadDispoData, calcSalesValue } from '@/lib/dispoData';
 import { loadStores } from '@/lib/storeData';
 import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
@@ -89,8 +89,9 @@ export async function POST(req: NextRequest) {
     // Prorate factor: if we have a mid-month export, prorate; otherwise full month
     const prorateFactor = latestExportDay !== null ? latestExportDay / totalDays : 1;
 
-    // Load all visits and group by BA email → set of storeCodes visited in this month
-    const baStores = new Map<string, { repName: string; storeCodes: Set<string> }>();
+    // Load all visits and group by BA email → set of storeNames visited in this month
+    // Map storeCode → storeName via store master
+    const baStoreNames = new Map<string, { repName: string; storeNames: Set<string> }>();
     for (const upload of visitIndex) {
       const visits = await loadVisitData(upload.id);
       for (const v of visits) {
@@ -98,11 +99,13 @@ export async function POST(req: NextRequest) {
         // checkInDate is YYYY-MM-DD; month is YYYY-MM
         if (!v.checkInDate.startsWith(month)) continue;
         const email = v.email.toLowerCase();
-        if (!baStores.has(email)) {
-          baStores.set(email, { repName: v.repName || v.email, storeCodes: new Set() });
+        if (!baStoreNames.has(email)) {
+          baStoreNames.set(email, { repName: v.repName || v.email, storeNames: new Set() });
         }
-        const entry = baStores.get(email)!;
-        if (v.storeCode) entry.storeCodes.add(v.storeCode.trim());
+        const entry = baStoreNames.get(email)!;
+        // Resolve storeCode to storeName via store master
+        const storeName = v.storeCode ? siteCodeToName[v.storeCode.trim()] : undefined;
+        if (storeName) entry.storeNames.add(storeName);
         // Keep the latest repName
         if (v.repName) entry.repName = v.repName;
       }
@@ -123,22 +126,19 @@ export async function POST(req: NextRequest) {
       points: number;
     }[] = [];
 
-    for (const [email, { repName, storeCodes }] of baStores) {
+    for (const [email, { repName, storeNames: baStoreSet }] of baStoreNames) {
       let totalValueTarget = 0;
       let totalActualValue = 0;
-      const storeNames: string[] = [];
+      const storeNamesList: string[] = [...baStoreSet];
 
-      for (const storeCode of storeCodes) {
-        // Get target for this store
-        const target = getStoreTarget(targetData.targets, dispoMonth, storeCode);
+      for (const storeName of baStoreSet) {
+        // Get target by storeName (normalized match)
+        const target = getStoreTargetByName(targetData.targets, dispoMonth, storeName);
         if (!target) continue;
 
         totalValueTarget += target.valueTarget;
 
-        // Get actual sales: storeName from store master, then lookup in DISPO
-        const storeName = siteCodeToName[storeCode] || target.storeName;
-        if (!storeNames.includes(storeName)) storeNames.push(storeName);
-
+        // Get actual sales from DISPO by storeName
         const storeProducts = monthSales[storeName];
         if (storeProducts) {
           for (const [article, units] of Object.entries(storeProducts)) {
@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
       // Skip BAs with no targets
       if (totalValueTarget === 0) {
         results.push({
-          email, repName, storeNames,
+          email, repName, storeNames: storeNamesList,
           valueTarget: 0, proratedTarget: 0, actualValue: totalActualValue,
           variance: 0, points: 0,
         });
@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
       }
 
       results.push({
-        email, repName, storeNames,
+        email, repName, storeNames: storeNamesList,
         valueTarget: totalValueTarget,
         proratedTarget: Math.round(proratedTarget * 100) / 100,
         actualValue: Math.round(totalActualValue * 100) / 100,

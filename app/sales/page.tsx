@@ -207,16 +207,8 @@ export default function SalesPage() {
     return map;
   }, [storeMaster]);
 
-  // Reverse lookup: storeName → siteCode
-  const storeNameToSiteCode = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const s of storeMaster) {
-      if (s.siteCode && s.storeName) map[s.storeName] = s.siteCode;
-    }
-    return map;
-  }, [storeMaster]);
-
-  // Target lookup for a given month: siteCode → { valueTarget, volumeTarget }
+  // Target lookup for a given month: normalized storeName → { valueTarget, volumeTarget }
+  // Uses storeName (not siteCode) because target file siteCode differs from DISPO siteCode
   const storeTargets = useMemo(() => {
     if (!targetData?.targets) return {};
     const monthKey = monthFilter !== 'all' ? monthFilter : (months.length > 0 ? months[0] : '');
@@ -224,7 +216,7 @@ export default function SalesPage() {
     const entries = targetData.targets[monthKey] || [];
     const map: Record<string, { valueTarget: number; volumeTarget: number }> = {};
     for (const e of entries) {
-      map[e.siteCode.trim()] = { valueTarget: e.valueTarget, volumeTarget: e.volumeTarget };
+      map[e.storeName.trim().toUpperCase()] = { valueTarget: e.valueTarget, volumeTarget: e.volumeTarget };
     }
     return map;
   }, [targetData, monthFilter, months]);
@@ -372,8 +364,7 @@ export default function SalesPage() {
     const totalValue = arr.reduce((s, r) => s + r.value, 0);
 
     const enriched = arr.map(r => {
-      const siteCode = storeNameToSiteCode[r.store] || '';
-      const target = siteCode ? storeTargets[siteCode] : undefined;
+      const target = storeTargets[r.store.trim().toUpperCase()];
       const valTarget = target?.valueTarget || 0;
       const volTarget = target?.volumeTarget || 0;
       const valVar = valTarget > 0 ? (r.value / valTarget) * 100 : null;
@@ -400,7 +391,7 @@ export default function SalesPage() {
     }
 
     return sortArray(enriched, sortKey, sortDir, viewMode === 'store');
-  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts, storeCheckinCounts, storeNameToSiteCode, storeTargets]);
+  }, [data, monthFilter, storeFilter, productFilter, channelFilter, dcStoreNames, sortKey, sortDir, viewMode, currentMonth, prevMonth, channelNameMap, storeChannelMap, storeVisitCounts, storeCheckinCounts, storeTargets]);
 
   // Product summary with contribution and growth
   const productSummary = useMemo(() => {
@@ -666,8 +657,7 @@ export default function SalesPage() {
     const totalValueS = storeArr.reduce((s, [, d]) => s + d.value, 0);
     for (const [store, d] of storeArr) {
       const g = d.prevUnits > 0 ? ((d.curUnits - d.prevUnits) / d.prevUnits) * 100 : null;
-      const sc = storeNameToSiteCode[store] || '';
-      const tgt = sc ? storeTargets[sc] : undefined;
+      const tgt = storeTargets[store.trim().toUpperCase()];
       const vt = tgt?.valueTarget || 0;
       const qt = tgt?.volumeTarget || 0;
       const vv = vt > 0 ? (d.value / vt) * 100 : null;
