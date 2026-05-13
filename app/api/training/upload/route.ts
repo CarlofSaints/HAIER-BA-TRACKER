@@ -4,7 +4,10 @@ import {
   loadTrainingIndex,
   saveTrainingIndex,
   saveTrainingData,
+  saveTrainingFormData,
   TrainingRecord,
+  TrainingFormRow,
+  TrainingFormData,
 } from '@/lib/trainingData';
 
 export const dynamic = 'force-dynamic';
@@ -74,15 +77,21 @@ export async function POST(req: NextRequest) {
     // Build header mapping
     const headers = Object.keys(rows[0]);
     const mapping: Record<string, string> = {};
+    // Find the date header for normalising dates in form data
+    let dateHeader: string | null = null;
     for (const h of headers) {
       const normalised = h.toLowerCase().trim();
       if (COLUMN_MAP[normalised]) {
         mapping[h] = COLUMN_MAP[normalised];
+        if (COLUMN_MAP[normalised] === 'date') dateHeader = h;
       }
     }
 
-    // Parse rows
+    // Parse rows (structured TrainingRecord for summary)
     const records: TrainingRecord[] = [];
+    // Raw form data (ALL columns preserved)
+    const formRows: TrainingFormRow[] = [];
+
     for (const row of rows) {
       const parsed: Record<string, string> = {};
       for (const [header, field] of Object.entries(mapping)) {
@@ -116,6 +125,16 @@ export async function POST(req: NextRequest) {
         storeCode: parsed.storeCode || '',
         channel: parsed.channel || '',
       });
+
+      // Build form data row with ALL original columns
+      const formRow: TrainingFormRow = {};
+      for (const h of headers) {
+        const val = row[h];
+        formRow[h] = val === undefined || val === null ? null : val === '' ? null : val;
+      }
+      // Inject normalised date for month filtering
+      formRow['_normalizedDate'] = date;
+      formRows.push(formRow);
     }
 
     if (records.length === 0) {
@@ -125,8 +144,32 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    // Auto-detect image columns: any column where >30% of non-empty values look like Perigee image URLs
+    const PERIGEE_PREFIX = 'https://live.perigeeportal.co.za';
+    const imageColumns: string[] = [];
+    for (const h of headers) {
+      let total = 0;
+      let imageCount = 0;
+      for (const r of formRows) {
+        const v = r[h];
+        if (v && typeof v === 'string' && v.trim()) {
+          total++;
+          if (v.trim().startsWith(PERIGEE_PREFIX)) imageCount++;
+        }
+      }
+      if (total > 0 && (imageCount / total) >= 0.3) {
+        imageColumns.push(h);
+      }
+    }
+
     const uploadId = crypto.randomUUID();
+
+    // Save structured records (for summary view)
     await saveTrainingData(uploadId, records);
+
+    // Save raw form data (for form data view with all columns)
+    const rawFormData: TrainingFormData = { headers, imageColumns, rows: formRows };
+    await saveTrainingFormData(uploadId, rawFormData);
 
     const index = await loadTrainingIndex();
     index.unshift({

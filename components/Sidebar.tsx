@@ -12,15 +12,24 @@ interface NavItem {
   roles: Role[];
 }
 
-const CLIENT_ITEMS: NavItem[] = [
-  { label: 'Leaderboard', href: '/leaderboard', icon: '🏆', roles: ['super_admin', 'admin', 'client'] },
+/* ── Navigation structure ── */
+
+const LEADERBOARD: NavItem = { label: 'Leaderboard', href: '/leaderboard', icon: '🏆', roles: ['super_admin', 'admin', 'client'] };
+
+const KPI_ITEMS: NavItem[] = [
   { label: 'Visit Analytics', href: '/dashboard', icon: '📊', roles: ['super_admin', 'admin', 'client'] },
-  { label: 'Score Entry', href: '/scores', icon: '✏️', roles: ['super_admin', 'admin'] },
   { label: 'Training', href: '/training', icon: '📋', roles: ['super_admin', 'admin'] },
   { label: 'Sales & Stock', href: '/sales', icon: '💰', roles: ['super_admin', 'admin', 'client'] },
-  { label: 'Scoring Guide', href: '/guide', icon: '📖', roles: ['super_admin', 'admin', 'client'] },
-  { label: 'Account', href: '/account', icon: '👤', roles: ['super_admin', 'admin', 'client'] },
+  { label: 'Display Maintenance', href: '/display-maintenance', icon: '🖥️', roles: ['super_admin', 'admin', 'client'] },
+  { label: 'Red Flags', href: '/red-flags', icon: '🚩', roles: ['super_admin', 'admin'] },
 ];
+
+const AFTER_KPI_ITEMS: NavItem[] = [
+  { label: 'Score Entry', href: '/scores', icon: '✏️', roles: ['super_admin', 'admin'] },
+  { label: 'Scoring Guide', href: '/guide', icon: '📖', roles: ['super_admin', 'admin', 'client'] },
+];
+
+const ACCOUNT_ITEM: NavItem = { label: 'Account', href: '/account', icon: '👤', roles: ['super_admin', 'admin', 'client'] };
 
 const CONTROL_ITEMS: NavItem[] = [
   { label: 'Data Upload', href: '/upload', icon: '📤', roles: ['super_admin', 'admin'] },
@@ -34,6 +43,7 @@ const CONTROL_ITEMS: NavItem[] = [
 
 const SIDEBAR_KEY = 'haier_sidebar_open';
 const CONTROL_KEY = 'haier_control_open';
+const KPI_KEY = 'haier_kpi_open';
 const SIDEBAR_W = 240;
 const TOPBAR_H = 52;
 
@@ -76,9 +86,12 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 export default function Sidebar({ role, name, onLogout }: SidebarProps) {
   const pathname = usePathname();
-  const visibleClientItems = CLIENT_ITEMS.filter(item => item.roles.includes(role));
+  const visibleKPIItems = KPI_ITEMS.filter(item => item.roles.includes(role));
+  const visibleAfterKPI = AFTER_KPI_ITEMS.filter(item => item.roles.includes(role));
   const visibleControlItems = CONTROL_ITEMS.filter(item => item.roles.includes(role));
   const showControlCentre = visibleControlItems.length > 0;
+  const showLeaderboard = LEADERBOARD.roles.includes(role);
+  const showAccount = ACCOUNT_ITEM.roles.includes(role);
 
   const [open, setOpen] = useState(() => {
     if (typeof window === 'undefined') return true;
@@ -90,6 +103,13 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
     const stored = localStorage.getItem(CONTROL_KEY);
     if (stored !== null) return stored !== 'false';
     return role === 'super_admin' || role === 'admin';
+  });
+
+  const [kpiOpen, setKpiOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = localStorage.getItem(KPI_KEY);
+    if (stored !== null) return stored !== 'false';
+    return true;
   });
 
   // Sync body data attribute for CSS margin/padding rules
@@ -113,7 +133,15 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
     });
   }
 
-  function renderNavItem(item: NavItem) {
+  function toggleKpi() {
+    setKpiOpen(prev => {
+      const next = !prev;
+      localStorage.setItem(KPI_KEY, String(next));
+      return next;
+    });
+  }
+
+  function renderNavItem(item: NavItem, indent?: boolean) {
     const active = pathname === item.href;
     return (
       <Link
@@ -123,12 +151,12 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
           display: 'flex',
           alignItems: 'center',
           gap: '0.6rem',
-          padding: '0.6rem 0.75rem',
+          padding: indent ? '0.5rem 0.75rem 0.5rem 1.75rem' : '0.6rem 0.75rem',
           borderRadius: 8,
           color: active ? '#fff' : 'rgba(255,255,255,0.65)',
           background: active ? '#0054A6' : 'transparent',
           textDecoration: 'none',
-          fontSize: '0.85rem',
+          fontSize: indent ? '0.82rem' : '0.85rem',
           fontWeight: active ? 600 : 400,
           marginBottom: 2,
           transition: 'background 0.15s, color 0.15s',
@@ -140,11 +168,14 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
           if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent';
         }}
       >
-        <span style={{ fontSize: '1rem' }}>{item.icon}</span>
+        <span style={{ fontSize: indent ? '0.9rem' : '1rem' }}>{item.icon}</span>
         {item.label}
       </Link>
     );
   }
+
+  // Check if any KPI sub-item is currently active (for highlighting the parent)
+  const kpiActive = KPI_ITEMS.some(item => pathname === item.href);
 
   return (
     <>
@@ -223,8 +254,57 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: '0.75rem 0.5rem', overflowY: 'auto' }}>
-          {/* Client-facing items */}
-          {visibleClientItems.map(renderNavItem)}
+          {/* Leaderboard */}
+          {showLeaderboard && renderNavItem(LEADERBOARD)}
+
+          {/* KPIs — collapsible */}
+          {visibleKPIItems.length > 0 && (
+            <>
+              <div style={{ marginTop: '0.25rem', marginBottom: '0.15rem' }}>
+                <button
+                  onClick={toggleKpi}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    width: '100%',
+                    padding: '0.6rem 0.75rem',
+                    background: kpiActive && !kpiOpen ? 'rgba(0,84,166,0.25)' : 'none',
+                    border: 'none',
+                    color: kpiActive ? '#fff' : 'rgba(255,255,255,0.65)',
+                    fontSize: '0.85rem',
+                    fontWeight: kpiActive ? 600 : 400,
+                    cursor: 'pointer',
+                    borderRadius: 8,
+                    transition: 'background 0.15s, color 0.15s',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={e => {
+                    if (!kpiActive || kpiOpen) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)';
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLElement).style.background = kpiActive && !kpiOpen ? 'rgba(0,84,166,0.25)' : 'transparent';
+                  }}
+                >
+                  <span style={{ fontSize: '1rem' }}>📈</span>
+                  <span style={{ flex: 1 }}>KPIs</span>
+                  <ChevronIcon open={kpiOpen} />
+                </button>
+              </div>
+              {kpiOpen && (
+                <div>
+                  {visibleKPIItems.map(item => renderNavItem(item, true))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Score Entry + Scoring Guide */}
+          {visibleAfterKPI.length > 0 && (
+            <div style={{ marginTop: '0.25rem' }}>
+              {visibleAfterKPI.map(item => renderNavItem(item))}
+            </div>
+          )}
 
           {/* Control Centre — collapsible */}
           {showControlCentre && (
@@ -258,7 +338,7 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
               </div>
               {controlOpen && (
                 <div style={{ paddingLeft: '0.25rem' }}>
-                  {visibleControlItems.map(renderNavItem)}
+                  {visibleControlItems.map(item => renderNavItem(item))}
                 </div>
               )}
             </>
@@ -280,7 +360,7 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
           </div>
         </div>
 
-        {/* User footer */}
+        {/* User footer with Account link */}
         <div
           style={{
             padding: '0.75rem 1rem',
@@ -289,7 +369,41 @@ export default function Sidebar({ role, name, onLogout }: SidebarProps) {
             fontSize: '0.8rem',
           }}
         >
-          <div style={{ fontWeight: 500, color: '#fff', marginBottom: 4 }}>{name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div style={{ fontWeight: 500, color: '#fff' }}>{name}</div>
+            {showAccount && (
+              <Link
+                href="/account"
+                style={{
+                  color: pathname === '/account' ? '#fff' : 'rgba(255,255,255,0.5)',
+                  fontSize: '0.75rem',
+                  textDecoration: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background: pathname === '/account' ? 'rgba(0,84,166,0.4)' : 'transparent',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+                onMouseEnter={e => {
+                  if (pathname !== '/account') {
+                    (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)';
+                    (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.8)';
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (pathname !== '/account') {
+                    (e.currentTarget as HTMLElement).style.background = 'transparent';
+                    (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.5)';
+                  }
+                }}
+              >
+                <span style={{ fontSize: '0.85rem' }}>👤</span>
+                Account
+              </Link>
+            )}
+          </div>
           <div style={{ marginBottom: 8, textTransform: 'capitalize' }}>{role.replace('_', ' ')}</div>
           <button
             onClick={onLogout}

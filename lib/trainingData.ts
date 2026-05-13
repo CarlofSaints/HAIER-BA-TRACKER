@@ -11,6 +11,16 @@ export interface TrainingRecord {
   channel: string;
 }
 
+/** Raw form data row — all columns from the uploaded Excel */
+export type TrainingFormRow = Record<string, string | number | null>;
+
+/** Raw form data for one upload */
+export interface TrainingFormData {
+  headers: string[];         // All column headers
+  imageColumns: string[];    // Headers containing Perigee image URLs
+  rows: TrainingFormRow[];   // Each row = { header: value, ..., _normalizedDate: "YYYY-MM-DD" }
+}
+
 export interface TrainingUploadMeta {
   id: string;
   fileName: string;
@@ -39,9 +49,20 @@ export async function saveTrainingData(uploadId: string, records: TrainingRecord
 
 export async function deleteTrainingUpload(uploadId: string): Promise<void> {
   await deleteBlob(`training/${uploadId}.json`);
+  await deleteBlob(`training/form/${uploadId}.json`);
   const index = await loadTrainingIndex();
   const updated = index.filter(u => u.id !== uploadId);
   await saveTrainingIndex(updated);
+}
+
+/* ── Raw form data ── */
+
+export async function loadTrainingFormData(uploadId: string): Promise<TrainingFormData | null> {
+  return readJson<TrainingFormData | null>(`training/form/${uploadId}.json`, null);
+}
+
+export async function saveTrainingFormData(uploadId: string, data: TrainingFormData): Promise<void> {
+  await writeJson(`training/form/${uploadId}.json`, data);
 }
 
 /**
