@@ -207,20 +207,31 @@ export default function SalesPage() {
     return map;
   }, [storeMaster]);
 
-  // Target lookup for a given month: normalized storeName → { valueTarget, volumeTarget }
-  // Uses storeName (not siteCode) because target file siteCode differs from DISPO siteCode
+  // Bridge: target siteCode → DISPO storeName via store master
+  // Target file has its own siteCode (col B) and storeName (col A) which differ from DISPO names
+  const targetSiteCodeToDispo = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const sm of storeMaster) {
+      if (sm.siteCode) map[sm.siteCode.trim().toUpperCase()] = sm.storeName;
+    }
+    return map;
+  }, [storeMaster]);
+
+  // Target lookup: keyed by DISPO storeName (normalized) → { valueTarget, volumeTarget }
+  // Matches via: target.siteCode → store master → DISPO storeName, with storeName fallback
   // Falls back to matching MM only (ignoring year) since target headers have no year
   const { storeTargets, targetDebug } = useMemo(() => {
-    if (!targetData?.targets) return { storeTargets: {} as Record<string, { valueTarget: number; volumeTarget: number }>, targetDebug: { loaded: false, availableMonths: [] as string[], lookupMonth: '', matched: 0, fallback: false } };
+    const emptyDebug = { loaded: false, availableMonths: [] as string[], lookupMonth: '', targetEntries: 0, dispoMatched: 0, fallback: false, sampleTarget: [] as string[], sampleDispo: [] as string[] };
+    if (!targetData?.targets) return { storeTargets: {} as Record<string, { valueTarget: number; volumeTarget: number }>, targetDebug: emptyDebug };
     const monthKey = monthFilter !== 'all' ? monthFilter : (months.length > 0 ? months[0] : '');
-    if (!monthKey) return { storeTargets: {} as Record<string, { valueTarget: number; volumeTarget: number }>, targetDebug: { loaded: true, availableMonths: Object.keys(targetData.targets), lookupMonth: '', matched: 0, fallback: false } };
+    if (!monthKey) return { storeTargets: {} as Record<string, { valueTarget: number; volumeTarget: number }>, targetDebug: { ...emptyDebug, loaded: true, availableMonths: Object.keys(targetData.targets) } };
 
     let entries = targetData.targets[monthKey] || [];
     let fallback = false;
 
     // If exact month key didn't match, try matching by MM only (target file has no year)
     if (entries.length === 0) {
-      const mm = monthKey.split('-')[0]; // extract MM from MM-YYYY
+      const mm = monthKey.split('-')[0];
       for (const [tKey, tEntries] of Object.entries(targetData.targets)) {
         if (tKey.startsWith(mm + '-') && tEntries.length > 0) {
           entries = tEntries;
@@ -230,21 +241,35 @@ export default function SalesPage() {
       }
     }
 
+    // Build map keyed by DISPO storeName (uppercase)
     const map: Record<string, { valueTarget: number; volumeTarget: number }> = {};
     for (const e of entries) {
-      map[e.storeName.trim().toUpperCase()] = { valueTarget: e.valueTarget, volumeTarget: e.volumeTarget };
+      const val = { valueTarget: e.valueTarget, volumeTarget: e.volumeTarget };
+
+      // Primary: bridge via siteCode → store master → DISPO storeName
+      const dispoName = targetSiteCodeToDispo[e.siteCode.trim().toUpperCase()];
+      if (dispoName) {
+        map[dispoName.trim().toUpperCase()] = val;
+      }
+
+      // Fallback: also key by target storeName directly (in case names do match)
+      map[e.storeName.trim().toUpperCase()] = val;
     }
+
     return {
       storeTargets: map,
       targetDebug: {
         loaded: true,
         availableMonths: Object.keys(targetData.targets),
         lookupMonth: monthKey,
-        matched: Object.keys(map).length,
+        targetEntries: entries.length,
+        dispoMatched: Object.keys(map).length,
         fallback,
+        sampleTarget: entries.slice(0, 3).map(e => `${e.storeName} [${e.siteCode}]`),
+        sampleDispo: [] as string[], // filled in render
       },
     };
-  }, [targetData, monthFilter, months]);
+  }, [targetData, monthFilter, months, targetSiteCodeToDispo]);
 
   // Check-in counts per storeName (filtered by month), matched via storeCode → siteCode
   const storeCheckinCounts = useMemo(() => {
@@ -954,27 +979,22 @@ export default function SalesPage() {
             {/* Target debug info — remove after confirming */}
             {targetDebug && (
               <div style={{
-                background: targetDebug.matched > 0 ? '#f0fdf4' : '#fef2f2',
-                border: `1px solid ${targetDebug.matched > 0 ? '#bbf7d0' : '#fecaca'}`,
+                background: storeSummary.some(s => s.valTarget > 0) ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${storeSummary.some(s => s.valTarget > 0) ? '#bbf7d0' : '#fecaca'}`,
                 borderRadius: 8, padding: '0.5rem 1rem', fontSize: '0.75rem',
-                color: targetDebug.matched > 0 ? '#166534' : '#991b1b', marginBottom: '1rem',
+                color: storeSummary.some(s => s.valTarget > 0) ? '#166534' : '#991b1b', marginBottom: '1rem',
               }}>
                 Targets: {!targetDebug.loaded ? 'not loaded' : targetDebug.availableMonths.length === 0 ? 'no data (upload targets first)' : (
                   <>
-                    {targetDebug.matched} stores matched
+                    {targetDebug.targetEntries} target entries, {storeSummary.filter(s => s.valTarget > 0).length} DISPO stores matched
                     {targetDebug.fallback && ' (year fallback)'}
-                    {' | '}Target months: [{targetDebug.availableMonths.join(', ')}]
-                    {' | '}Looking up: {targetDebug.lookupMonth}
-                    {' | '}DISPO months: [{months.join(', ')}]
-                    {targetDebug.matched === 0 && targetDebug.availableMonths.length > 0 && (
-                      <> | Sample target stores: {(() => {
-                        const firstMonth = targetDebug.availableMonths[0];
-                        const entries = targetData?.targets?.[firstMonth] || [];
-                        return entries.slice(0, 3).map(e => e.storeName).join(', ');
-                      })()}</>
-                    )}
-                    {targetDebug.matched === 0 && (
-                      <> | Sample DISPO stores: {storeSummary.slice(0, 3).map(s => s.store).join(', ')}</>
+                    {' | '}Lookup: {targetDebug.lookupMonth}
+                    {storeSummary.filter(s => s.valTarget > 0).length === 0 && (
+                      <>
+                        {' | '}Target stores: {targetDebug.sampleTarget.join(', ')}
+                        {' | '}DISPO stores: {storeSummary.slice(0, 3).map(s => s.store).join(', ')}
+                        {' | '}Store master codes: {storeMaster.slice(0, 3).map(s => `${s.storeName} [${s.siteCode}]`).join(', ')}
+                      </>
                     )}
                   </>
                 )}
