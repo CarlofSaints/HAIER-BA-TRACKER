@@ -397,7 +397,7 @@ export default function DisplayMaintenancePage() {
               <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.85rem', fontWeight: 600, color: '#374151', flexShrink: 0 }}>
                 Display Inspection Form Responses — {formatMonth(month)}
               </div>
-              <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
+              <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, minHeight: 200, maxHeight: 'calc(100vh - 300px)' }}>
                 <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%' }}>
                   <thead>
                     <tr>
@@ -405,9 +405,9 @@ export default function DisplayMaintenancePage() {
                       <th style={{
                         position: 'sticky', left: 0, top: 0, zIndex: 4,
                         width: NUM_COL_W, minWidth: NUM_COL_W, maxWidth: NUM_COL_W,
-                        background: '#f9fafb', textAlign: 'center', fontSize: '0.75rem',
-                        padding: '8px 4px', borderBottom: '2px solid #e5e7eb', borderRight: '1px solid #e5e7eb',
-                        fontWeight: 600, color: '#6b7280',
+                        background: '#0054A6', textAlign: 'center', fontSize: '0.75rem',
+                        padding: '8px 4px', borderBottom: '2px solid #003d7a', borderRight: '1px solid rgba(255,255,255,0.2)',
+                        fontWeight: 600, color: 'rgba(255,255,255,0.7)',
                       }}>
                         #
                       </th>
@@ -415,8 +415,8 @@ export default function DisplayMaintenancePage() {
                       <th style={{
                         position: 'sticky', left: NUM_COL_W, top: 0, zIndex: 4,
                         width: NAME_COL_W, minWidth: NAME_COL_W,
-                        background: '#f9fafb', fontSize: '0.75rem', fontWeight: 600, color: '#374151',
-                        padding: '8px 10px', borderBottom: '2px solid #e5e7eb', borderRight: '1px solid #e5e7eb',
+                        background: '#0054A6', fontSize: '0.75rem', fontWeight: 600, color: 'white',
+                        padding: '8px 10px', borderBottom: '2px solid #003d7a', borderRight: '1px solid rgba(255,255,255,0.2)',
                         whiteSpace: 'normal', lineHeight: 1.3,
                       }}>
                         Name
@@ -425,8 +425,8 @@ export default function DisplayMaintenancePage() {
                       <th style={{
                         position: 'sticky', left: NUM_COL_W + NAME_COL_W, top: 0, zIndex: 4,
                         width: STORE_COL_W, minWidth: STORE_COL_W,
-                        background: '#f9fafb', fontSize: '0.75rem', fontWeight: 600, color: '#374151',
-                        padding: '8px 10px', borderBottom: '2px solid #e5e7eb', borderRight: '2px solid #d1d5db',
+                        background: '#0054A6', fontSize: '0.75rem', fontWeight: 600, color: 'white',
+                        padding: '8px 10px', borderBottom: '2px solid #003d7a', borderRight: '2px solid rgba(255,255,255,0.3)',
                         whiteSpace: 'normal', lineHeight: 1.3,
                       }}>
                         Store
@@ -441,8 +441,8 @@ export default function DisplayMaintenancePage() {
                             style={{
                               position: 'sticky', top: 0, zIndex: 2,
                               width: w, minWidth: 60,
-                              background: '#f9fafb', fontSize: '0.75rem', fontWeight: 600, color: '#374151',
-                              padding: '8px 10px', borderBottom: '2px solid #e5e7eb',
+                              background: '#0054A6', fontSize: '0.75rem', fontWeight: 600, color: 'white',
+                              padding: '8px 10px', borderBottom: '2px solid #003d7a',
                               whiteSpace: 'normal', lineHeight: 1.3,
                               userSelect: 'none',
                             }}
@@ -456,7 +456,7 @@ export default function DisplayMaintenancePage() {
                                   borderRight: '2px solid transparent',
                                 }}
                                 onMouseDown={e => { e.preventDefault(); startResize(h, e.clientX); }}
-                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderRightColor = '#93c5fd'; }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderRightColor = 'rgba(255,255,255,0.4)'; }}
                                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderRightColor = 'transparent'; }}
                               />
                             </div>
@@ -469,7 +469,7 @@ export default function DisplayMaintenancePage() {
                     {filteredFormRows.map((row, idx) => {
                       const name = getRowName(row, display.firstNameCol, display.lastNameCol, display.repNameCol);
                       return (
-                        <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                        <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6', background: 'white' }}>
                           {/* Frozen # cell */}
                           <td style={{
                             position: 'sticky', left: 0, zIndex: 1,
