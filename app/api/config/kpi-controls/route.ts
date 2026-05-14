@@ -26,8 +26,9 @@ export async function PUT(req: NextRequest) {
     const minTrainingsPerMonth = Math.max(1, Math.min(31, Math.round(Number(body.minTrainingsPerMonth) || 4)));
     const minVisitsPerMonth = Math.max(1, Math.min(100, Math.round(Number(body.minVisitsPerMonth) || 20)));
     const salesThresholdPct = Math.max(50, Math.min(100, Math.round(Number(body.salesThresholdPct) || 80)));
-    await saveKPIControls({ minTrainingsPerMonth, minVisitsPerMonth, salesThresholdPct });
-    return NextResponse.json({ ok: true, minTrainingsPerMonth, minVisitsPerMonth, salesThresholdPct }, { headers: noCacheHeaders() });
+    const minDisplayChecksPerMonth = Math.max(1, Math.min(31, Math.round(Number(body.minDisplayChecksPerMonth) || 4)));
+    await saveKPIControls({ minTrainingsPerMonth, minVisitsPerMonth, salesThresholdPct, minDisplayChecksPerMonth });
+    return NextResponse.json({ ok: true, minTrainingsPerMonth, minVisitsPerMonth, salesThresholdPct, minDisplayChecksPerMonth }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('KPI controls PUT error:', err);
     return NextResponse.json({ error: 'Failed' }, { status: 500 });

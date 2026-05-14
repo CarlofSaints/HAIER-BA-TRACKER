@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { loadUsers, saveUsers, User } from '@/lib/userData';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    logFromUser(user, 'user_create', `user/${newUser.email}`, `Created user ${name} ${surname} (${email}) as ${role}`);
     const { passwordHash: _, ...safe } = newUser;
     return NextResponse.json(safe, { status: 201, headers: noCacheHeaders() });
   } catch (err) {

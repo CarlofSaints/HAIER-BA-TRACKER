@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadTargetData, saveTargetData, TargetEntry, TargetUploadMeta } from '@/lib/targetData';
 import { writeJson } from '@/lib/blob';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -140,6 +141,7 @@ export async function POST(req: NextRequest) {
 
     await saveTargetData(data);
 
+    logFromUser(user, 'upload_targets', `targets/${uploadId}`, `Uploaded targets — ${allStores.size} stores, months: ${[...allMonths].join(', ')}`);
     return NextResponse.json({
       ok: true,
       uploadId,

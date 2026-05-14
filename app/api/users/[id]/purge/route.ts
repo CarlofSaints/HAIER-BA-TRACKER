@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadUsers, saveUsers } from '@/lib/userData';
+import { logFromUser } from '@/lib/activityLog';
 import { loadScores, saveScores } from '@/lib/scoreData';
 import { loadVisitIndex, loadVisitData, saveVisitData } from '@/lib/visitData';
 import { loadTrainingIndex, loadTrainingData, saveTrainingData } from '@/lib/trainingData';
@@ -77,5 +78,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
   }
 
+  logFromUser(user, 'user_purge', `user/${target.email}`, `Purged ${target.name} ${target.surname} — ${summary.scoresRemoved} scores, ${summary.visitsRemoved} visits, ${summary.trainingRemoved} training removed`, { purged: summary });
   return NextResponse.json({ ok: true, purged: summary }, { headers: noCacheHeaders() });
 }

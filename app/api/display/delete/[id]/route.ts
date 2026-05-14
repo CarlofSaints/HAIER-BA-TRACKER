@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { deleteDisplayUpload } from '@/lib/displayData';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ export async function DELETE(
   try {
     const { id } = await params;
     await deleteDisplayUpload(id);
+    logFromUser(user, 'delete_display', `display/${id}`, `Deleted display upload ${id}`);
     return NextResponse.json({ ok: true }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Display delete error:', err);

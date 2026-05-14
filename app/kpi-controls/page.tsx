@@ -11,6 +11,7 @@ export default function KPIControlsPage() {
   const [minTrainings, setMinTrainings] = useState(4);
   const [minVisits, setMinVisits] = useState(20);
   const [salesThreshold, setSalesThreshold] = useState(80);
+  const [minDisplayChecks, setMinDisplayChecks] = useState(4);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -25,6 +26,7 @@ export default function KPIControlsPage() {
         if (data.minTrainingsPerMonth) setMinTrainings(data.minTrainingsPerMonth);
         if (data.minVisitsPerMonth) setMinVisits(data.minVisitsPerMonth);
         if (data.salesThresholdPct) setSalesThreshold(data.salesThresholdPct);
+        if (data.minDisplayChecksPerMonth) setMinDisplayChecks(data.minDisplayChecksPerMonth);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -36,7 +38,7 @@ export default function KPIControlsPage() {
       const res = await authFetch('/api/config/kpi-controls', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minTrainingsPerMonth: minTrainings, minVisitsPerMonth: minVisits, salesThresholdPct: salesThreshold }),
+        body: JSON.stringify({ minTrainingsPerMonth: minTrainings, minVisitsPerMonth: minVisits, salesThresholdPct: salesThreshold, minDisplayChecksPerMonth: minDisplayChecks }),
       });
       if (res.ok) {
         setToast({ msg: 'KPI controls saved', type: 'success' });
@@ -194,6 +196,49 @@ export default function KPIControlsPage() {
                 <div style={{ marginTop: 6, color: '#6b7280', fontSize: '0.75rem' }}>
                   Targets are prorated based on the DISPO export date for mid-month comparisons.
                   E.g. if the DISPO was exported on the 15th of a 30-day month, the target is halved.
+                </div>
+              </div>
+            </div>
+
+            {/* Display Threshold */}
+            <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
+              <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
+                Display Inspection Threshold
+              </h2>
+              <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
+                Minimum number of display maintenance checks per month for a BA to earn full auto-score points (5/5).
+                The remaining 10 points are entered manually.
+              </p>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
+                  Minimum Display Checks per Month
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={minDisplayChecks}
+                  onChange={e => setMinDisplayChecks(Math.max(1, Math.min(31, Number(e.target.value) || 1)))}
+                  disabled={!isSuperAdmin}
+                  style={{ width: 120 }}
+                />
+                <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 4 }}>
+                  Range: 1–31. Default: 4
+                </div>
+              </div>
+
+              <div style={{
+                background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8,
+                padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#0c4a6e', marginBottom: '1rem',
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Scoring Formula</div>
+                <div>autoPoints = min(5, round((completedChecks / {minDisplayChecks}) &times; 5))</div>
+                <div style={{ marginTop: 6, color: '#6b7280', fontSize: '0.75rem' }}>
+                  Example: {minDisplayChecks} checks completed = 5/5 auto pts.{' '}
+                  {Math.max(1, Math.floor(minDisplayChecks / 2))} completed = {Math.min(5, Math.round((Math.max(1, Math.floor(minDisplayChecks / 2)) / minDisplayChecks) * 5))}/5 auto pts.
+                  Remaining 10 pts are manually scored.
                 </div>
               </div>
             </div>

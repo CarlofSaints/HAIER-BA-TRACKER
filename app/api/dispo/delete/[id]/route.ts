@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadDispoData, saveDispoData, DispoSalesData } from '@/lib/dispoData';
 import { readJson, deleteBlob } from '@/lib/blob';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -82,5 +83,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   await saveDispoData(rebuilt);
 
+  logFromUser(user, 'delete_dispo', `dispo/${id}`, `Deleted DISPO upload ${id}`);
   return NextResponse.json({ ok: true, deleted: true }, { headers: noCacheHeaders() });
 }

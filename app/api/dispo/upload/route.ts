@@ -3,6 +3,7 @@ import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadDispoData, saveDispoData, DispoUploadMeta } from '@/lib/dispoData';
 import { loadStores, saveStores } from '@/lib/storeData';
 import { writeJson } from '@/lib/blob';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -300,6 +301,7 @@ export async function POST(req: NextRequest) {
 
     await saveDispoData(data);
 
+    logFromUser(user, 'upload_dispo', `dispo/${uploadId}`, `Uploaded ${rowCount} DISPO rows — ${allStores.size} stores, ${allProducts.size} products`);
     return NextResponse.json({
       ok: true,
       rowCount,

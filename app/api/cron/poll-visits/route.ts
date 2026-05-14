@@ -3,6 +3,7 @@ import { readJson, writeJson } from '@/lib/blob';
 import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData, visitDedupeKey } from '@/lib/visitData';
 import { seedScoresFromVisits } from '@/lib/seedScores';
 import { requireRole } from '@/lib/auth';
+import { logActivity } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -300,6 +301,7 @@ export async function GET(req: NextRequest) {
     logEntry.skipped = skipped;
     await appendCronLog(logEntry);
 
+    logActivity('cron_import', `Cron (${matchedSlot.time} ${matchedSlot.type})`, 'System', `visits/${uploadId}`, `Cron imported ${newVisits.length} visits (${skipped} skipped)`, { imported: newVisits.length, skipped }).catch(() => {});
     return NextResponse.json({
       ok: true,
       action: 'imported',

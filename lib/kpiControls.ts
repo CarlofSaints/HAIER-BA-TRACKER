@@ -1,13 +1,14 @@
 import { readJson, writeJson } from './blob';
 
 export interface KPIControls {
-  minTrainingsPerMonth: number; // minimum completed trainings per month for full auto-score
-  minVisitsPerMonth: number;    // minimum store visits per BA per month
-  salesThresholdPct: number;    // minimum % of target before earning Monthly Sales points (50–100, default 80)
+  minTrainingsPerMonth: number;       // minimum completed trainings per month for full auto-score
+  minVisitsPerMonth: number;          // minimum store visits per BA per month
+  salesThresholdPct: number;          // minimum % of target before earning Monthly Sales points (50–100, default 80)
+  minDisplayChecksPerMonth: number;   // minimum display maintenance checks per month per BA for auto-score (5 pts)
 }
 
 const BLOB_KEY = 'config/kpi-controls.json';
-const DEFAULT: KPIControls = { minTrainingsPerMonth: 4, minVisitsPerMonth: 20, salesThresholdPct: 80 };
+const DEFAULT: KPIControls = { minTrainingsPerMonth: 4, minVisitsPerMonth: 20, salesThresholdPct: 80, minDisplayChecksPerMonth: 4 };
 
 export async function loadKPIControls(): Promise<KPIControls> {
   return readJson<KPIControls>(BLOB_KEY, DEFAULT);

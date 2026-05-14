@@ -12,6 +12,7 @@ export interface BAScore {
   weeklySummaries: number;    // 0–10
   training: number;           // 0–15 (combined: auto + manual)
   trainingAuto: number;       // 0–5 (auto-calculated from training form data)
+  displayAuto: number;        // 0–5 (auto-calculated from display checks threshold)
   bonusSuggestions: number;   // 0–10 (bonus)
   updatedAt: string;
   updatedBy: string;
@@ -51,15 +52,15 @@ export function emptyScore(email: string, repName: string, month: string): BASco
     email, repName, month,
     monthlySales: 0, dailySales: 0, checkInOnTime: 0,
     feedback: 0, displayInspection: 0, weeklySummaries: 0,
-    training: 0, trainingAuto: 0, bonusSuggestions: 0,
+    training: 0, trainingAuto: 0, displayAuto: 0, bonusSuggestions: 0,
     updatedAt: '', updatedBy: '',
   };
 }
 
 export async function loadScores(month: string): Promise<BAScore[]> {
   const raw = await readJson<BAScore[]>(`scores/${month}.json`, []);
-  // Backfill trainingAuto for old data
-  return raw.map(s => ({ ...s, trainingAuto: s.trainingAuto ?? 0 }));
+  // Backfill trainingAuto and displayAuto for old data
+  return raw.map(s => ({ ...s, trainingAuto: s.trainingAuto ?? 0, displayAuto: s.displayAuto ?? 0 }));
 }
 
 export async function saveScores(month: string, scores: BAScore[]): Promise<void> {

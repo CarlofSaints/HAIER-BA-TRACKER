@@ -41,6 +41,7 @@ export default function ScoreEntryPage() {
   const [autoCalcing, setAutoCalcing] = useState(false);
   const [trainingAutoCalcing, setTrainingAutoCalcing] = useState(false);
   const [salesAutoCalcing, setSalesAutoCalcing] = useState(false);
+  const [displayAutoCalcing, setDisplayAutoCalcing] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -87,7 +88,7 @@ export default function ScoreEntryPage() {
             email, repName, month,
             monthlySales: 0, dailySales: 0, checkInOnTime: 0,
             feedback: 0, displayInspection: 0, weeklySummaries: 0,
-            training: 0, trainingAuto: 0, bonusSuggestions: 0,
+            training: 0, trainingAuto: 0, displayAuto: 0, bonusSuggestions: 0,
             updatedAt: '', updatedBy: '',
           });
         }
@@ -231,6 +232,43 @@ export default function ScoreEntryPage() {
     setSalesAutoCalcing(false);
   }
 
+  async function handleDisplayAutoCalc() {
+    setDisplayAutoCalcing(true);
+    try {
+      const res = await authFetch('/api/scores/auto-calc-display', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month }),
+      });
+      if (!res.ok) throw new Error('Display auto-calc failed');
+      const results: { email: string; repName: string; completedCount: number; autoPoints: number }[] = await res.json();
+
+      const updated = [...scores];
+      for (const r of results) {
+        const idx = updated.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
+        if (idx >= 0) {
+          const manualPart = Math.max(0, (updated[idx].displayInspection || 0) - (updated[idx].displayAuto || 0));
+          const newTotal = Math.min(15, r.autoPoints + manualPart);
+          updated[idx] = { ...updated[idx], displayAuto: r.autoPoints, displayInspection: newTotal };
+        }
+      }
+      setScores(updated);
+
+      // Auto-save
+      const saveRes = await authFetch('/api/scores', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, scores: updated }),
+      });
+      if (!saveRes.ok) throw new Error('Failed to save scores');
+
+      showToast(`Display auto-scores calculated and saved for ${results.length} BAs`);
+    } catch {
+      showToast('Display auto-calc failed');
+    }
+    setDisplayAutoCalcing(false);
+  }
+
   async function handleSeedFromVisits() {
     setSeeding(true);
     try {
@@ -333,6 +371,14 @@ export default function ScoreEntryPage() {
           </button>
           <button
             className="btn btn-outline"
+            onClick={handleDisplayAutoCalc}
+            disabled={displayAutoCalcing || loadingData}
+            style={{ borderColor: '#0054A6', color: '#0054A6' }}
+          >
+            {displayAutoCalcing ? 'Calculating...' : 'Auto-Calculate Display'}
+          </button>
+          <button
+            className="btn btn-outline"
             onClick={handleSeedFromVisits}
             disabled={seeding || loadingData}
             style={{ borderColor: '#00A0E9', color: '#00A0E9' }}
@@ -377,10 +423,10 @@ export default function ScoreEntryPage() {
                   <tr>
                     <th style={{ position: 'sticky', left: 0, background: '#f9fafb', zIndex: 2, minWidth: 160 }}>BA Name</th>
                     {KPI_DEFS.map(kpi => (
-                      <th key={kpi.key} style={{ textAlign: 'center', minWidth: kpi.key === 'training' ? 110 : 80 }}>
+                      <th key={kpi.key} style={{ textAlign: 'center', minWidth: (kpi.key === 'training' || kpi.key === 'displayInspection') ? 110 : 80 }}>
                         <div>{kpiShortLabels[kpi.key]}</div>
                         <div style={{ fontSize: '0.65rem', color: '#9ca3af', fontWeight: 400 }}>
-                          {kpi.key === 'training' ? 'auto 5 + manual 10' : `max ${kpi.max}${kpi.isBonus ? ' (bonus)' : ''}`}
+                          {kpi.key === 'training' ? 'auto 5 + manual 10' : kpi.key === 'displayInspection' ? 'auto 5 + manual 10' : `max ${kpi.max}${kpi.isBonus ? ' (bonus)' : ''}`}
                         </div>
                       </th>
                     ))}
@@ -471,6 +517,42 @@ export default function ScoreEntryPage() {
                                     onChange={e => {
                                       const manual = clamp(Number(e.target.value) || 0, 10);
                                       updateScore(i, 'training', Math.min(15, autoVal + manual));
+                                    }}
+                                    style={{
+                                      width: 42, textAlign: 'center', padding: '3px 4px',
+                                      border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                            );
+                          }
+                          // Display Inspection: auto badge (0–5) + manual input (0–10)
+                          if (kpi.key === 'displayInspection') {
+                            const autoVal = Number(s.displayAuto) || 0;
+                            const manualVal = Math.max(0, val - autoVal);
+                            return (
+                              <td key={kpi.key} style={{ textAlign: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                  <span
+                                    style={{
+                                      background: '#dbeafe', color: '#1e40af', fontSize: '0.7rem',
+                                      fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+                                      minWidth: 28, textAlign: 'center',
+                                    }}
+                                    title={`Auto-calculated: ${autoVal}/5`}
+                                  >
+                                    {autoVal}
+                                  </span>
+                                  <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={10}
+                                    value={manualVal}
+                                    onChange={e => {
+                                      const manual = clamp(Number(e.target.value) || 0, 10);
+                                      updateScore(i, 'displayInspection', Math.min(15, autoVal + manual));
                                     }}
                                     style={{
                                       width: 42, textAlign: 'center', padding: '3px 4px',

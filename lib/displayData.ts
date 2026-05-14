@@ -65,3 +65,40 @@ export async function loadDisplayFormData(uploadId: string): Promise<DisplayForm
 export async function saveDisplayFormData(uploadId: string, data: DisplayFormData): Promise<void> {
   await writeJson(`display/form/${uploadId}.json`, data);
 }
+
+/* ── Counting for auto-score ── */
+
+export async function countDisplayChecksForMonth(
+  month: string
+): Promise<Map<string, { repName: string; count: number }>> {
+  const index = await loadDisplayIndex();
+  const allRecords: DisplayRecord[] = [];
+  for (const meta of index) {
+    const records = await loadDisplayData(meta.id);
+    allRecords.push(...records);
+  }
+
+  // Filter to month
+  const monthRecords = allRecords.filter(r => r.date.substring(0, 7) === month);
+
+  // Dedup by visitUUID
+  const seen = new Set<string>();
+  const result = new Map<string, { repName: string; count: number }>();
+
+  for (const r of monthRecords) {
+    if (r.visitUUID && seen.has(r.visitUUID)) continue;
+    if (r.visitUUID) seen.add(r.visitUUID);
+
+    const email = (r.email || '').toLowerCase();
+    if (!email) continue;
+
+    if (!result.has(email)) {
+      result.set(email, { repName: r.repName, count: 0 });
+    }
+    const entry = result.get(email)!;
+    if (r.repName) entry.repName = r.repName;
+    entry.count++;
+  }
+
+  return result;
+}

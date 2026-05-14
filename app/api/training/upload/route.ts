@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
+import { logFromUser } from '@/lib/activityLog';
 import {
   loadTrainingIndex,
   saveTrainingIndex,
@@ -265,6 +266,7 @@ export async function POST(req: NextRequest) {
     });
     await saveTrainingIndex(index);
 
+    logFromUser(user, 'upload_training', `training/${uploadId}`, `Uploaded ${records.length} training records from ${fileName}`);
     return NextResponse.json({
       ok: true,
       uploadId,

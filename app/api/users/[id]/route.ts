@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { loadUsers, saveUsers } from '@/lib/userData';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   await saveUsers(users);
+  const changedFields = Object.keys(body).filter(k => k !== 'password').join(', ') || 'password';
+  logFromUser(user, 'user_edit', `user/${users[idx].email}`, `Edited user ${users[idx].name} ${users[idx].surname} — changed: ${changedFields}`);
   const { passwordHash: _, ...safe } = users[idx];
   return NextResponse.json(safe, { headers: noCacheHeaders() });
 }
@@ -70,5 +73,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   const filtered = users.filter(u => u.id !== id);
   await saveUsers(filtered);
+  logFromUser(user, 'user_delete', `user/${target.email}`, `Deleted user ${target.name} ${target.surname} (${target.email})`);
   return NextResponse.json({ ok: true }, { headers: noCacheHeaders() });
 }

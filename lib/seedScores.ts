@@ -125,6 +125,7 @@ export async function seedScoresFromVisits(
           weeklySummaries: 0,
           training: trainingAuto,
           trainingAuto,
+          displayAuto: 0,
           bonusSuggestions: 0,
           updatedAt: now,
           updatedBy: triggeredBy,

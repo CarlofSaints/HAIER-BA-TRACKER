@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadTargetData, saveTargetData, TargetData, TargetEntry } from '@/lib/targetData';
 import { readJson, deleteBlob } from '@/lib/blob';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -46,5 +47,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   await saveTargetData(rebuilt);
 
+  logFromUser(user, 'delete_targets', `targets/${id}`, `Deleted target upload ${id}`);
   return NextResponse.json({ ok: true, deleted: true }, { headers: noCacheHeaders() });
 }

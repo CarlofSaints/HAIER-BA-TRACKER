@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { deleteTrainingUpload } from '@/lib/trainingData';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ export async function DELETE(
   try {
     const { id } = await params;
     await deleteTrainingUpload(id);
+    logFromUser(user, 'delete_training', `training/${id}`, `Deleted training upload ${id}`);
     return NextResponse.json({ ok: true }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Training delete error:', err);

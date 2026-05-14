@@ -27,6 +27,7 @@ const KPI_ITEMS: NavItem[] = [
 const AFTER_KPI_ITEMS: NavItem[] = [
   { label: 'Score Entry', href: '/scores', icon: '✏️', roles: ['super_admin', 'admin'] },
   { label: 'Scoring Guide', href: '/guide', icon: '📖', roles: ['super_admin', 'admin', 'client'] },
+  { label: 'Activity Log', href: '/activity-log', icon: '📝', roles: ['super_admin', 'admin'] },
 ];
 
 const ACCOUNT_ITEM: NavItem = { label: 'Account', href: '/account', icon: '👤', roles: ['super_admin', 'admin', 'client'] };

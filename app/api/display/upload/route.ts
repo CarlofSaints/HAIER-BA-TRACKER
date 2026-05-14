@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
+import { logFromUser } from '@/lib/activityLog';
 import {
   loadDisplayIndex,
   saveDisplayIndex,
@@ -263,6 +264,7 @@ export async function POST(req: NextRequest) {
     });
     await saveDisplayIndex(index);
 
+    logFromUser(user, 'upload_display', `display/${uploadId}`, `Uploaded ${records.length} display records from ${fileName}`);
     return NextResponse.json({
       ok: true,
       uploadId,

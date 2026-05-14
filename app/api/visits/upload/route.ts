@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadVisitIndex, saveVisitIndex, saveVisitData, Visit } from '@/lib/visitData';
+import { logFromUser } from '@/lib/activityLog';
 import * as zlib from 'zlib';
 
 export const dynamic = 'force-dynamic';
@@ -201,6 +202,7 @@ export async function POST(req: NextRequest) {
       });
       await saveVisitIndex(index);
 
+      logFromUser(user, 'upload_visits', `visits/${uploadId}`, `Uploaded ${visits.length} visit rows from ${fileName}`);
       return NextResponse.json({ ok: true, uploadId, rowCount: visits.length }, { headers: noCacheHeaders() });
     }
 
@@ -235,6 +237,7 @@ export async function POST(req: NextRequest) {
     });
     await saveVisitIndex(index);
 
+    logFromUser(user, 'upload_visits', `visits/${uploadId}`, `Uploaded ${parsed.visits.length} visit rows from ${fileName}`);
     // Include sample repName for debugging
     const sampleName = parsed.visits.find(v => v.repName)?.repName || '(none detected)';
     return NextResponse.json({
