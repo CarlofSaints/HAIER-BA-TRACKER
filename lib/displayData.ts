@@ -70,7 +70,7 @@ export async function saveDisplayFormData(uploadId: string, data: DisplayFormDat
 
 export async function countDisplayChecksForMonth(
   month: string
-): Promise<Map<string, { repName: string; count: number }>> {
+): Promise<Map<string, { repName: string; visitCount: number; productCount: number }>> {
   const index = await loadDisplayIndex();
   const allRecords: DisplayRecord[] = [];
   for (const meta of index) {
@@ -81,23 +81,32 @@ export async function countDisplayChecksForMonth(
   // Filter to month
   const monthRecords = allRecords.filter(r => r.date.substring(0, 7) === month);
 
-  // Dedup by visitUUID
-  const seen = new Set<string>();
-  const result = new Map<string, { repName: string; count: number }>();
+  const result = new Map<string, { repName: string; visitCount: number; productCount: number }>();
+
+  // Count unique visits and sum product display units per BA
+  const visitsSeen = new Map<string, Set<string>>(); // email → set of visitUUIDs
 
   for (const r of monthRecords) {
-    if (r.visitUUID && seen.has(r.visitUUID)) continue;
-    if (r.visitUUID) seen.add(r.visitUUID);
-
     const email = (r.email || '').toLowerCase();
     if (!email) continue;
 
     if (!result.has(email)) {
-      result.set(email, { repName: r.repName, count: 0 });
+      result.set(email, { repName: r.repName, visitCount: 0, productCount: 0 });
+      visitsSeen.set(email, new Set());
     }
     const entry = result.get(email)!;
     if (r.repName) entry.repName = r.repName;
-    entry.count++;
+
+    // Count unique visits
+    if (r.visitUUID && !visitsSeen.get(email)!.has(r.visitUUID)) {
+      visitsSeen.get(email)!.add(r.visitUUID);
+      entry.visitCount++;
+    } else if (!r.visitUUID) {
+      entry.visitCount++;
+    }
+
+    // Sum product display units (each row may have multiple display units checked)
+    entry.productCount += Math.max(r.unitCount || 0, 1);
   }
 
   return result;

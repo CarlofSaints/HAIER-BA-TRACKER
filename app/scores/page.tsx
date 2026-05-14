@@ -146,7 +146,7 @@ export default function ScoreEntryPage() {
         }
         return next;
       });
-      showToast(`Check-in scores calculated for ${results.length} BAs`);
+      showToast(`Visit scores calculated for ${results.length} BAs`);
     } catch {
       showToast('Auto-calc failed');
     }
@@ -311,7 +311,7 @@ export default function ScoreEntryPage() {
   // Short labels for table header
   const kpiShortLabels: Record<string, string> = {
     monthlySales: 'Monthly Sales',
-    checkInOnTime: 'Check-in',
+    checkInOnTime: 'Visits',
     feedback: 'Feedback',
     displayInspection: 'Display',
     weeklySummaries: 'Weekly',
@@ -351,7 +351,7 @@ export default function ScoreEntryPage() {
             onClick={handleAutoCalc}
             disabled={autoCalcing || loadingData}
           >
-            {autoCalcing ? 'Calculating...' : 'Auto-Calculate Check-in'}
+            {autoCalcing ? 'Calculating...' : 'Auto-Calculate Visits'}
           </button>
           <button
             className="btn btn-outline"

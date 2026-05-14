@@ -8,7 +8,11 @@ import Footer from '@/components/Footer';
 
 interface MonthScore {
   total: number;
-  grandTotal: number;
+  monthlySales: number;
+  checkInOnTime: number;
+  feedback: number;
+  displayInspection: number;
+  training: number;
   salesVol?: number;
   salesVal?: number;
 }
@@ -62,8 +66,6 @@ function scoreBarColor(total: number): string {
   return '#dc2626';
 }
 
-type SortField = 'total' | 'grandTotal';
-
 export default function LeaderboardPage() {
   const { session, loading: authLoading, logout } = useAuth();
   const router = useRouter();
@@ -71,13 +73,11 @@ export default function LeaderboardPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
   const [showTrend, setShowTrend] = useState(false);
-  const [sortField, setSortField] = useState<SortField>('grandTotal');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   const trendMonths = useMemo(() => getLastNMonths(6), []);
-  const [visitsData, setVisitsData] = useState<{ email: string; repName: string; storeName: string; formsCompleted: number }[]>([]);
 
   // Column resize state
-  const DEFAULT_WIDTHS = useMemo(() => [60, 180, 160, 200, 80, 60, 100, 80, 100], []);
+  const DEFAULT_WIDTHS = useMemo(() => [60, 180, 160, 200, 70, 70, 60, 60, 60, 60, 80, 80], []);
   const [colWidths, setColWidths] = useState<number[]>(DEFAULT_WIDTHS);
   const [trendColWidth, setTrendColWidth] = useState(70);
   const dragRef = useRef<{ colIdx: number; startX: number; startW: number; isTrend: boolean } | null>(null);
@@ -135,12 +135,8 @@ export default function LeaderboardPage() {
   const loadData = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [lbRes, visitsRes] = await Promise.all([
-        authFetch('/api/scores/leaderboard?months=12'),
-        authFetch('/api/visits'),
-      ]);
-      if (lbRes.ok) setData(await lbRes.json());
-      if (visitsRes.ok) setVisitsData(await visitsRes.json());
+      const res = await authFetch('/api/scores/leaderboard?months=12');
+      if (res.ok) setData(await res.json());
     } catch { /* ignore */ }
     setLoadingData(false);
   }, []);
@@ -158,86 +154,34 @@ export default function LeaderboardPage() {
         return {
           ...e,
           total: ms?.total ?? 0,
-          grandTotal: ms?.grandTotal ?? 0,
+          monthlySales: ms?.monthlySales ?? 0,
+          checkInOnTime: ms?.checkInOnTime ?? 0,
+          feedback: ms?.feedback ?? 0,
+          displayInspection: ms?.displayInspection ?? 0,
+          training: ms?.training ?? 0,
           salesVol: ms?.salesVol,
           salesVal: ms?.salesVal,
         };
       });
 
     entries.sort((a, b) => {
-      const diff = sortDir === 'desc'
-        ? b[sortField] - a[sortField]
-        : a[sortField] - b[sortField];
+      const diff = sortDir === 'desc' ? b.total - a.total : a.total - b.total;
       return diff || a.repName.localeCompare(b.repName);
     });
 
     return entries;
-  }, [data, selectedMonth, sortField, sortDir]);
+  }, [data, selectedMonth, sortDir]);
 
-  // Check if any entry has sales data (from API, resolved server-side)
+  // Check if any entry has sales data
   const hasDispoData = useMemo(() => {
     return ranked.some(e => e.salesVol !== undefined || e.salesVal !== undefined);
   }, [ranked]);
 
-  // Top Sales Store (from ranked entries' sales data)
-  const topSalesStore = useMemo(() => {
-    if (!hasDispoData) return null;
-    let best: { store: string; val: number; ba: string } | null = null;
-    for (const entry of ranked) {
-      const val = entry.salesVal ?? 0;
-      if (val > 0 && (!best || val > best.val)) {
-        best = { store: entry.storeName || '-', val, ba: entry.repName };
-      }
-    }
-    return best;
-  }, [ranked, hasDispoData]);
-
-  // Top Form Compliance (BA with most forms completed)
-  const topFormBA = useMemo(() => {
-    if (visitsData.length === 0) return null;
-    const formMap = new Map<string, { name: string; forms: number }>();
-    for (const v of visitsData) {
-      const key = (v.email || v.repName || '').toLowerCase();
-      if (!key) continue;
-      if (!formMap.has(key)) formMap.set(key, { name: v.repName || v.email || key, forms: 0 });
-      formMap.get(key)!.forms += v.formsCompleted || 0;
-    }
-    let best: { name: string; forms: number } | null = null;
-    for (const entry of formMap.values()) {
-      if (!best || entry.forms > best.forms) best = entry;
-    }
-    return best;
-  }, [visitsData]);
-
-  // KPI summary cards
-  const kpis = useMemo(() => {
-    if (ranked.length === 0) return { avgScore: 0, topPerformer: '-', basScored: 0, atRisk: 0 };
-    const totals = ranked.map(r => r.total);
-    const avg = totals.reduce((a, b) => a + b, 0) / totals.length;
-    const top = ranked[0];
-    const atRisk = ranked.filter(r => r.total < 60).length;
-    return {
-      avgScore: Math.round(avg),
-      topPerformer: top?.repName || '-',
-      basScored: ranked.length,
-      atRisk,
-    };
-  }, [ranked]);
-
-  function toggleSort(field: SortField) {
-    if (sortField === field) {
-      setSortDir(d => d === 'desc' ? 'asc' : 'desc');
-    } else {
-      setSortField(field);
-      setSortDir('desc');
-    }
-  }
-
-  const sortArrow = (field: SortField) => sortField === field ? (sortDir === 'desc' ? ' \u25BC' : ' \u25B2') : '';
-
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
+
+  const colCount = 10 + (hasDispoData ? 2 : 0) + (showTrend ? trendMonths.length - 1 : 0);
 
   return (
     <div style={{ display: 'flex' }}>
@@ -254,21 +198,10 @@ export default function LeaderboardPage() {
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'flex-end' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Month</label>
-            <input
-              className="input"
-              type="month"
-              value={selectedMonth}
-              onChange={e => setSelectedMonth(e.target.value)}
-              style={{ width: 180 }}
-            />
+            <input className="input" type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ width: 180 }} />
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: '#374151', cursor: 'pointer', paddingBottom: 6 }}>
-            <input
-              type="checkbox"
-              checked={showTrend}
-              onChange={e => setShowTrend(e.target.checked)}
-              style={{ width: 16, height: 16 }}
-            />
+            <input type="checkbox" checked={showTrend} onChange={e => setShowTrend(e.target.checked)} style={{ width: 16, height: 16 }} />
             Show monthly trend
           </label>
         </div>
@@ -277,52 +210,6 @@ export default function LeaderboardPage() {
           <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>Loading leaderboard...</div>
         ) : (
           <>
-            {/* KPI Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-              <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Avg Score</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: scoreColor(kpis.avgScore) }}>{kpis.avgScore}/100</div>
-              </div>
-              <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Top Performer</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0054A6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {kpis.topPerformer}
-                </div>
-              </div>
-              <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>BAs Scored</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{kpis.basScored}</div>
-              </div>
-              <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>BAs at Risk (&lt;60%)</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: kpis.atRisk > 0 ? '#dc2626' : '#059669' }}>{kpis.atRisk}</div>
-              </div>
-              {topSalesStore && (
-                <div className="kpi-card">
-                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Top Sales Store</div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#059669', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {topSalesStore.store}
-                  </div>
-                  {topSalesStore.ba && (
-                    <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {topSalesStore.ba}
-                    </div>
-                  )}
-                </div>
-              )}
-              {topFormBA && (
-                <div className="kpi-card">
-                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Top Form Compliance</div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0054A6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {topFormBA.name}
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: 2 }}>
-                    {topFormBA.forms.toLocaleString()} forms
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Ranking Table */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
               <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}>
@@ -342,15 +229,40 @@ export default function LeaderboardPage() {
                       <th style={{ position: 'relative' }}>BA Name{resizeHandle(1)}</th>
                       <th style={{ position: 'relative' }}>Store{resizeHandle(2)}</th>
                       <th style={{ position: 'relative' }}>Score{resizeHandle(3)}</th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'relative' }} onClick={() => toggleSort('total')}>
-                        Score/100{sortArrow('total')}{resizeHandle(4)}
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'relative' }} onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}>
+                        Total{sortDir === 'desc' ? ' \u25BC' : ' \u25B2'}{resizeHandle(4)}
                       </th>
-                      <th style={{ textAlign: 'center', position: 'relative' }}>Bonus{resizeHandle(5)}</th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'relative' }} onClick={() => toggleSort('grandTotal')}>
-                        Grand Total{sortArrow('grandTotal')}{resizeHandle(6)}
+                      <th style={{ textAlign: 'center', position: 'relative' }}>
+                        <div>Sales</div>
+                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/40</div>
+                        {resizeHandle(5)}
                       </th>
-                      <th style={{ textAlign: 'right', position: 'relative' }}>Sales Vol{resizeHandle(7)}</th>
-                      <th style={{ textAlign: 'right', position: 'relative' }}>Sales Val{resizeHandle(8)}</th>
+                      <th style={{ textAlign: 'center', position: 'relative' }}>
+                        <div>Visits</div>
+                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/10</div>
+                        {resizeHandle(6)}
+                      </th>
+                      <th style={{ textAlign: 'center', position: 'relative' }}>
+                        <div>Display</div>
+                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/15</div>
+                        {resizeHandle(7)}
+                      </th>
+                      <th style={{ textAlign: 'center', position: 'relative' }}>
+                        <div>Training</div>
+                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/15</div>
+                        {resizeHandle(8)}
+                      </th>
+                      <th style={{ textAlign: 'center', position: 'relative' }}>
+                        <div>Feedback</div>
+                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/10</div>
+                        {resizeHandle(9)}
+                      </th>
+                      {hasDispoData && (
+                        <>
+                          <th style={{ textAlign: 'right', position: 'relative' }}>Sales Vol{resizeHandle(10)}</th>
+                          <th style={{ textAlign: 'right', position: 'relative' }}>Sales Val{resizeHandle(11)}</th>
+                        </>
+                      )}
                       {showTrend && trendMonths.slice(1).map(m => (
                         <th key={m} style={{ textAlign: 'center', fontSize: '0.7rem', position: 'relative' }}>
                           {formatMonth(m)}{resizeHandle(0, true)}
@@ -361,14 +273,13 @@ export default function LeaderboardPage() {
                   <tbody>
                     {ranked.length === 0 ? (
                       <tr>
-                        <td colSpan={9 + (showTrend ? trendMonths.length - 1 : 0)} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                        <td colSpan={colCount} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                           No scores for {formatMonth(selectedMonth)}
                         </td>
                       </tr>
                     ) : ranked.map((entry, i) => {
                       const rank = i + 1;
                       const barPct = Math.min((entry.total / 100) * 100, 100);
-                      const bonus = entry.grandTotal - entry.total;
                       return (
                         <tr
                           key={entry.email}
@@ -391,10 +302,8 @@ export default function LeaderboardPage() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <div style={{ flex: 1, background: '#f3f4f6', borderRadius: 4, height: 14, overflow: 'hidden' }}>
                                 <div style={{
-                                  width: `${barPct}%`,
-                                  height: '100%',
-                                  background: scoreBarColor(entry.total),
-                                  borderRadius: 4,
+                                  width: `${barPct}%`, height: '100%',
+                                  background: scoreBarColor(entry.total), borderRadius: 4,
                                   transition: 'width 0.3s ease',
                                 }} />
                               </div>
@@ -403,23 +312,26 @@ export default function LeaderboardPage() {
                           <td style={{ textAlign: 'center', fontWeight: 600, color: scoreColor(entry.total) }}>
                             {entry.total}
                           </td>
-                          <td style={{ textAlign: 'center', color: bonus > 0 ? '#0054A6' : '#9ca3af' }}>
-                            +{bonus}
-                          </td>
-                          <td style={{ textAlign: 'center', fontWeight: 700, color: '#0054A6', fontSize: '1rem' }}>
-                            {entry.grandTotal}
-                          </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
-                            {entry.salesVol != null ? entry.salesVol.toLocaleString() : '-'}
-                          </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
-                            {entry.salesVal != null ? `R ${entry.salesVal.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}` : '-'}
-                          </td>
+                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.monthlySales}</td>
+                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.checkInOnTime}</td>
+                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.displayInspection}</td>
+                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.training}</td>
+                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.feedback}</td>
+                          {hasDispoData && (
+                            <>
+                              <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
+                                {entry.salesVol != null ? entry.salesVol.toLocaleString() : '-'}
+                              </td>
+                              <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
+                                {entry.salesVal != null ? `R ${entry.salesVal.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}` : '-'}
+                              </td>
+                            </>
+                          )}
                           {showTrend && trendMonths.slice(1).map(m => {
                             const ms = data.find(d => d.email === entry.email)?.scores[m];
                             return (
                               <td key={m} style={{ textAlign: 'center', fontSize: '0.8rem', color: ms ? scoreColor(ms.total) : '#d1d5db' }}>
-                                {ms ? ms.grandTotal : '-'}
+                                {ms ? ms.total : '-'}
                               </td>
                             );
                           })}

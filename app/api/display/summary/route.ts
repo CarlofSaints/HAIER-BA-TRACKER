@@ -20,18 +20,19 @@ export async function GET(req: NextRequest) {
     const counts = await countDisplayChecksForMonth(month);
 
     const results = Array.from(counts.entries()).map(([email, data]) => {
-      const autoPoints = Math.min(5, Math.round((data.count / minDisplayChecksPerMonth) * 5));
+      const autoPoints = Math.min(5, Math.round((data.visitCount / minDisplayChecksPerMonth) * 5));
       return {
         email,
         repName: data.repName,
-        completedCount: data.count,
+        visitCount: data.visitCount,
+        productCount: data.productCount,
         minRequired: minDisplayChecksPerMonth,
         autoPoints,
-        compliant: data.count >= minDisplayChecksPerMonth,
+        compliant: data.visitCount >= minDisplayChecksPerMonth,
       };
     });
 
-    results.sort((a, b) => b.completedCount - a.completedCount);
+    results.sort((a, b) => b.visitCount - a.visitCount);
 
     return NextResponse.json({ month, minRequired: minDisplayChecksPerMonth, bas: results }, { headers: noCacheHeaders() });
   } catch (err) {

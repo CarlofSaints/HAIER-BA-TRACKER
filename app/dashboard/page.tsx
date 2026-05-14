@@ -36,8 +36,28 @@ interface DispoSalesData {
   uploads: unknown[];
 }
 
+interface TopPerformer {
+  label: string;
+  name: string;
+  store: string;
+  score: string;
+  color: string;
+}
+
+interface LBEntry {
+  email: string;
+  repName: string;
+  storeName: string;
+  scores: Record<string, { total: number; monthlySales: number; checkInOnTime: number; feedback: number; displayInspection: number; training: number }>;
+}
+
 const PIE_COLORS = ['#0054A6', '#00A0E9', '#1A1A2E', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
 const PAGE_SIZE = 100;
+
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 type SortKey = keyof Visit;
 
@@ -52,6 +72,7 @@ export default function DashboardPage() {
   const [sortKey, setSortKey] = useState<SortKey>('checkInDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [dispoData, setDispoData] = useState<DispoSalesData | null>(null);
+  const [lbData, setLbData] = useState<LBEntry[]>([]);
 
   const loadVisits = useCallback(async () => {
     setLoadingData(true);
@@ -72,8 +93,49 @@ export default function DashboardPage() {
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d) setDispoData(d); })
         .catch(() => {});
+      authFetch('/api/scores/leaderboard?months=1')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setLbData(d); })
+        .catch(() => {});
     }
   }, [session, loadVisits]);
+
+  // Top performers per KPI
+  const topPerformers = useMemo<TopPerformer[]>(() => {
+    const month = currentMonth();
+    const entries = lbData
+      .filter(e => e.scores[month])
+      .map(e => ({ ...e, ms: e.scores[month] }));
+    if (entries.length === 0) return [];
+
+    const kpis: { key: keyof LBEntry['scores'][string]; label: string; max: number; color: string }[] = [
+      { key: 'monthlySales', label: 'Top Seller', max: 40, color: '#059669' },
+      { key: 'checkInOnTime', label: 'Best Attendee', max: 10, color: '#0054A6' },
+      { key: 'displayInspection', label: 'Best Display', max: 15, color: '#7c3aed' },
+      { key: 'training', label: 'Best Trainer', max: 15, color: '#d97706' },
+      { key: 'feedback', label: 'Best Feedback', max: 10, color: '#0891b2' },
+    ];
+
+    const result: TopPerformer[] = [];
+    for (const kpi of kpis) {
+      let best: typeof entries[0] | null = null;
+      let bestVal = -1;
+      for (const e of entries) {
+        const val = (e.ms[kpi.key] as number) || 0;
+        if (val > bestVal) { bestVal = val; best = e; }
+      }
+      if (best && bestVal > 0) {
+        result.push({
+          label: kpi.label,
+          name: best.repName,
+          store: best.storeName || '-',
+          score: `${bestVal}/${kpi.max}`,
+          color: kpi.color,
+        });
+      }
+    }
+    return result;
+  }, [lbData]);
 
   // Channel filter applied client-side
   const filtered = useMemo(() => {
@@ -338,6 +400,31 @@ export default function DashboardPage() {
             {dispoData && dispoKpis.volume > 0 && (
               <div style={{ marginBottom: '1.5rem', padding: '0.5rem 0.75rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: '0.7rem', color: '#92400e' }}>
                 Sales value is calculated (units x price) and not supplied directly from channel.
+              </div>
+            )}
+
+            {/* Top Performers per KPI */}
+            {topPerformers.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+                {topPerformers.map(tp => (
+                  <div key={tp.label} style={{
+                    background: 'white', borderRadius: 12, padding: '1rem 1.25rem',
+                    border: '1px solid #e5e7eb', borderLeft: `4px solid ${tp.color}`,
+                  }}>
+                    <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {tp.label}
+                    </div>
+                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {tp.name}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {tp.store}
+                    </div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: tp.color }}>
+                      {tp.score}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 

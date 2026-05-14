@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAnyUser, noCacheHeaders } from '@/lib/auth';
-import { loadScores, calcTotal, calcGrandTotal } from '@/lib/scoreData';
+import { loadScores, calcTotal, BAScore } from '@/lib/scoreData';
 import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
 import { loadDispoData } from '@/lib/dispoData';
 import { loadStores } from '@/lib/storeData';
@@ -9,7 +9,11 @@ export const dynamic = 'force-dynamic';
 
 interface MonthScore {
   total: number;
-  grandTotal: number;
+  monthlySales: number;
+  checkInOnTime: number;
+  feedback: number;
+  displayInspection: number;
+  training: number;
   salesVol?: number;
   salesVal?: number;
 }
@@ -31,6 +35,17 @@ function getLastNMonths(n: number): string[] {
     months.push(`${yyyy}-${mm}`);
   }
   return months;
+}
+
+function buildMonthScore(s: BAScore): MonthScore {
+  return {
+    total: calcTotal(s),
+    monthlySales: s.monthlySales,
+    checkInOnTime: s.checkInOnTime,
+    feedback: s.feedback,
+    displayInspection: s.displayInspection,
+    training: s.training,
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -85,20 +100,17 @@ export async function GET(req: NextRequest) {
       const visitCode = storeCodeMap.get(email);
       const visitName = storeMap.get(email) || '';
 
-      // Strategy 1: storeCode → store master siteCode → DISPO storeName
       if (visitCode) {
         const dispoName = codeToDispoName.get(visitCode.toLowerCase().trim());
         if (dispoName) { baDispoStore.set(email, dispoName); continue; }
       }
 
-      // Strategy 2: visit storeName matches DISPO store name (case-insensitive)
       const normVisitName = visitName.toLowerCase().trim();
       if (normVisitName) {
         const dispoName = normToDispoName.get(normVisitName);
         if (dispoName) { baDispoStore.set(email, dispoName); continue; }
       }
 
-      // Strategy 3: use visit storeName as-is (fallback)
       if (visitName) {
         baDispoStore.set(email, visitName);
       }
@@ -108,7 +120,6 @@ export async function GET(req: NextRequest) {
 
     for (const month of months) {
       const scores = await loadScores(month);
-      // Convert YYYY-MM to MM-YYYY for DISPO lookup
       const [y, m] = month.split('-');
       const dispoMonthKey = `${m}-${y}`;
 
@@ -118,13 +129,9 @@ export async function GET(req: NextRequest) {
           baMap.set(key, { email: s.email, repName: s.repName, storeName: storeMap.get(key) || '', scores: {} });
         }
         const entry = baMap.get(key)!;
-        // Keep latest repName
         if (s.repName) entry.repName = s.repName;
 
-        const monthScore: MonthScore = {
-          total: calcTotal(s),
-          grandTotal: calcGrandTotal(s),
-        };
+        const monthScore = buildMonthScore(s);
 
         // Add DISPO sales data if available
         const dispoStoreName = baDispoStore.get(key);

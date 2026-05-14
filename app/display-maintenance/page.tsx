@@ -10,7 +10,8 @@ import Footer from '@/components/Footer';
 interface DisplaySummaryBA {
   email: string;
   repName: string;
-  completedCount: number;
+  visitCount: number;
+  productCount: number;
   minRequired: number;
   autoPoints: number;
   compliant: boolean;
@@ -212,14 +213,15 @@ export default function DisplayMaintenancePage() {
   // Summary stats
   const stats = useMemo(() => {
     if (!summaryData || summaryData.bas.length === 0) {
-      return { totalBAs: 0, totalChecks: 0, avgPerBA: 0, compliant: 0, complianceRate: 0 };
+      return { totalBAs: 0, totalVisits: 0, totalProducts: 0, avgPerBA: 0, compliant: 0, complianceRate: 0 };
     }
     const totalBAs = summaryData.bas.length;
-    const totalChecks = summaryData.bas.reduce((sum, b) => sum + b.completedCount, 0);
-    const avgPerBA = totalChecks / totalBAs;
+    const totalVisits = summaryData.bas.reduce((sum, b) => sum + b.visitCount, 0);
+    const totalProducts = summaryData.bas.reduce((sum, b) => sum + b.productCount, 0);
+    const avgPerBA = totalVisits / totalBAs;
     const compliant = summaryData.bas.filter(b => b.compliant).length;
     const complianceRate = Math.round((compliant / totalBAs) * 100);
-    return { totalBAs, totalChecks, avgPerBA: Math.round(avgPerBA * 10) / 10, compliant, complianceRate };
+    return { totalBAs, totalVisits, totalProducts, avgPerBA: Math.round(avgPerBA * 10) / 10, compliant, complianceRate };
   }, [summaryData]);
 
   // Display columns (filtered + merged Name)
@@ -284,9 +286,9 @@ export default function DisplayMaintenancePage() {
             {/* Summary Cards */}
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
               {[
-                { label: 'Total Inspections', value: stats.totalChecks, color: '#0054A6' },
+                { label: 'Visit Inspections', value: stats.totalVisits, color: '#0054A6', sub: `${stats.totalProducts} products checked` },
                 { label: 'BAs Active', value: stats.totalBAs, color: '#0054A6' },
-                { label: 'Avg per BA', value: stats.avgPerBA, color: '#0054A6', sub: `Required: ${summaryData.minRequired}` },
+                { label: 'Avg Visits/BA', value: stats.avgPerBA, color: '#0054A6', sub: `Required: ${summaryData.minRequired}` },
                 {
                   label: 'Fully Compliant',
                   value: `${stats.compliant}/${stats.totalBAs}`,
@@ -325,10 +327,11 @@ export default function DisplayMaintenancePage() {
                     <tr>
                       <th style={{ minWidth: 180 }}>BA Name</th>
                       <th style={{ minWidth: 200 }}>Email</th>
-                      <th style={{ textAlign: 'center', minWidth: 100 }}>Completed</th>
-                      <th style={{ textAlign: 'center', minWidth: 90 }}>Required</th>
-                      <th style={{ textAlign: 'center', minWidth: 100 }}>Auto Score</th>
-                      <th style={{ textAlign: 'center', minWidth: 100 }}>Status</th>
+                      <th style={{ textAlign: 'center', minWidth: 80 }}>Visits</th>
+                      <th style={{ textAlign: 'center', minWidth: 90 }}>Products</th>
+                      <th style={{ textAlign: 'center', minWidth: 80 }}>Required</th>
+                      <th style={{ textAlign: 'center', minWidth: 90 }}>Auto Score</th>
+                      <th style={{ textAlign: 'center', minWidth: 90 }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -336,7 +339,8 @@ export default function DisplayMaintenancePage() {
                       <tr key={ba.email}>
                         <td style={{ fontWeight: 500, fontSize: '0.85rem' }}>{ba.repName}</td>
                         <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>{ba.email}</td>
-                        <td style={{ textAlign: 'center', fontWeight: 600, color: ba.compliant ? '#059669' : '#dc2626' }}>{ba.completedCount}</td>
+                        <td style={{ textAlign: 'center', fontWeight: 600, color: ba.compliant ? '#059669' : '#dc2626' }}>{ba.visitCount}</td>
+                        <td style={{ textAlign: 'center', color: '#374151' }}>{ba.productCount}</td>
                         <td style={{ textAlign: 'center', color: '#6b7280' }}>{ba.minRequired}</td>
                         <td style={{ textAlign: 'center' }}>
                           <span style={{ background: '#dbeafe', color: '#1e40af', fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 4 }}>

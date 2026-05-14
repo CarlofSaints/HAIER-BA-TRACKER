@@ -21,9 +21,9 @@ export async function POST(req: NextRequest) {
     const results = Array.from(counts.entries()).map(([email, data]) => ({
       email,
       repName: data.repName,
-      completedCount: data.count,
+      completedCount: data.visitCount,
       minRequired: minDisplayChecksPerMonth,
-      autoPoints: Math.min(5, Math.round((data.count / minDisplayChecksPerMonth) * 5)),
+      autoPoints: Math.min(5, Math.round((data.visitCount / minDisplayChecksPerMonth) * 5)),
     }));
 
     return NextResponse.json(results, { headers: noCacheHeaders() });
