@@ -247,6 +247,7 @@ export async function POST(req: NextRequest) {
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Visit upload error:', err);
+    logFromUser(user, 'upload_visits', 'visits/failed', `Visit upload failed: ${err instanceof Error ? err.message : String(err)}`);
     return NextResponse.json({ error: 'Upload failed: ' + (err instanceof Error ? err.message : 'Unknown') }, { status: 500 });
   }
 }

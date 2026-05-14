@@ -151,6 +151,7 @@ export async function POST(req: NextRequest) {
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Target upload error:', err);
+    logFromUser(user, 'upload_targets', 'targets/failed', `Target upload failed: ${err instanceof Error ? err.message : String(err)}`);
     return NextResponse.json({
       error: 'Failed to process target file',
       detail: err instanceof Error ? err.message : String(err),

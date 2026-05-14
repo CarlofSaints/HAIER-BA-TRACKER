@@ -315,6 +315,7 @@ export async function POST(req: NextRequest) {
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('DISPO upload error:', err);
+    logFromUser(user, 'upload_dispo', 'dispo/failed', `DISPO upload failed: ${err instanceof Error ? err.message : String(err)}`);
     return NextResponse.json({
       error: 'Failed to process file',
       detail: err instanceof Error ? err.message : String(err),

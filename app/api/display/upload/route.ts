@@ -208,6 +208,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Count unique images before committing to download
+    const MAX_IMAGES_PER_UPLOAD = 150;
+    if (imageColumns.length > 0) {
+      const uniqueUrls = new Set<string>();
+      for (const row of formRows) {
+        for (const col of imageColumns) {
+          const val = row[col];
+          if (typeof val === 'string' && val.startsWith(PERIGEE_PREFIX)) {
+            uniqueUrls.add(val);
+          }
+        }
+      }
+      if (uniqueUrls.size > MAX_IMAGES_PER_UPLOAD) {
+        logFromUser(user, 'upload_display', 'display/rejected', `Rejected upload "${fileName}" — ${uniqueUrls.size} images exceeds limit of ${MAX_IMAGES_PER_UPLOAD}`);
+        return NextResponse.json({
+          error: `Too many images (${uniqueUrls.size}). Maximum is ${MAX_IMAGES_PER_UPLOAD} per upload to avoid timeouts. Please split the file into smaller files and upload each one separately.`,
+        }, { status: 400 });
+      }
+    }
+
     const uploadId = crypto.randomUUID();
 
     // Download Perigee images → Vercel Blob CDN
@@ -274,6 +294,7 @@ export async function POST(req: NextRequest) {
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Display upload error:', err);
+    logFromUser(user, 'upload_display', 'display/failed', `Display upload failed: ${err instanceof Error ? err.message : String(err)}`);
     return NextResponse.json({
       error: 'Failed to process file',
       detail: err instanceof Error ? err.message : String(err),
