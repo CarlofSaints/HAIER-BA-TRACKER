@@ -38,10 +38,12 @@ const HIDDEN_PATTERNS = new Set([
   'id', 'email', 'customer', 'channel', 'store code', 'time',
   'visit uuid', 'visit id', 'visitid', 'tag', 'sync date', 'sync time',
   'rep name', 'representative name',
+  'store', 'store name', 'place',
 ]);
 
 const FIRST_NAME_PATTERNS = new Set(['first name', 'firstname', 'name']);
 const LAST_NAME_PATTERNS = new Set(['last name', 'lastname', 'surname']);
+const STORE_PATTERNS = new Set(['store', 'store name', 'place']);
 
 function isHidden(header: string): boolean {
   const h = header.toLowerCase().trim();
@@ -55,9 +57,10 @@ function buildDisplayColumns(headers: string[]) {
     const l = h.toLowerCase().trim();
     return l === 'rep name' || l === 'representative name';
   });
+  const storeCol = headers.find(h => STORE_PATTERNS.has(h.toLowerCase().trim()));
 
   const visible = headers.filter(h => !isHidden(h));
-  return { columns: ['Name', ...visible], firstNameCol, lastNameCol, repNameCol };
+  return { columns: ['Name', 'Store', ...visible], firstNameCol, lastNameCol, repNameCol, storeCol };
 }
 
 function getRowName(row: FormRow, firstNameCol?: string, lastNameCol?: string, repNameCol?: string): string {
@@ -164,7 +167,8 @@ function useColumnResize(defaultWidth: number) {
 
 /* ── Sticky column constants ── */
 const NUM_COL_W = 36;
-const NAME_COL_W = 180;
+const NAME_COL_W = 160;
+const STORE_COL_W = 170;
 
 /* ── Main Page ── */
 
@@ -233,8 +237,12 @@ export default function DisplayMaintenancePage() {
     return rows.filter(row => {
       const name = getRowName(row, display.firstNameCol, display.lastNameCol, display.repNameCol);
       if (name.toLowerCase().includes(q)) return true;
+      if (display.storeCol) {
+        const sv = row[display.storeCol];
+        if (sv && String(sv).toLowerCase().includes(q)) return true;
+      }
       return display.columns.some(h => {
-        if (h === 'Name') return false;
+        if (h === 'Name' || h === 'Store') return false;
         const v = row[h];
         return v !== null && v !== undefined && String(v).toLowerCase().includes(q);
       });
@@ -404,13 +412,23 @@ export default function DisplayMaintenancePage() {
                         position: 'sticky', left: NUM_COL_W, top: 0, zIndex: 4,
                         width: NAME_COL_W, minWidth: NAME_COL_W,
                         background: '#f9fafb', fontSize: '0.75rem', fontWeight: 600, color: '#374151',
-                        padding: '8px 10px', borderBottom: '2px solid #e5e7eb', borderRight: '2px solid #d1d5db',
+                        padding: '8px 10px', borderBottom: '2px solid #e5e7eb', borderRight: '1px solid #e5e7eb',
                         whiteSpace: 'normal', lineHeight: 1.3,
                       }}>
                         Name
                       </th>
+                      {/* Frozen Store header */}
+                      <th style={{
+                        position: 'sticky', left: NUM_COL_W + NAME_COL_W, top: 0, zIndex: 4,
+                        width: STORE_COL_W, minWidth: STORE_COL_W,
+                        background: '#f9fafb', fontSize: '0.75rem', fontWeight: 600, color: '#374151',
+                        padding: '8px 10px', borderBottom: '2px solid #e5e7eb', borderRight: '2px solid #d1d5db',
+                        whiteSpace: 'normal', lineHeight: 1.3,
+                      }}>
+                        Store
+                      </th>
                       {/* Scrollable column headers */}
-                      {display.columns.slice(1).map(h => {
+                      {display.columns.slice(2).map(h => {
                         const isImg = formData.imageColumns.includes(h);
                         const w = widths[h] || (isImg ? 110 : 150);
                         return (
@@ -461,7 +479,7 @@ export default function DisplayMaintenancePage() {
                           <td style={{
                             position: 'sticky', left: NUM_COL_W, zIndex: 1,
                             background: 'white', fontWeight: 500, fontSize: '0.82rem',
-                            padding: '6px 10px', borderRight: '2px solid #d1d5db',
+                            padding: '6px 10px', borderRight: '1px solid #e5e7eb',
                             width: NAME_COL_W, minWidth: NAME_COL_W,
                             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                           }}
@@ -469,8 +487,22 @@ export default function DisplayMaintenancePage() {
                           >
                             {name || <span style={{ color: '#d1d5db' }}>—</span>}
                           </td>
+                          {/* Frozen Store cell */}
+                          <td style={{
+                            position: 'sticky', left: NUM_COL_W + NAME_COL_W, zIndex: 1,
+                            background: 'white', fontSize: '0.8rem', color: '#374151',
+                            padding: '6px 10px', borderRight: '2px solid #d1d5db',
+                            width: STORE_COL_W, minWidth: STORE_COL_W,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}
+                            title={display.storeCol ? String(row[display.storeCol] ?? '') : ''}
+                          >
+                            {display.storeCol && row[display.storeCol]
+                              ? String(row[display.storeCol])
+                              : <span style={{ color: '#d1d5db' }}>—</span>}
+                          </td>
                           {/* Scrollable data cells */}
-                          {display.columns.slice(1).map(h => {
+                          {display.columns.slice(2).map(h => {
                             const val = row[h];
                             const isImg = formData.imageColumns.includes(h);
 
@@ -514,7 +546,7 @@ export default function DisplayMaintenancePage() {
                     })}
                     {filteredFormRows.length === 0 && (
                       <tr>
-                        <td colSpan={display.columns.length + 1} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                        <td colSpan={display.columns.length + 2} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                           No matching records
                         </td>
                       </tr>
