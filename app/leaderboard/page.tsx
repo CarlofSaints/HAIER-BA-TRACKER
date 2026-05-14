@@ -66,6 +66,8 @@ function scoreBarColor(total: number): string {
   return '#dc2626';
 }
 
+type SortKey = 'total' | 'repName' | 'storeName' | 'monthlySales' | 'checkInOnTime' | 'displayInspection' | 'training' | 'feedback' | 'salesVol' | 'salesVal';
+
 export default function LeaderboardPage() {
   const { session, loading: authLoading, logout } = useAuth();
   const router = useRouter();
@@ -73,6 +75,7 @@ export default function LeaderboardPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
   const [showTrend, setShowTrend] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>('total');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   const trendMonths = useMemo(() => getLastNMonths(6), []);
 
@@ -165,17 +168,53 @@ export default function LeaderboardPage() {
       });
 
     entries.sort((a, b) => {
-      const diff = sortDir === 'desc' ? b.total - a.total : a.total - b.total;
+      let diff = 0;
+      if (sortKey === 'repName') {
+        diff = a.repName.localeCompare(b.repName);
+      } else if (sortKey === 'storeName') {
+        diff = (a.storeName || '').localeCompare(b.storeName || '');
+      } else {
+        const aVal = (a[sortKey] as number) ?? 0;
+        const bVal = (b[sortKey] as number) ?? 0;
+        diff = aVal - bVal;
+      }
+      if (sortDir === 'desc') diff = -diff;
       return diff || a.repName.localeCompare(b.repName);
     });
 
     return entries;
-  }, [data, selectedMonth, sortDir]);
+  }, [data, selectedMonth, sortKey, sortDir]);
 
   // Check if any entry has sales data
   const hasDispoData = useMemo(() => {
     return ranked.some(e => e.salesVol !== undefined || e.salesVal !== undefined);
   }, [ranked]);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'repName' || key === 'storeName' ? 'asc' : 'desc');
+    }
+  }
+
+  const sortArrow = (key: SortKey) => sortKey === key ? (sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
+
+  // Frozen column widths
+  const RANK_W = colWidths[0];
+  const NAME_W = colWidths[1];
+  const STORE_W = colWidths[2];
+  const FROZEN_LEFT = [0, RANK_W, RANK_W + NAME_W];
+
+  const stickyHead = (left: number, zIdx = 3): React.CSSProperties => ({
+    position: 'sticky', left, top: 0, zIndex: zIdx,
+    background: '#f9fafb',
+  });
+  const stickyCell = (left: number): React.CSSProperties => ({
+    position: 'sticky', left, zIndex: 1,
+    background: 'inherit',
+  });
 
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
@@ -215,8 +254,8 @@ export default function LeaderboardPage() {
               <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}>
                 Rankings — {formatMonth(selectedMonth)}
               </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="data-table" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%' }}>
+              <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+                <table className="data-table" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                   <colgroup>
                     {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
                     {showTrend && trendMonths.slice(1).map(m => (
@@ -225,46 +264,60 @@ export default function LeaderboardPage() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'center', position: 'relative' }}>Rank{resizeHandle(0)}</th>
-                      <th style={{ position: 'relative' }}>BA Name{resizeHandle(1)}</th>
-                      <th style={{ position: 'relative' }}>Store{resizeHandle(2)}</th>
-                      <th style={{ position: 'relative' }}>Score{resizeHandle(3)}</th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'relative' }} onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}>
-                        Total{sortDir === 'desc' ? ' \u25BC' : ' \u25B2'}{resizeHandle(4)}
+                      {/* Frozen: Rank */}
+                      <th style={{ ...stickyHead(FROZEN_LEFT[0]), textAlign: 'center', position: 'sticky', cursor: 'pointer', borderRight: '1px solid #e5e7eb' }} onClick={() => toggleSort('total')}>
+                        Rank{sortArrow('total')}{resizeHandle(0)}
                       </th>
-                      <th style={{ textAlign: 'center', position: 'relative' }}>
-                        <div>Sales</div>
+                      {/* Frozen: BA Name */}
+                      <th style={{ ...stickyHead(FROZEN_LEFT[1]), cursor: 'pointer' }} onClick={() => toggleSort('repName')}>
+                        BA Name{sortArrow('repName')}{resizeHandle(1)}
+                      </th>
+                      {/* Frozen: Store */}
+                      <th style={{ ...stickyHead(FROZEN_LEFT[2]), cursor: 'pointer', borderRight: '2px solid #d1d5db' }} onClick={() => toggleSort('storeName')}>
+                        Store{sortArrow('storeName')}{resizeHandle(2)}
+                      </th>
+                      {/* Scrollable columns */}
+                      <th style={{ position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }}>Score{resizeHandle(3)}</th>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('total')}>
+                        Total{sortArrow('total')}{resizeHandle(4)}
+                      </th>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('monthlySales')}>
+                        <div>Sales{sortArrow('monthlySales')}</div>
                         <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/40</div>
                         {resizeHandle(5)}
                       </th>
-                      <th style={{ textAlign: 'center', position: 'relative' }}>
-                        <div>Visits</div>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('checkInOnTime')}>
+                        <div>Visits{sortArrow('checkInOnTime')}</div>
                         <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/10</div>
                         {resizeHandle(6)}
                       </th>
-                      <th style={{ textAlign: 'center', position: 'relative' }}>
-                        <div>Display</div>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('displayInspection')}>
+                        <div>Display{sortArrow('displayInspection')}</div>
                         <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/15</div>
                         {resizeHandle(7)}
                       </th>
-                      <th style={{ textAlign: 'center', position: 'relative' }}>
-                        <div>Training</div>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('training')}>
+                        <div>Training{sortArrow('training')}</div>
                         <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/15</div>
                         {resizeHandle(8)}
                       </th>
-                      <th style={{ textAlign: 'center', position: 'relative' }}>
-                        <div>Feedback</div>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('feedback')}>
+                        <div>Feedback{sortArrow('feedback')}</div>
                         <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/10</div>
                         {resizeHandle(9)}
                       </th>
                       {hasDispoData && (
                         <>
-                          <th style={{ textAlign: 'right', position: 'relative' }}>Sales Vol{resizeHandle(10)}</th>
-                          <th style={{ textAlign: 'right', position: 'relative' }}>Sales Val{resizeHandle(11)}</th>
+                          <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('salesVol')}>
+                            Sales Vol{sortArrow('salesVol')}{resizeHandle(10)}
+                          </th>
+                          <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('salesVal')}>
+                            Sales Val{sortArrow('salesVal')}{resizeHandle(11)}
+                          </th>
                         </>
                       )}
                       {showTrend && trendMonths.slice(1).map(m => (
-                        <th key={m} style={{ textAlign: 'center', fontSize: '0.7rem', position: 'relative' }}>
+                        <th key={m} style={{ textAlign: 'center', fontSize: '0.7rem', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }}>
                           {formatMonth(m)}{resizeHandle(0, true)}
                         </th>
                       ))}
@@ -284,20 +337,24 @@ export default function LeaderboardPage() {
                         <tr
                           key={entry.email}
                           onClick={() => router.push(`/leaderboard/${encodeURIComponent(entry.email)}`)}
-                          style={{ cursor: 'pointer' }}
+                          style={{ cursor: 'pointer', background: 'white' }}
                           onMouseEnter={e => (e.currentTarget.style.background = '#f9fafb')}
-                          onMouseLeave={e => (e.currentTarget.style.background = '')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'white')}
                         >
-                          <td style={{ textAlign: 'center', fontSize: rank <= 3 ? '1.2rem' : '0.85rem', fontWeight: rank <= 3 ? 700 : 400 }}>
+                          {/* Frozen: Rank */}
+                          <td style={{ ...stickyCell(FROZEN_LEFT[0]), textAlign: 'center', fontSize: rank <= 3 ? '1.2rem' : '0.85rem', fontWeight: rank <= 3 ? 700 : 400, borderRight: '1px solid #e5e7eb' }}>
                             {rankBadge(rank)}
                           </td>
-                          <td style={{ overflow: 'hidden' }}>
+                          {/* Frozen: BA Name */}
+                          <td style={{ ...stickyCell(FROZEN_LEFT[1]), overflow: 'hidden' }}>
                             <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.repName}</div>
                             <div style={{ fontSize: '0.7rem', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.email}</div>
                           </td>
-                          <td style={{ color: '#374151', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {/* Frozen: Store */}
+                          <td style={{ ...stickyCell(FROZEN_LEFT[2]), color: '#374151', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderRight: '2px solid #d1d5db' }}>
                             {entry.storeName || <span style={{ color: '#d1d5db' }}>—</span>}
                           </td>
+                          {/* Scrollable columns */}
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <div style={{ flex: 1, background: '#f3f4f6', borderRadius: 4, height: 14, overflow: 'hidden' }}>
