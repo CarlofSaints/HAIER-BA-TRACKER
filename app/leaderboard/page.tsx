@@ -209,7 +209,7 @@ export default function LeaderboardPage() {
 
   const stickyHead = (left: number, zIdx = 3): React.CSSProperties => ({
     position: 'sticky', left, top: 0, zIndex: zIdx,
-    background: '#f9fafb',
+    background: '#0054A6', color: 'white',
   });
   const stickyCell = (left: number): React.CSSProperties => ({
     position: 'sticky', left, zIndex: 1,
@@ -254,7 +254,7 @@ export default function LeaderboardPage() {
               <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}>
                 Rankings — {formatMonth(selectedMonth)}
               </div>
-              <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+              <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 260px)', minHeight: 200 }}>
                 <table className="data-table" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                   <colgroup>
                     {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
@@ -265,7 +265,7 @@ export default function LeaderboardPage() {
                   <thead>
                     <tr>
                       {/* Frozen: Rank */}
-                      <th style={{ ...stickyHead(FROZEN_LEFT[0]), textAlign: 'center', position: 'sticky', cursor: 'pointer', borderRight: '1px solid #e5e7eb' }} onClick={() => toggleSort('total')}>
+                      <th style={{ ...stickyHead(FROZEN_LEFT[0]), textAlign: 'center', position: 'sticky', cursor: 'pointer', borderRight: '1px solid rgba(255,255,255,0.2)' }} onClick={() => toggleSort('total')}>
                         Rank{sortArrow('total')}{resizeHandle(0)}
                       </th>
                       {/* Frozen: BA Name */}
@@ -273,51 +273,51 @@ export default function LeaderboardPage() {
                         BA Name{sortArrow('repName')}{resizeHandle(1)}
                       </th>
                       {/* Frozen: Store */}
-                      <th style={{ ...stickyHead(FROZEN_LEFT[2]), cursor: 'pointer', borderRight: '2px solid #d1d5db' }} onClick={() => toggleSort('storeName')}>
+                      <th style={{ ...stickyHead(FROZEN_LEFT[2]), cursor: 'pointer', borderRight: '2px solid rgba(255,255,255,0.3)' }} onClick={() => toggleSort('storeName')}>
                         Store{sortArrow('storeName')}{resizeHandle(2)}
                       </th>
                       {/* Scrollable columns */}
-                      <th style={{ position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }}>Score{resizeHandle(3)}</th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('total')}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }}>Score{resizeHandle(3)}</th>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('total')}>
                         Total{sortArrow('total')}{resizeHandle(4)}
                       </th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('monthlySales')}>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('monthlySales')}>
                         <div>Sales{sortArrow('monthlySales')}</div>
-                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/40</div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/40</div>
                         {resizeHandle(5)}
                       </th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('checkInOnTime')}>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('checkInOnTime')}>
                         <div>Visits{sortArrow('checkInOnTime')}</div>
-                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/10</div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/10</div>
                         {resizeHandle(6)}
                       </th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('displayInspection')}>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('displayInspection')}>
                         <div>Display{sortArrow('displayInspection')}</div>
-                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/15</div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/15</div>
                         {resizeHandle(7)}
                       </th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('training')}>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('training')}>
                         <div>Training{sortArrow('training')}</div>
-                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/15</div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/15</div>
                         {resizeHandle(8)}
                       </th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('feedback')}>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('feedback')}>
                         <div>Feedback{sortArrow('feedback')}</div>
-                        <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/10</div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/10</div>
                         {resizeHandle(9)}
                       </th>
                       {hasDispoData && (
                         <>
-                          <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('salesVol')}>
+                          <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVol')}>
                             Sales Vol{sortArrow('salesVol')}{resizeHandle(10)}
                           </th>
-                          <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }} onClick={() => toggleSort('salesVal')}>
+                          <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVal')}>
                             Sales Val{sortArrow('salesVal')}{resizeHandle(11)}
                           </th>
                         </>
                       )}
                       {showTrend && trendMonths.slice(1).map(m => (
-                        <th key={m} style={{ textAlign: 'center', fontSize: '0.7rem', position: 'sticky', top: 0, zIndex: 2, background: '#f9fafb' }}>
+                        <th key={m} style={{ textAlign: 'center', fontSize: '0.7rem', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }}>
                           {formatMonth(m)}{resizeHandle(0, true)}
                         </th>
                       ))}
