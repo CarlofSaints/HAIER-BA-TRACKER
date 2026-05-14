@@ -35,6 +35,15 @@ interface TargetUploadMeta {
   storeCount: number;
 }
 
+function Spinner({ size = 20, color = '#0054A6' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite', display: 'inline-block', verticalAlign: 'middle' }}>
+      <circle cx="12" cy="12" r="10" stroke={color} strokeWidth="3" fill="none" strokeDasharray="31.4 31.4" strokeLinecap="round" />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </svg>
+  );
+}
+
 export default function UploadPage() {
   const { session, loading: authLoading, logout } = useAuth(['super_admin', 'admin']);
   const [uploads, setUploads] = useState<UploadMeta[]>([]);
@@ -70,6 +79,19 @@ export default function UploadPage() {
 
   // New stores modal
   const [newStoresModal, setNewStoresModal] = useState<string[] | null>(null);
+
+  const anyUploading = uploading || dispoUploading || trainingUploading || targetUploading || displayUploading;
+
+  // Warn user before leaving page during upload
+  useEffect(() => {
+    if (!anyUploading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [anyUploading]);
 
   const loadUploads = useCallback(async () => {
     try {
@@ -376,6 +398,24 @@ export default function UploadPage() {
           Upload visit data, DISPO sales/stock files, training form data, and sales targets
         </p>
 
+        {anyUploading && (
+          <div style={{
+            background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 8,
+            padding: '0.75rem 1rem', marginBottom: '1.5rem',
+            display: 'flex', alignItems: 'center', gap: '0.75rem',
+          }}>
+            <Spinner size={20} color="#d97706" />
+            <div>
+              <div style={{ fontWeight: 600, color: '#92400e', fontSize: '0.85rem' }}>
+                Upload in progress — do not close or leave this page
+              </div>
+              <div style={{ color: '#a16207', fontSize: '0.75rem' }}>
+                Closing the browser or navigating away will cancel the upload and may result in incomplete data.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* === VISIT DATA UPLOAD === */}
         <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginBottom: '2rem' }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
@@ -418,13 +458,27 @@ export default function UploadPage() {
                 if (file) handleFile(file);
               }}
             />
-            <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>📤</div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
-              {uploading ? 'Uploading...' : 'Drop Excel file here or click to browse'}
-            </div>
-            <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
-              Supports .xlsx and .xls Perigee visit export files
-            </div>
+            {uploading ? (
+              <>
+                <div style={{ marginBottom: '0.6rem' }}><Spinner size={32} color="#0054A6" /></div>
+                <div style={{ fontWeight: 600, color: '#0054A6', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Uploading visit data...
+                </div>
+                <div style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                  Please do not close or navigate away.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>📤</div>
+                <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Drop Excel file here or click to browse
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+                  Supports .xlsx and .xls Perigee visit export files
+                </div>
+              </>
+            )}
           </div>
 
           {/* Upload history */}
@@ -544,7 +598,7 @@ export default function UploadPage() {
               disabled={dispoUploading}
               style={{ width: '100%', marginBottom: '1rem' }}
             >
-              {dispoUploading ? 'Uploading & Processing...' : 'Upload DISPO File'}
+              {dispoUploading ? (<><Spinner size={16} color="#fff" /> Uploading & Processing...</>) : 'Upload DISPO File'}
             </button>
           )}
 
@@ -632,13 +686,27 @@ export default function UploadPage() {
                 if (file) handleTrainingFile(file);
               }}
             />
-            <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>📋</div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
-              {trainingUploading ? 'Uploading...' : 'Drop training form Excel here or click to browse'}
-            </div>
-            <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
-              Expects columns: Email, Name, Date, Visit UUID, &quot;DID YOU COMPLETE TRAINING?&quot;
-            </div>
+            {trainingUploading ? (
+              <>
+                <div style={{ marginBottom: '0.6rem' }}><Spinner size={32} color="#7c3aed" /></div>
+                <div style={{ fontWeight: 600, color: '#7c3aed', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Uploading & caching images...
+                </div>
+                <div style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                  Please do not close or navigate away.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>📋</div>
+                <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Drop training form Excel here or click to browse
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+                  Expects columns: Email, Name, Date, Visit UUID, &quot;DID YOU COMPLETE TRAINING?&quot;
+                </div>
+              </>
+            )}
           </div>
 
           {/* Upload history */}
@@ -730,13 +798,27 @@ export default function UploadPage() {
                 if (file) handleTargetFile(file);
               }}
             />
-            <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>🎯</div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
-              {targetUploading ? 'Uploading...' : 'Drop target Excel here or click to browse'}
-            </div>
-            <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
-              Expects row 7 headers with month targets (e.g. &quot;April Target&quot;), data from row 10
-            </div>
+            {targetUploading ? (
+              <>
+                <div style={{ marginBottom: '0.6rem' }}><Spinner size={32} color="#d97706" /></div>
+                <div style={{ fontWeight: 600, color: '#d97706', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Uploading targets...
+                </div>
+                <div style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                  Please do not close or navigate away.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>🎯</div>
+                <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Drop target Excel here or click to browse
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+                  Expects row 7 headers with month targets (e.g. &quot;April Target&quot;), data from row 10
+                </div>
+              </>
+            )}
           </div>
 
           {/* Upload history */}
@@ -823,13 +905,27 @@ export default function UploadPage() {
                 if (file) handleDisplayFile(file);
               }}
             />
-            <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>📋</div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
-              {displayUploading ? 'Uploading & caching images...' : 'Drop display form Excel here or click to browse'}
-            </div>
-            <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
-              Perigee display form export (.xlsx)
-            </div>
+            {displayUploading ? (
+              <>
+                <div style={{ marginBottom: '0.6rem' }}><Spinner size={32} color="#7c3aed" /></div>
+                <div style={{ fontWeight: 600, color: '#7c3aed', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Uploading & caching images...
+                </div>
+                <div style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                  This may take a few minutes for files with many images. Please do not close or navigate away from this page.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>📋</div>
+                <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Drop display form Excel here or click to browse
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+                  Perigee display form export (.xlsx)
+                </div>
+              </>
+            )}
           </div>
 
           {/* Upload history */}
