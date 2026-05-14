@@ -37,7 +37,7 @@ export function useAuth(requiredRole?: Role | Role[]) {
     }
     try {
       const s: Session = JSON.parse(raw);
-      if (s.forcePasswordChange) {
+      if (s.forcePasswordChange && typeof window !== 'undefined' && window.location.pathname !== '/account') {
         router.replace('/account?change-password=1');
         setLoading(false);
         return;
