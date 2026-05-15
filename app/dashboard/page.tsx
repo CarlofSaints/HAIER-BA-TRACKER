@@ -279,8 +279,7 @@ export default function DashboardPage() {
         return { name: r.name.length > 20 ? r.name.slice(0, 18) + '...' : r.name, forms: count };
       })
       .filter(r => r.forms > 0)
-      .sort((a, b) => b.forms - a.forms)
-      .slice(0, 15);
+      .sort((a, b) => b.forms - a.forms);
   }, [formSummary, formTypeFilter]);
 
   // Total form submissions from uploaded data
@@ -299,8 +298,7 @@ export default function DashboardPage() {
     }
     return Array.from(map.entries())
       .map(([name, visits]) => ({ name: name.length > 20 ? name.slice(0, 18) + '...' : name, visits: visits.size }))
-      .sort((a, b) => b.visits - a.visits)
-      .slice(0, 15);
+      .sort((a, b) => b.visits - a.visits);
   }, [filtered]);
 
   // Sorted + paginated data
@@ -483,7 +481,7 @@ export default function DashboardPage() {
                 {/* Forms per rep */}
                 <div style={{ background: 'white', borderRadius: 12, padding: '1.25rem', border: '1px solid #e5e7eb' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', margin: 0 }}>Forms Completed per Rep (Top 15)</h3>
+                    <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', margin: 0 }}>Forms Completed per Rep</h3>
                     <select
                       className="select"
                       value={formTypeFilter}
@@ -514,7 +512,7 @@ export default function DashboardPage() {
 
                 {/* Visits per rep */}
                 <div style={{ background: 'white', borderRadius: 12, padding: '1.25rem', border: '1px solid #e5e7eb' }}>
-                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Visits per Rep (Top 15)</h3>
+                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Visits per Rep</h3>
                   {visitsPerRep.length > 0 ? (
                     <ResponsiveContainer width="100%" height={Math.max(240, visitsPerRep.length * 28)}>
                       <BarChart data={visitsPerRep} layout="vertical">
