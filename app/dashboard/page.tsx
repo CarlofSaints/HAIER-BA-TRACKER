@@ -288,21 +288,20 @@ export default function DashboardPage() {
     return formSummary.reduce((sum, r) => sum + r.total, 0);
   }, [formSummary]);
 
-  // Chart: visit duration distribution (based on computed per-visit durations)
-  const durationDist = useMemo(() => {
-    const buckets: Record<string, number> = {
-      '0-5m': 0, '5-15m': 0, '15-30m': 0, '30-60m': 0, '1-2h': 0, '2h+': 0,
-    };
-    for (const mins of visitDurations) {
-      if (mins < 5) buckets['0-5m']++;
-      else if (mins < 15) buckets['5-15m']++;
-      else if (mins < 30) buckets['15-30m']++;
-      else if (mins < 60) buckets['30-60m']++;
-      else if (mins < 120) buckets['1-2h']++;
-      else buckets['2h+']++;
+  // Chart: visits per rep (top 15) — unique visits per BA
+  const visitsPerRep = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const v of filtered) {
+      const name = v.repName || v.email || 'Unknown';
+      if (!map.has(name)) map.set(name, new Set());
+      const visitKey = `${v.storeCode || v.storeName}|${v.checkInDate}`;
+      map.get(name)!.add(visitKey);
     }
-    return Object.entries(buckets).map(([range, count]) => ({ range, count }));
-  }, [visitDurations]);
+    return Array.from(map.entries())
+      .map(([name, visits]) => ({ name: name.length > 20 ? name.slice(0, 18) + '...' : name, visits: visits.size }))
+      .sort((a, b) => b.visits - a.visits)
+      .slice(0, 15);
+  }, [filtered]);
 
   // Sorted + paginated data
   const sortedData = useMemo(() => {
@@ -513,17 +512,23 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* Duration distribution */}
+                {/* Visits per rep */}
                 <div style={{ background: 'white', borderRadius: 12, padding: '1.25rem', border: '1px solid #e5e7eb' }}>
-                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Visit Duration Distribution</h3>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={durationDist}>
-                      <XAxis dataKey="range" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Bar dataKey="count" fill="#1A1A2E" radius={[3, 3, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Visits per Rep (Top 15)</h3>
+                  {visitsPerRep.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={Math.max(240, visitsPerRep.length * 28)}>
+                      <BarChart data={visitsPerRep} layout="vertical">
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={120} />
+                        <Tooltip />
+                        <Bar dataKey="visits" fill="#0054A6" radius={[0, 3, 3, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af', fontSize: '0.85rem' }}>
+                      No visit data available
+                    </div>
+                  )}
                 </div>
               </div>
             )}
