@@ -77,10 +77,16 @@ export default function UploadPage() {
   const [displayDragOver, setDisplayDragOver] = useState(false);
   const displayFileRef = useRef<HTMLInputElement>(null);
 
+  // Red Flags state
+  const [redFlagUploads, setRedFlagUploads] = useState<UploadMeta[]>([]);
+  const [redFlagUploading, setRedFlagUploading] = useState(false);
+  const [redFlagDragOver, setRedFlagDragOver] = useState(false);
+  const redFlagFileRef = useRef<HTMLInputElement>(null);
+
   // New stores modal
   const [newStoresModal, setNewStoresModal] = useState<string[] | null>(null);
 
-  const anyUploading = uploading || dispoUploading || trainingUploading || targetUploading || displayUploading;
+  const anyUploading = uploading || dispoUploading || trainingUploading || targetUploading || displayUploading || redFlagUploading;
 
   // Warn user before leaving page during upload
   useEffect(() => {
@@ -134,6 +140,13 @@ export default function UploadPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const loadRedFlagUploads = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/red-flags');
+      if (res.ok) setRedFlagUploads(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (session) {
       loadUploads();
@@ -141,8 +154,9 @@ export default function UploadPage() {
       loadTrainingUploads();
       loadTargetUploads();
       loadDisplayUploads();
+      loadRedFlagUploads();
     }
-  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads]);
+  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads, loadRedFlagUploads]);
 
   async function handleFile(file: File) {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
@@ -374,6 +388,53 @@ export default function UploadPage() {
       if (res.ok) {
         setToast({ msg: 'Display upload deleted', type: 'success' });
         loadDisplayUploads();
+      } else {
+        const result = await res.json().catch(() => ({}));
+        setToast({ msg: result.error || 'Delete failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Delete failed', type: 'error' });
+    }
+  }
+
+  async function handleRedFlagFile(file: File) {
+    if (!file.name.match(/\.(xlsx?)$/i)) {
+      setToast({ msg: 'Please upload an Excel file (.xlsx / .xls)', type: 'error' });
+      return;
+    }
+
+    setRedFlagUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const res = await authFetch('/api/red-flags/upload', {
+        method: 'POST',
+        body: fd,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ msg: data.error || 'Upload failed', type: 'error' });
+      } else {
+        setToast({ msg: `Red flags uploaded — ${data.rowCount} rows, ${data.imagesCached} images cached`, type: 'success' });
+        loadRedFlagUploads();
+      }
+    } catch {
+      setToast({ msg: 'Red flags upload failed', type: 'error' });
+    } finally {
+      setRedFlagUploading(false);
+      if (redFlagFileRef.current) redFlagFileRef.current.value = '';
+    }
+  }
+
+  async function handleRedFlagDelete(id: string) {
+    if (!confirm('Delete this red flags upload?')) return;
+    try {
+      const res = await authFetch(`/api/red-flags/delete/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setToast({ msg: 'Red flags upload deleted', type: 'success' });
+        loadRedFlagUploads();
       } else {
         const result = await res.json().catch(() => ({}));
         setToast({ msg: result.error || 'Delete failed', type: 'error' });
@@ -961,6 +1022,114 @@ export default function UploadPage() {
           {displayUploads.length === 0 && (
             <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
               No display uploads yet
+            </div>
+          )}
+        </div>
+
+        {/* === RED FLAGS UPLOAD === */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
+            Red Flags (Perigee)
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+            Upload Perigee red flag form exports. Tracks in-store issues (out of stock, dented products, etc).
+          </p>
+
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setRedFlagDragOver(true); }}
+            onDragLeave={() => setRedFlagDragOver(false)}
+            onDrop={e => {
+              e.preventDefault();
+              setRedFlagDragOver(false);
+              const file = e.dataTransfer.files[0];
+              if (file) handleRedFlagFile(file);
+            }}
+            onClick={() => redFlagFileRef.current?.click()}
+            style={{
+              border: `2px dashed ${redFlagDragOver ? '#dc2626' : '#d1d5db'}`,
+              borderRadius: 10,
+              padding: '2rem 1.5rem',
+              textAlign: 'center',
+              cursor: redFlagUploading ? 'not-allowed' : 'pointer',
+              background: redFlagDragOver ? 'rgba(220,38,38,0.04)' : '#fafafa',
+              transition: 'border-color 0.2s, background 0.2s',
+              marginBottom: '1.25rem',
+              opacity: redFlagUploading ? 0.6 : 1,
+            }}
+          >
+            <input
+              ref={redFlagFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) handleRedFlagFile(file);
+              }}
+            />
+            {redFlagUploading ? (
+              <>
+                <div style={{ marginBottom: '0.6rem' }}><Spinner size={32} color="#dc2626" /></div>
+                <div style={{ fontWeight: 600, color: '#dc2626', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Uploading & caching images...
+                </div>
+                <div style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                  Please do not close or navigate away.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block' }}>
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                </div>
+                <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Drop red flag form Excel here or click to browse
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+                  Perigee red flag form export (.xlsx)
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Upload history */}
+          {redFlagUploads.length > 0 && (
+            <>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+                Upload History
+              </h3>
+              <div style={{ maxHeight: 300, overflow: 'auto' }}>
+                {redFlagUploads.slice().reverse().map(u => (
+                  <div
+                    key={u.id}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid #f3f4f6', fontSize: '0.8rem' }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, color: '#374151' }}>{u.fileName}</div>
+                      <div style={{ color: '#9ca3af', fontSize: '0.7rem' }}>
+                        {new Date(u.uploadedAt).toLocaleString('en-ZA')} — {u.rowCount} rows
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-danger"
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', marginLeft: '1rem' }}
+                      onClick={() => handleRedFlagDelete(u.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {redFlagUploads.length === 0 && (
+            <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
+              No red flag uploads yet
             </div>
           )}
         </div>
