@@ -73,6 +73,8 @@ export default function DashboardPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [dispoData, setDispoData] = useState<DispoSalesData | null>(null);
   const [lbData, setLbData] = useState<LBEntry[]>([]);
+  const [formSummary, setFormSummary] = useState<{ name: string; training: number; display: number; redFlags: number; total: number }[]>([]);
+  const [formTypeFilter, setFormTypeFilter] = useState<'all' | 'training' | 'display' | 'redFlags'>('all');
 
   const loadVisits = useCallback(async () => {
     setLoadingData(true);
@@ -86,9 +88,23 @@ export default function DashboardPage() {
     setLoadingData(false);
   }, [fromDate, toDate]);
 
+  const loadFormSummary = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (fromDate) params.set('from', fromDate);
+      if (toDate) params.set('to', toDate);
+      const res = await authFetch(`/api/forms/summary?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setFormSummary(data.reps || []);
+      }
+    } catch { /* ignore */ }
+  }, [fromDate, toDate]);
+
   useEffect(() => {
     if (session) {
       loadVisits();
+      loadFormSummary();
       authFetch('/api/dispo')
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d) setDispoData(d); })
@@ -98,7 +114,7 @@ export default function DashboardPage() {
         .then(d => { if (d) setLbData(d); })
         .catch(() => {});
     }
-  }, [session, loadVisits]);
+  }, [session, loadVisits, loadFormSummary]);
 
   // Top performers per KPI
   const topPerformers = useMemo<TopPerformer[]>(() => {
@@ -252,18 +268,25 @@ export default function DashboardPage() {
       .map(([name, value]) => ({ name, value }));
   }, [filtered]);
 
-  // Chart: forms per rep (top 15)
+  // Chart: forms per rep (top 15) — from uploaded form data
   const formsPerRep = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const v of filtered) {
-      const name = v.repName || v.email || 'Unknown';
-      map.set(name, (map.get(name) || 0) + v.formsCompleted);
-    }
-    return Array.from(map.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 15)
-      .map(([name, forms]) => ({ name: name.length > 20 ? name.slice(0, 18) + '...' : name, forms }));
-  }, [filtered]);
+    return formSummary
+      .map(r => {
+        const count = formTypeFilter === 'all' ? r.total
+          : formTypeFilter === 'training' ? r.training
+          : formTypeFilter === 'display' ? r.display
+          : r.redFlags;
+        return { name: r.name.length > 20 ? r.name.slice(0, 18) + '...' : r.name, forms: count };
+      })
+      .filter(r => r.forms > 0)
+      .sort((a, b) => b.forms - a.forms)
+      .slice(0, 15);
+  }, [formSummary, formTypeFilter]);
+
+  // Total form submissions from uploaded data
+  const totalFormSubmissions = useMemo(() => {
+    return formSummary.reduce((sum, r) => sum + r.total, 0);
+  }, [formSummary]);
 
   // Chart: visit duration distribution (based on computed per-visit durations)
   const durationDist = useMemo(() => {
@@ -372,7 +395,7 @@ export default function DashboardPage() {
               </div>
               <div className="kpi-card">
                 <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Total Forms</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{kpis.totalForms.toLocaleString()}</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{totalFormSubmissions.toLocaleString()}</div>
               </div>
               <div className="kpi-card">
                 <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Total Pics</div>
@@ -460,15 +483,34 @@ export default function DashboardPage() {
 
                 {/* Forms per rep */}
                 <div style={{ background: 'white', borderRadius: 12, padding: '1.25rem', border: '1px solid #e5e7eb' }}>
-                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Forms Completed per Rep (Top 15)</h3>
-                  <ResponsiveContainer width="100%" height={Math.max(240, formsPerRep.length * 28)}>
-                    <BarChart data={formsPerRep} layout="vertical">
-                      <XAxis type="number" tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={120} />
-                      <Tooltip />
-                      <Bar dataKey="forms" fill="#00A0E9" radius={[0, 3, 3, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', margin: 0 }}>Forms Completed per Rep (Top 15)</h3>
+                    <select
+                      className="select"
+                      value={formTypeFilter}
+                      onChange={e => setFormTypeFilter(e.target.value as typeof formTypeFilter)}
+                      style={{ fontSize: '0.75rem', padding: '4px 8px', minWidth: 120 }}
+                    >
+                      <option value="all">All Forms</option>
+                      <option value="training">Training</option>
+                      <option value="display">Display</option>
+                      <option value="redFlags">Red Flags</option>
+                    </select>
+                  </div>
+                  {formsPerRep.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={Math.max(240, formsPerRep.length * 28)}>
+                      <BarChart data={formsPerRep} layout="vertical">
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={120} />
+                        <Tooltip />
+                        <Bar dataKey="forms" fill="#00A0E9" radius={[0, 3, 3, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af', fontSize: '0.85rem' }}>
+                      No form data uploaded yet
+                    </div>
+                  )}
                 </div>
 
                 {/* Duration distribution */}
