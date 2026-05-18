@@ -14,6 +14,8 @@ export async function sendEmail(opts: {
   subject: string;
   html: string;
   from?: string;
+  cc?: string | string[];
+  bcc?: string | string[];
 }) {
   const resend = getResend();
   return resend.emails.send({
@@ -21,5 +23,7 @@ export async function sendEmail(opts: {
     to: Array.isArray(opts.to) ? opts.to : [opts.to],
     subject: opts.subject,
     html: opts.html,
+    ...(opts.cc ? { cc: Array.isArray(opts.cc) ? opts.cc : [opts.cc] } : {}),
+    ...(opts.bcc ? { bcc: Array.isArray(opts.bcc) ? opts.bcc : [opts.bcc] } : {}),
   });
 }

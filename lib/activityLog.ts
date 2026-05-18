@@ -6,7 +6,8 @@ export type ActivityAction =
   | 'delete_visits' | 'delete_dispo' | 'delete_training' | 'delete_targets' | 'delete_display' | 'delete_red_flags'
   | 'cron_import'
   | 'user_create' | 'user_edit' | 'user_delete' | 'user_purge'
-  | 'scores_save';
+  | 'scores_save'
+  | 'reminder_create' | 'reminder_edit' | 'reminder_delete' | 'reminder_sent';
 
 export interface ActivityLogEntry {
   id: string;

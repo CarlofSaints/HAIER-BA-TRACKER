@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/poll-visits",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/send-reminders",
+      "schedule": "0 * * * *"
     }
   ]
 }
