@@ -26,6 +26,9 @@ export default function RolesPage() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newRoleLabel, setNewRoleLabel] = useState('');
 
   const loadRoles = useCallback(async () => {
     try {
@@ -93,6 +96,28 @@ export default function RolesPage() {
     loadRoles();
   }
 
+  function handleAddRole() {
+    const name = newRoleName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const label = newRoleLabel.trim();
+    if (!name || !label) return;
+    if (roles.some(r => r.name === name)) {
+      setToast({ msg: 'Role name already exists', type: 'error' });
+      return;
+    }
+    setRoles(prev => [...prev, { name, label, permissions: [] }]);
+    setDirty(true);
+    setShowAddModal(false);
+    setNewRoleName('');
+    setNewRoleLabel('');
+  }
+
+  function handleDeleteRole(roleName: string) {
+    if (roleName === 'super_admin') return;
+    if (!confirm(`Delete role "${roleName}"? This cannot be undone.`)) return;
+    setRoles(prev => prev.filter(r => r.name !== roleName));
+    setDirty(true);
+  }
+
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
@@ -116,32 +141,44 @@ export default function RolesPage() {
               Configure what each role can access
             </p>
           </div>
-          {dirty && (
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                onClick={handleDiscard}
-                style={{
-                  padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 500,
-                  border: '1px solid #d1d5db', borderRadius: 8, background: 'white',
-                  color: '#374151', cursor: 'pointer',
-                }}
-              >
-                Discard
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                style={{
-                  padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 600,
-                  border: 'none', borderRadius: 8, background: '#0054A6',
-                  color: 'white', cursor: saving ? 'not-allowed' : 'pointer',
-                  opacity: saving ? 0.7 : 1,
-                }}
-              >
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {dirty && (
+              <>
+                <button
+                  onClick={handleDiscard}
+                  style={{
+                    padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 500,
+                    border: '1px solid #d1d5db', borderRadius: 8, background: 'white',
+                    color: '#374151', cursor: 'pointer',
+                  }}
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  style={{
+                    padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 600,
+                    border: 'none', borderRadius: 8, background: '#0054A6',
+                    color: 'white', cursor: saving ? 'not-allowed' : 'pointer',
+                    opacity: saving ? 0.7 : 1,
+                  }}
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => { setNewRoleName(''); setNewRoleLabel(''); setShowAddModal(true); }}
+              style={{
+                padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 600,
+                border: '1px solid #0054A6', borderRadius: 8, background: 'white',
+                color: '#0054A6', cursor: 'pointer',
+              }}
+            >
+              + Add Role
+            </button>
+          </div>
         </div>
 
         {/* Permission Matrix */}
@@ -178,11 +215,26 @@ export default function RolesPage() {
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: colors.dot, display: 'inline-block' }} />
                             {r.label}
                           </div>
-                          {r.name === 'super_admin' && (
+                          {r.name === 'super_admin' ? (
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="Locked">
                               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                             </svg>
+                          ) : (
+                            <button
+                              onClick={() => handleDeleteRole(r.name)}
+                              title={`Delete ${r.label}`}
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                padding: 2, lineHeight: 0, color: '#9ca3af',
+                              }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                <path d="M10 11v6" /><path d="M14 11v6" />
+                              </svg>
+                            </button>
                           )}
                         </div>
                       </th>
@@ -293,6 +345,65 @@ export default function RolesPage() {
         <div style={{ flex: 1 }} />
         <Footer />
       </main>
+      {/* Add Role Modal */}
+      {showAddModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }} onClick={() => setShowAddModal(false)}>
+          <div style={{ background: 'white', borderRadius: 14, padding: '1.75rem', width: '100%', maxWidth: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1.25rem', margin: '0 0 1.25rem' }}>Add Role</h2>
+            <div style={{ display: 'grid', gap: '0.75rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>Display Name</label>
+                <input
+                  className="input"
+                  value={newRoleLabel}
+                  onChange={e => {
+                    setNewRoleLabel(e.target.value);
+                    if (!newRoleName || newRoleName === newRoleLabel.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')) {
+                      setNewRoleName(e.target.value.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''));
+                    }
+                  }}
+                  placeholder="e.g. Regional Manager"
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>System Name</label>
+                <input
+                  className="input"
+                  value={newRoleName}
+                  onChange={e => setNewRoleName(e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''))}
+                  placeholder="e.g. regional_manager"
+                  style={{ fontFamily: 'monospace' }}
+                />
+                <div style={{ fontSize: '0.65rem', color: '#9ca3af', marginTop: 2 }}>Lowercase, underscores only. Used internally.</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <button
+                onClick={() => setShowAddModal(false)}
+                style={{
+                  padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 500,
+                  border: '1px solid #d1d5db', borderRadius: 8, background: 'white',
+                  color: '#374151', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddRole}
+                disabled={!newRoleName.trim() || !newRoleLabel.trim()}
+                style={{
+                  padding: '0.5rem 1rem', fontSize: '0.8rem', fontWeight: 600,
+                  border: 'none', borderRadius: 8, background: '#0054A6',
+                  color: 'white', cursor: !newRoleName.trim() || !newRoleLabel.trim() ? 'not-allowed' : 'pointer',
+                  opacity: !newRoleName.trim() || !newRoleLabel.trim() ? 0.5 : 1,
+                }}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
