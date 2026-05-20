@@ -147,14 +147,19 @@ export default function RolesPage() {
         {/* Permission Matrix */}
         <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', flex: 1 }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '40%' }} />
+                {roles.map(r => (
+                  <col key={r.name} style={{ width: `${60 / roles.length}%` }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
                   <th style={{
                     textAlign: 'left', padding: '0.75rem 1rem', fontSize: '0.7rem',
                     fontWeight: 700, color: '#6b7280', textTransform: 'uppercase',
-                    letterSpacing: '0.05em', background: '#f9fafb', minWidth: 280,
-                    position: 'sticky', left: 0, zIndex: 2,
+                    letterSpacing: '0.05em', background: '#f9fafb',
                   }}>
                     Permission
                   </th>
@@ -163,7 +168,6 @@ export default function RolesPage() {
                     return (
                       <th key={r.name} style={{
                         textAlign: 'center', padding: '0.75rem 0.5rem', background: '#f9fafb',
-                        minWidth: 100,
                       }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                           <div style={{
@@ -196,8 +200,7 @@ export default function RolesPage() {
                         <td style={{
                           padding: '0.5rem 1rem', fontWeight: 700, fontSize: '0.7rem',
                           color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em',
-                          borderTop: '1px solid #e5e7eb', position: 'sticky', left: 0, zIndex: 1,
-                          background: '#f9fafb',
+                          borderTop: '1px solid #e5e7eb', background: '#f9fafb',
                         }}>
                           {cat}
                         </td>
@@ -233,7 +236,7 @@ export default function RolesPage() {
                         <tr key={perm.key} style={{ borderBottom: '1px solid #f3f4f6' }}>
                           <td style={{
                             padding: '0.4rem 1rem 0.4rem 2rem', color: '#374151',
-                            position: 'sticky', left: 0, zIndex: 1, background: 'white',
+                            background: 'white',
                           }}>
                             <div style={{ fontWeight: 500 }}>{perm.label}</div>
                             <div style={{ fontSize: '0.65rem', color: '#9ca3af', fontFamily: 'monospace' }}>{perm.key}</div>
