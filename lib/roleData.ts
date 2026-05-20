@@ -24,10 +24,10 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   { key: 'kpi.sales', label: 'View Sales KPI', category: 'KPIs' },
   { key: 'kpi.display', label: 'View Display KPI', category: 'KPIs' },
   { key: 'kpi.red_flags', label: 'View Red Flags KPI', category: 'KPIs' },
-  // Scoring
-  { key: 'scores.view', label: 'View Scores', category: 'Scoring' },
-  { key: 'scores.manage', label: 'Enter / Edit Scores', category: 'Scoring' },
-  { key: 'scoring_guide.view', label: 'View Scoring Guide', category: 'Scoring' },
+  // Score Entry
+  { key: 'scores.view', label: 'View Scores', category: 'Score Entry' },
+  { key: 'scores.manage', label: 'Enter / Edit Scores', category: 'Score Entry' },
+  { key: 'scoring_guide.view', label: 'View Scoring Guide', category: 'Score Entry' },
   // Data Load
   { key: 'upload.visits', label: 'Upload Visit Data', category: 'Data Load' },
   { key: 'upload.dispo', label: 'Upload DISPO Data', category: 'Data Load' },
@@ -35,25 +35,33 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   { key: 'upload.targets', label: 'Upload Target Data', category: 'Data Load' },
   { key: 'upload.display', label: 'Upload Display Data', category: 'Data Load' },
   { key: 'upload.red_flags', label: 'Upload Red Flag Data', category: 'Data Load' },
-  // Administration
-  { key: 'users.view', label: 'View Users', category: 'Administration' },
-  { key: 'users.manage', label: 'Create / Edit / Delete Users', category: 'Administration' },
-  { key: 'bas.view', label: 'View BA Management', category: 'Administration' },
-  { key: 'bas.manage', label: 'Manage BAs', category: 'Administration' },
-  { key: 'stores.view', label: 'View Stores', category: 'Administration' },
-  { key: 'stores.manage', label: 'Manage Stores', category: 'Administration' },
-  { key: 'channels.view', label: 'View Sales Channels', category: 'Administration' },
-  { key: 'channels.manage', label: 'Manage Sales Channels', category: 'Administration' },
-  { key: 'kpi_controls.view', label: 'View KPI Controls', category: 'Administration' },
-  { key: 'kpi_controls.manage', label: 'Manage KPI Controls', category: 'Administration' },
-  { key: 'reminders.view', label: 'View Reminders', category: 'Administration' },
-  { key: 'reminders.manage', label: 'Manage Reminders', category: 'Administration' },
-  { key: 'activity_log.view', label: 'View Activity Log', category: 'Administration' },
-  // System
-  { key: 'site_guide.view', label: 'View Site Guide', category: 'System' },
-  { key: 'roles.manage', label: 'Manage Roles & Permissions', category: 'System' },
-  { key: 'settings.view', label: 'View Settings', category: 'System' },
-  { key: 'settings.manage', label: 'Edit Settings', category: 'System' },
+  // Users
+  { key: 'users.view', label: 'View Users', category: 'Users' },
+  { key: 'users.manage', label: 'Create / Edit / Delete Users', category: 'Users' },
+  // BA Management
+  { key: 'bas.view', label: 'View BA Management', category: 'BA Management' },
+  { key: 'bas.manage', label: 'Manage BAs', category: 'BA Management' },
+  // Stores
+  { key: 'stores.view', label: 'View Stores', category: 'Stores' },
+  { key: 'stores.manage', label: 'Manage Stores', category: 'Stores' },
+  // Sales Channels
+  { key: 'channels.view', label: 'View Sales Channels', category: 'Sales Channels' },
+  { key: 'channels.manage', label: 'Manage Sales Channels', category: 'Sales Channels' },
+  // KPI Controls
+  { key: 'kpi_controls.view', label: 'View KPI Controls', category: 'KPI Controls' },
+  { key: 'kpi_controls.manage', label: 'Manage KPI Controls', category: 'KPI Controls' },
+  // Reminders
+  { key: 'reminders.view', label: 'View Reminders', category: 'Reminders' },
+  { key: 'reminders.manage', label: 'Manage Reminders', category: 'Reminders' },
+  // Activity Log
+  { key: 'activity_log.view', label: 'View Activity Log', category: 'Activity Log' },
+  // Site Guide
+  { key: 'site_guide.view', label: 'View Site Guide', category: 'Site Guide' },
+  // Settings
+  { key: 'settings.view', label: 'View Settings', category: 'Settings' },
+  { key: 'settings.manage', label: 'Edit Settings', category: 'Settings' },
+  // Roles
+  { key: 'roles.manage', label: 'Manage Roles & Permissions', category: 'Roles' },
 ];
 
 export const PERMISSION_CATEGORIES = [...new Set(ALL_PERMISSIONS.map(p => p.category))];
