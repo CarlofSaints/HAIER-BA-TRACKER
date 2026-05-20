@@ -15,8 +15,9 @@ export interface PermissionDef {
 }
 
 export const ALL_PERMISSIONS: PermissionDef[] = [
-  // Dashboard
-  { key: 'dashboard.view', label: 'View Dashboard', category: 'Dashboard' },
+  // Leaderboard
+  { key: 'dashboard.view', label: 'View Dashboard', category: 'Leaderboard' },
+  { key: 'leaderboard.view', label: 'View Leaderboard', category: 'Leaderboard' },
   // KPIs
   { key: 'kpi.visit_analytics', label: 'View Visit Analytics', category: 'KPIs' },
   { key: 'kpi.training', label: 'View Training KPI', category: 'KPIs' },
@@ -26,7 +27,6 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   // Scoring
   { key: 'scores.view', label: 'View Scores', category: 'Scoring' },
   { key: 'scores.manage', label: 'Enter / Edit Scores', category: 'Scoring' },
-  { key: 'leaderboard.view', label: 'View Leaderboard', category: 'Scoring' },
   { key: 'scoring_guide.view', label: 'View Scoring Guide', category: 'Scoring' },
   // Data Load
   { key: 'upload.visits', label: 'Upload Visit Data', category: 'Data Load' },
