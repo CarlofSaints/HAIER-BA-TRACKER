@@ -190,36 +190,64 @@ export default function RolesPage() {
                   })}
                 </tr>
               </thead>
-              <tbody>
-                {PERMISSION_CATEGORIES.map(cat => {
-                  const catPerms = permsByCategory[cat];
-                  return (
-                    <tbody key={cat}>
-                      {/* Category header row */}
-                      <tr style={{ background: '#f9fafb' }}>
+              {PERMISSION_CATEGORIES.map(cat => {
+                const catPerms = permsByCategory[cat];
+                return (
+                  <tbody key={cat}>
+                    {/* Category header row */}
+                    <tr style={{ background: '#f9fafb' }}>
+                      <td style={{
+                        padding: '0.5rem 1rem', fontWeight: 700, fontSize: '0.7rem',
+                        color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em',
+                        borderTop: '1px solid #e5e7eb', background: '#f9fafb',
+                      }}>
+                        {cat}
+                      </td>
+                      {roles.map(r => {
+                        const catKeys = catPerms.map(p => p.key);
+                        const allOn = catKeys.every(k => r.permissions.includes(k));
+                        const someOn = catKeys.some(k => r.permissions.includes(k));
+                        return (
+                          <td key={r.name} style={{
+                            textAlign: 'center', padding: '0.5rem',
+                            borderTop: '1px solid #e5e7eb',
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={allOn}
+                              ref={el => {
+                                if (el) el.indeterminate = !allOn && someOn;
+                              }}
+                              onChange={() => toggleCategoryForRole(r.name, cat)}
+                              disabled={r.name === 'super_admin'}
+                              style={{
+                                width: 15, height: 15, accentColor: '#0054A6',
+                                cursor: r.name === 'super_admin' ? 'not-allowed' : 'pointer',
+                                opacity: r.name === 'super_admin' ? 0.5 : 1,
+                              }}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {/* Permission rows */}
+                    {catPerms.map(perm => (
+                      <tr key={perm.key} style={{ borderBottom: '1px solid #f3f4f6' }}>
                         <td style={{
-                          padding: '0.5rem 1rem', fontWeight: 700, fontSize: '0.7rem',
-                          color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em',
-                          borderTop: '1px solid #e5e7eb', background: '#f9fafb',
+                          padding: '0.4rem 1rem 0.4rem 2rem', color: '#374151',
+                          background: 'white',
                         }}>
-                          {cat}
+                          <div style={{ fontWeight: 500 }}>{perm.label}</div>
+                          <div style={{ fontSize: '0.65rem', color: '#9ca3af', fontFamily: 'monospace' }}>{perm.key}</div>
                         </td>
                         {roles.map(r => {
-                          const catKeys = catPerms.map(p => p.key);
-                          const allOn = catKeys.every(k => r.permissions.includes(k));
-                          const someOn = catKeys.some(k => r.permissions.includes(k));
+                          const has = r.permissions.includes(perm.key);
                           return (
-                            <td key={r.name} style={{
-                              textAlign: 'center', padding: '0.5rem',
-                              borderTop: '1px solid #e5e7eb',
-                            }}>
+                            <td key={r.name} style={{ textAlign: 'center', padding: '0.4rem' }}>
                               <input
                                 type="checkbox"
-                                checked={allOn}
-                                ref={el => {
-                                  if (el) el.indeterminate = !allOn && someOn;
-                                }}
-                                onChange={() => toggleCategoryForRole(r.name, cat)}
+                                checked={has}
+                                onChange={() => togglePermission(r.name, perm.key)}
                                 disabled={r.name === 'super_admin'}
                                 style={{
                                   width: 15, height: 15, accentColor: '#0054A6',
@@ -231,40 +259,10 @@ export default function RolesPage() {
                           );
                         })}
                       </tr>
-                      {/* Permission rows */}
-                      {catPerms.map(perm => (
-                        <tr key={perm.key} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                          <td style={{
-                            padding: '0.4rem 1rem 0.4rem 2rem', color: '#374151',
-                            background: 'white',
-                          }}>
-                            <div style={{ fontWeight: 500 }}>{perm.label}</div>
-                            <div style={{ fontSize: '0.65rem', color: '#9ca3af', fontFamily: 'monospace' }}>{perm.key}</div>
-                          </td>
-                          {roles.map(r => {
-                            const has = r.permissions.includes(perm.key);
-                            return (
-                              <td key={r.name} style={{ textAlign: 'center', padding: '0.4rem' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={has}
-                                  onChange={() => togglePermission(r.name, perm.key)}
-                                  disabled={r.name === 'super_admin'}
-                                  style={{
-                                    width: 15, height: 15, accentColor: '#0054A6',
-                                    cursor: r.name === 'super_admin' ? 'not-allowed' : 'pointer',
-                                    opacity: r.name === 'super_admin' ? 0.5 : 1,
-                                  }}
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  );
-                })}
-              </tbody>
+                    ))}
+                  </tbody>
+                );
+              })}
             </table>
           </div>
         </div>
