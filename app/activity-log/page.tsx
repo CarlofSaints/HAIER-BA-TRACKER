@@ -17,28 +17,36 @@ interface LogEntry {
 }
 
 const ACTION_GROUPS: Record<string, string[]> = {
-  'Uploads': ['upload_visits', 'upload_dispo', 'upload_training', 'upload_targets', 'upload_display'],
-  'Deletions': ['delete_visits', 'delete_dispo', 'delete_training', 'delete_targets', 'delete_display'],
-  'Users': ['user_create', 'user_edit', 'user_delete', 'user_purge'],
+  'Uploads': ['upload_visits', 'upload_dispo', 'upload_training', 'upload_targets', 'upload_display', 'upload_red_flags'],
+  'Deletions': ['delete_visits', 'delete_dispo', 'delete_training', 'delete_targets', 'delete_display', 'delete_red_flags'],
+  'Users': ['user_create', 'user_edit', 'user_delete', 'user_purge', 'user_login'],
   'Scores': ['scores_save'],
+  'Data Access': ['load_form_data'],
+  'Reminders': ['reminder_create', 'reminder_edit', 'reminder_delete', 'reminder_sent'],
   'System': ['cron_import'],
 };
 
 const ACTION_LABELS: Record<string, string> = {
   upload_visits: 'Upload Visits', upload_dispo: 'Upload DISPO', upload_training: 'Upload Training',
-  upload_targets: 'Upload Targets', upload_display: 'Upload Display',
+  upload_targets: 'Upload Targets', upload_display: 'Upload Display', upload_red_flags: 'Upload Red Flags',
   delete_visits: 'Delete Visits', delete_dispo: 'Delete DISPO', delete_training: 'Delete Training',
-  delete_targets: 'Delete Targets', delete_display: 'Delete Display',
+  delete_targets: 'Delete Targets', delete_display: 'Delete Display', delete_red_flags: 'Delete Red Flags',
   cron_import: 'Cron Import',
   user_create: 'Create User', user_edit: 'Edit User', user_delete: 'Delete User', user_purge: 'Purge User',
+  user_login: 'User Login',
   scores_save: 'Save Scores',
+  load_form_data: 'View Form Data',
+  reminder_create: 'Create Reminder', reminder_edit: 'Edit Reminder', reminder_delete: 'Delete Reminder', reminder_sent: 'Reminder Sent',
 };
 
 function badgeStyle(action: string): React.CSSProperties {
   if (action.startsWith('upload_')) return { background: '#dbeafe', color: '#1e40af', border: '1px solid #93c5fd' };
   if (action.startsWith('delete_')) return { background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' };
+  if (action === 'user_login') return { background: '#d1fae5', color: '#065f46', border: '1px solid #6ee7b7' };
   if (action.startsWith('user_')) return { background: '#f3e8ff', color: '#6b21a8', border: '1px solid #d8b4fe' };
   if (action.startsWith('scores_')) return { background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d' };
+  if (action === 'load_form_data') return { background: '#e0f2fe', color: '#0369a1', border: '1px solid #7dd3fc' };
+  if (action.startsWith('reminder_')) return { background: '#fce7f3', color: '#9d174d', border: '1px solid #f9a8d4' };
   return { background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db' };
 }
 

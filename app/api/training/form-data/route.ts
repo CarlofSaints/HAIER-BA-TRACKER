@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadTrainingIndex, loadTrainingFormData } from '@/lib/trainingData';
 import type { TrainingFormRow } from '@/lib/trainingData';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -56,6 +57,8 @@ export async function GET(req: NextRequest) {
 
     // Remove internal fields from headers sent to client
     const clientHeaders = allHeaders.filter(h => !h.startsWith('_'));
+
+    logFromUser(user, 'load_form_data', `training/${month}`, `Viewed training form data for ${month} (${allRows.length} rows)`);
 
     return NextResponse.json({
       month,

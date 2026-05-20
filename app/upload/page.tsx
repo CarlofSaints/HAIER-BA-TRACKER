@@ -905,6 +905,19 @@ export default function UploadPage() {
                         {u.months?.join(', ')}
                       </span>
                       <button
+                        className="btn btn-outline"
+                        style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+                        onClick={() => {
+                          const a = document.createElement('a');
+                          a.href = `/api/targets/download/${u.id}`;
+                          a.download = u.fileName;
+                          a.click();
+                        }}
+                        title="Download original file"
+                      >
+                        Download
+                      </button>
+                      <button
                         className="btn btn-danger"
                         style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
                         onClick={() => handleTargetDelete(u.id)}

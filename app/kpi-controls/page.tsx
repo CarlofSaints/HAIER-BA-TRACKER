@@ -12,6 +12,7 @@ export default function KPIControlsPage() {
   const [minVisits, setMinVisits] = useState(20);
   const [salesThreshold, setSalesThreshold] = useState(80);
   const [minDisplayChecks, setMinDisplayChecks] = useState(4);
+  const [minRedFlags, setMinRedFlags] = useState(5);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -27,6 +28,7 @@ export default function KPIControlsPage() {
         if (data.minVisitsPerMonth) setMinVisits(data.minVisitsPerMonth);
         if (data.salesThresholdPct) setSalesThreshold(data.salesThresholdPct);
         if (data.minDisplayChecksPerMonth) setMinDisplayChecks(data.minDisplayChecksPerMonth);
+        if (data.minRedFlagsPerMonth) setMinRedFlags(data.minRedFlagsPerMonth);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -38,7 +40,7 @@ export default function KPIControlsPage() {
       const res = await authFetch('/api/config/kpi-controls', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minTrainingsPerMonth: minTrainings, minVisitsPerMonth: minVisits, salesThresholdPct: salesThreshold, minDisplayChecksPerMonth: minDisplayChecks }),
+        body: JSON.stringify({ minTrainingsPerMonth: minTrainings, minVisitsPerMonth: minVisits, salesThresholdPct: salesThreshold, minDisplayChecksPerMonth: minDisplayChecks, minRedFlagsPerMonth: minRedFlags }),
       });
       if (res.ok) {
         setToast({ msg: 'KPI controls saved', type: 'success' });
@@ -239,6 +241,49 @@ export default function KPIControlsPage() {
                   Example: {minDisplayChecks} checks completed = 5/5 auto pts.{' '}
                   {Math.max(1, Math.floor(minDisplayChecks / 2))} completed = {Math.min(5, Math.round((Math.max(1, Math.floor(minDisplayChecks / 2)) / minDisplayChecks) * 5))}/5 auto pts.
                   Remaining 10 pts are manually scored.
+                </div>
+              </div>
+            </div>
+
+            {/* Red Flags / Feedback Threshold */}
+            <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '1.5rem', paddingTop: '1.5rem' }}>
+              <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
+                Feedback/Escalations Threshold
+              </h2>
+              <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
+                Minimum number of red flags (feedback/escalation entries) per month for a BA to earn full auto-score points (3/3).
+                The remaining 7 points are entered manually.
+              </p>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4 }}>
+                  Minimum Red Flags per Month
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={minRedFlags}
+                  onChange={e => setMinRedFlags(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                  disabled={!isSuperAdmin}
+                  style={{ width: 120 }}
+                />
+                <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 4 }}>
+                  Range: 1–50. Default: 5
+                </div>
+              </div>
+
+              <div style={{
+                background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#991b1b', marginBottom: '1rem',
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Scoring Formula</div>
+                <div>autoPoints = min(3, round((redFlagCount / {minRedFlags}) &times; 3))</div>
+                <div style={{ marginTop: 6, color: '#6b7280', fontSize: '0.75rem' }}>
+                  Example: {minRedFlags} red flags = 3/3 auto pts.{' '}
+                  {Math.max(1, Math.floor(minRedFlags / 2))} flags = {Math.min(3, Math.round((Math.max(1, Math.floor(minRedFlags / 2)) / minRedFlags) * 3))}/3 auto pts.
+                  Remaining 7 pts are manually scored.
                 </div>
               </div>
             </div>

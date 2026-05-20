@@ -7,7 +7,8 @@ export type ActivityAction =
   | 'cron_import'
   | 'user_create' | 'user_edit' | 'user_delete' | 'user_purge'
   | 'scores_save'
-  | 'reminder_create' | 'reminder_edit' | 'reminder_delete' | 'reminder_sent';
+  | 'reminder_create' | 'reminder_edit' | 'reminder_delete' | 'reminder_sent'
+  | 'user_login' | 'load_form_data';
 
 export interface ActivityLogEntry {
   id: string;

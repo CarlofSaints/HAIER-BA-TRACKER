@@ -121,6 +121,7 @@ export async function seedScoresFromVisits(
           dailySales: 0,
           checkInOnTime: checkInScore,
           feedback: 0,
+          feedbackAuto: 0,
           displayInspection: 0,
           weeklySummaries: 0,
           training: trainingAuto,

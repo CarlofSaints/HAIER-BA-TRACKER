@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAnyUser, noCacheHeaders } from '@/lib/auth';
-import { loadScores, calcTotal, BAScore } from '@/lib/scoreData';
+import { loadScores, calcTotal, calcGrandTotal, BAScore } from '@/lib/scoreData';
 import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
 import { loadDispoData } from '@/lib/dispoData';
 import { loadStores } from '@/lib/storeData';
@@ -9,11 +9,14 @@ export const dynamic = 'force-dynamic';
 
 interface MonthScore {
   total: number;
+  grandTotal: number;
   monthlySales: number;
   checkInOnTime: number;
   feedback: number;
   displayInspection: number;
+  weeklySummaries: number;
   training: number;
+  bonusSuggestions: number;
   salesVol?: number;
   salesVal?: number;
 }
@@ -40,11 +43,14 @@ function getLastNMonths(n: number): string[] {
 function buildMonthScore(s: BAScore): MonthScore {
   return {
     total: calcTotal(s),
+    grandTotal: calcGrandTotal(s),
     monthlySales: s.monthlySales,
     checkInOnTime: s.checkInOnTime,
     feedback: s.feedback,
     displayInspection: s.displayInspection,
+    weeklySummaries: s.weeklySummaries,
     training: s.training,
+    bonusSuggestions: s.bonusSuggestions,
   };
 }
 

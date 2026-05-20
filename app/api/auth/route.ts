@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { loadUsers } from '@/lib/userData';
 import { noCacheHeaders } from '@/lib/auth';
+import { logActivity } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,8 @@ export async function POST(req: NextRequest) {
       role: user.role,
       forcePasswordChange: user.forcePasswordChange,
     };
+
+    logActivity('user_login', user.email, `${user.name} ${user.surname}`, 'auth', `${user.name} ${user.surname} logged in`).catch(() => {});
 
     return NextResponse.json(session, { headers: noCacheHeaders() });
   } catch (err) {

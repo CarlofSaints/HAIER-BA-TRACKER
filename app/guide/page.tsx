@@ -58,10 +58,10 @@ const KPI_ROWS: KPIRow[] = [
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       </SvgIcon>
     ),
-    name: 'Feedback',
+    name: 'Feedback/Escalations',
     maxPts: 10,
-    source: 'Manual (0–10)',
-    description: 'Quality and timeliness of feedback provided by the BA to management.',
+    source: 'Auto (3) + Manual (7)',
+    description: 'Auto: 3 points based on red flag entries vs. monthly minimum target (set in KPI Controls). Manual: 7 points scored by admin for quality and timeliness of feedback/escalations.',
   },
   {
     num: 4,

@@ -7,7 +7,8 @@ export interface BAScore {
   monthlySales: number;       // 0 or 40
   dailySales: number;         // tracked but not scored as KPI
   checkInOnTime: number;      // 0–10
-  feedback: number;           // 0–10
+  feedback: number;           // 0–10 (combined: auto 3 + manual 7)
+  feedbackAuto: number;       // 0–3 (auto-calculated from red flag data)
   displayInspection: number;  // 0–15
   weeklySummaries: number;    // 0–10
   training: number;           // 0–15 (combined: auto + manual)
@@ -28,7 +29,7 @@ export interface KPIDef {
 export const KPI_DEFS: KPIDef[] = [
   { key: 'monthlySales', label: 'Monthly Sales vs Target', max: 40, isBonus: false },
   { key: 'checkInOnTime', label: 'Check-in on Time', max: 10, isBonus: false },
-  { key: 'feedback', label: 'Feedback', max: 10, isBonus: false },
+  { key: 'feedback', label: 'Feedback/Escalations', max: 10, isBonus: false },
   { key: 'displayInspection', label: 'Display Inspection', max: 15, isBonus: false },
   { key: 'weeklySummaries', label: 'Weekly Summaries', max: 10, isBonus: false },
   { key: 'training', label: 'Training', max: 15, isBonus: false },
@@ -51,7 +52,7 @@ export function emptyScore(email: string, repName: string, month: string): BASco
   return {
     email, repName, month,
     monthlySales: 0, dailySales: 0, checkInOnTime: 0,
-    feedback: 0, displayInspection: 0, weeklySummaries: 0,
+    feedback: 0, feedbackAuto: 0, displayInspection: 0, weeklySummaries: 0,
     training: 0, trainingAuto: 0, displayAuto: 0, bonusSuggestions: 0,
     updatedAt: '', updatedBy: '',
   };
@@ -59,8 +60,8 @@ export function emptyScore(email: string, repName: string, month: string): BASco
 
 export async function loadScores(month: string): Promise<BAScore[]> {
   const raw = await readJson<BAScore[]>(`scores/${month}.json`, []);
-  // Backfill trainingAuto and displayAuto for old data
-  return raw.map(s => ({ ...s, trainingAuto: s.trainingAuto ?? 0, displayAuto: s.displayAuto ?? 0 }));
+  // Backfill trainingAuto, displayAuto, feedbackAuto for old data
+  return raw.map(s => ({ ...s, trainingAuto: s.trainingAuto ?? 0, displayAuto: s.displayAuto ?? 0, feedbackAuto: s.feedbackAuto ?? 0 }));
 }
 
 export async function saveScores(month: string, scores: BAScore[]): Promise<void> {

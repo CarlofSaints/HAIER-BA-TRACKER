@@ -42,6 +42,7 @@ export default function ScoreEntryPage() {
   const [trainingAutoCalcing, setTrainingAutoCalcing] = useState(false);
   const [salesAutoCalcing, setSalesAutoCalcing] = useState(false);
   const [displayAutoCalcing, setDisplayAutoCalcing] = useState(false);
+  const [feedbackAutoCalcing, setFeedbackAutoCalcing] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -87,7 +88,7 @@ export default function ScoreEntryPage() {
           merged.push({
             email, repName, month,
             monthlySales: 0, dailySales: 0, checkInOnTime: 0,
-            feedback: 0, displayInspection: 0, weeklySummaries: 0,
+            feedback: 0, feedbackAuto: 0, displayInspection: 0, weeklySummaries: 0,
             training: 0, trainingAuto: 0, displayAuto: 0, bonusSuggestions: 0,
             updatedAt: '', updatedBy: '',
           });
@@ -269,6 +270,43 @@ export default function ScoreEntryPage() {
     setDisplayAutoCalcing(false);
   }
 
+  async function handleFeedbackAutoCalc() {
+    setFeedbackAutoCalcing(true);
+    try {
+      const res = await authFetch('/api/scores/auto-calc-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month }),
+      });
+      if (!res.ok) throw new Error('Feedback auto-calc failed');
+      const results: { email: string; repName: string; redFlagCount: number; autoPoints: number }[] = await res.json();
+
+      const updated = [...scores];
+      for (const r of results) {
+        const idx = updated.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
+        if (idx >= 0) {
+          const manualPart = Math.max(0, (updated[idx].feedback || 0) - (updated[idx].feedbackAuto || 0));
+          const newTotal = Math.min(10, r.autoPoints + manualPart);
+          updated[idx] = { ...updated[idx], feedbackAuto: r.autoPoints, feedback: newTotal };
+        }
+      }
+      setScores(updated);
+
+      // Auto-save
+      const saveRes = await authFetch('/api/scores', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, scores: updated }),
+      });
+      if (!saveRes.ok) throw new Error('Failed to save scores');
+
+      showToast(`Feedback/Esc. auto-scores calculated and saved for ${results.length} BAs`);
+    } catch {
+      showToast('Feedback auto-calc failed');
+    }
+    setFeedbackAutoCalcing(false);
+  }
+
   async function handleSeedFromVisits() {
     setSeeding(true);
     try {
@@ -312,9 +350,9 @@ export default function ScoreEntryPage() {
   const kpiShortLabels: Record<string, string> = {
     monthlySales: 'Monthly Sales',
     checkInOnTime: 'Visits',
-    feedback: 'Feedback',
+    feedback: 'Feedback/Esc.',
     displayInspection: 'Display',
-    weeklySummaries: 'Weekly',
+    weeklySummaries: 'Weekly Summaries',
     training: 'Training',
     bonusSuggestions: 'Bonus',
   };
@@ -379,6 +417,14 @@ export default function ScoreEntryPage() {
           </button>
           <button
             className="btn btn-outline"
+            onClick={handleFeedbackAutoCalc}
+            disabled={feedbackAutoCalcing || loadingData}
+            style={{ borderColor: '#dc2626', color: '#dc2626' }}
+          >
+            {feedbackAutoCalcing ? 'Calculating...' : 'Auto-Calculate Feedback/Esc.'}
+          </button>
+          <button
+            className="btn btn-outline"
             onClick={handleSeedFromVisits}
             disabled={seeding || loadingData}
             style={{ borderColor: '#00A0E9', color: '#00A0E9' }}
@@ -423,10 +469,10 @@ export default function ScoreEntryPage() {
                   <tr>
                     <th style={{ position: 'sticky', left: 0, background: '#f9fafb', zIndex: 2, minWidth: 160 }}>BA Name</th>
                     {KPI_DEFS.map(kpi => (
-                      <th key={kpi.key} style={{ textAlign: 'center', minWidth: (kpi.key === 'training' || kpi.key === 'displayInspection') ? 110 : 80 }}>
+                      <th key={kpi.key} style={{ textAlign: 'center', minWidth: (kpi.key === 'training' || kpi.key === 'displayInspection' || kpi.key === 'feedback') ? 110 : 80 }}>
                         <div>{kpiShortLabels[kpi.key]}</div>
                         <div style={{ fontSize: '0.65rem', color: '#9ca3af', fontWeight: 400 }}>
-                          {kpi.key === 'training' ? 'auto 5 + manual 10' : kpi.key === 'displayInspection' ? 'auto 5 + manual 10' : `max ${kpi.max}${kpi.isBonus ? ' (bonus)' : ''}`}
+                          {kpi.key === 'training' ? 'auto 5 + manual 10' : kpi.key === 'displayInspection' ? 'auto 5 + manual 10' : kpi.key === 'feedback' ? 'auto 3 + manual 7' : `max ${kpi.max}${kpi.isBonus ? ' (bonus)' : ''}`}
                         </div>
                       </th>
                     ))}
@@ -487,6 +533,42 @@ export default function ScoreEntryPage() {
                                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                                   </svg>
                                   {val}
+                                </div>
+                              </td>
+                            );
+                          }
+                          // Feedback/Escalations: auto badge (0–3) + manual input (0–7)
+                          if (kpi.key === 'feedback') {
+                            const autoVal = Number(s.feedbackAuto) || 0;
+                            const manualVal = Math.max(0, val - autoVal);
+                            return (
+                              <td key={kpi.key} style={{ textAlign: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                  <span
+                                    style={{
+                                      background: '#fee2e2', color: '#991b1b', fontSize: '0.7rem',
+                                      fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+                                      minWidth: 28, textAlign: 'center',
+                                    }}
+                                    title={`Auto-calculated: ${autoVal}/3`}
+                                  >
+                                    {autoVal}
+                                  </span>
+                                  <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={7}
+                                    value={manualVal}
+                                    onChange={e => {
+                                      const manual = clamp(Number(e.target.value) || 0, 7);
+                                      updateScore(i, 'feedback', Math.min(10, autoVal + manual));
+                                    }}
+                                    style={{
+                                      width: 42, textAlign: 'center', padding: '3px 4px',
+                                      border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
+                                    }}
+                                  />
                                 </div>
                               </td>
                             );

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadTargetData, saveTargetData, TargetEntry, TargetUploadMeta } from '@/lib/targetData';
 import { writeJson } from '@/lib/blob';
+import { put } from '@vercel/blob';
 import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
@@ -126,6 +127,14 @@ export async function POST(req: NextRequest) {
 
     // Save raw file for rebuild-on-delete
     await writeJson(`targets/raw/${uploadId}.json`, rawTargets);
+
+    // Save original file bytes for download
+    await put(`targets/file/${uploadId}.xlsx`, buffer, {
+      access: 'private',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
 
     // Add upload metadata
     const meta: TargetUploadMeta = {

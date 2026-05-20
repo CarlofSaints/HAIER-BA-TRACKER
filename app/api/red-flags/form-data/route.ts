@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadRedFlagIndex, loadRedFlagFormData } from '@/lib/redFlagData';
 import type { RedFlagFormRow } from '@/lib/redFlagData';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -52,6 +53,8 @@ export async function GET(req: NextRequest) {
     }
 
     const clientHeaders = allHeaders.filter(h => !h.startsWith('_'));
+
+    logFromUser(user, 'load_form_data', `red-flags/${month}`, `Viewed red flags form data for ${month} (${allRows.length} rows)`);
 
     return NextResponse.json({
       month,

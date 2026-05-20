@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadDisplayIndex, loadDisplayFormData } from '@/lib/displayData';
 import type { DisplayFormRow } from '@/lib/displayData';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -52,6 +53,8 @@ export async function GET(req: NextRequest) {
     }
 
     const clientHeaders = allHeaders.filter(h => !h.startsWith('_'));
+
+    logFromUser(user, 'load_form_data', `display/${month}`, `Viewed display form data for ${month} (${allRows.length} rows)`);
 
     return NextResponse.json({
       month,

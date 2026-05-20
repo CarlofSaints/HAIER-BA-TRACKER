@@ -136,6 +136,29 @@ export default function UsersPage() {
     }
   }
 
+  async function sendWelcome(userId: string) {
+    try {
+      const res = await authFetch('/api/users/send-welcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setToast({ msg: data.error || 'Send failed', type: 'error' });
+        return;
+      }
+      const result = await res.json();
+      if (result.emailSent) {
+        setToast({ msg: 'Welcome email sent', type: 'success' });
+      } else {
+        setToast({ msg: `Email failed. Temp password: ${result.tempPassword}`, type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Failed to send welcome email', type: 'error' });
+    }
+  }
+
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
@@ -161,7 +184,7 @@ export default function UsersPage() {
                 <th>Cell</th>
                 <th>Role</th>
                 <th>Created</th>
-                <th style={{ width: 140 }}>Actions</th>
+                <th style={{ width: 180 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -174,6 +197,17 @@ export default function UsersPage() {
                   <td>{new Date(u.createdAt).toLocaleDateString('en-ZA')}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        className="btn btn-outline"
+                        style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                        onClick={() => sendWelcome(u.id)}
+                        title="Send welcome email with new credentials"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
+                          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                          <polyline points="22,6 12,13 2,6" />
+                        </svg>
+                      </button>
                       <button className="btn btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => openEdit(u)}>Edit</button>
                       <button className="btn btn-danger" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => handleDelete(u.id)}>Delete</button>
                     </div>

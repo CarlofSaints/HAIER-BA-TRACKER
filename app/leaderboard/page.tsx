@@ -8,11 +8,14 @@ import Footer from '@/components/Footer';
 
 interface MonthScore {
   total: number;
+  grandTotal: number;
   monthlySales: number;
   checkInOnTime: number;
   feedback: number;
   displayInspection: number;
+  weeklySummaries: number;
   training: number;
+  bonusSuggestions: number;
   salesVol?: number;
   salesVal?: number;
 }
@@ -66,7 +69,7 @@ function scoreBarColor(total: number): string {
   return '#dc2626';
 }
 
-type SortKey = 'total' | 'repName' | 'storeName' | 'monthlySales' | 'checkInOnTime' | 'displayInspection' | 'training' | 'feedback' | 'salesVol' | 'salesVal';
+type SortKey = 'total' | 'repName' | 'storeName' | 'monthlySales' | 'checkInOnTime' | 'displayInspection' | 'training' | 'feedback' | 'weeklySummaries' | 'bonusSuggestions' | 'salesVol' | 'salesVal';
 
 export default function LeaderboardPage() {
   const { session, loading: authLoading, logout } = useAuth();
@@ -80,7 +83,7 @@ export default function LeaderboardPage() {
   const trendMonths = useMemo(() => getLastNMonths(6), []);
 
   // Column resize state
-  const DEFAULT_WIDTHS = useMemo(() => [60, 180, 160, 200, 70, 70, 60, 60, 60, 60, 80, 80], []);
+  const DEFAULT_WIDTHS = useMemo(() => [60, 180, 120, 200, 70, 70, 60, 60, 60, 60, 60, 60, 80, 80], []);
   const [colWidths, setColWidths] = useState<number[]>(DEFAULT_WIDTHS);
   const [trendColWidth, setTrendColWidth] = useState(70);
   const dragRef = useRef<{ colIdx: number; startX: number; startW: number; isTrend: boolean } | null>(null);
@@ -157,11 +160,14 @@ export default function LeaderboardPage() {
         return {
           ...e,
           total: ms?.total ?? 0,
+          grandTotal: ms?.grandTotal ?? 0,
           monthlySales: ms?.monthlySales ?? 0,
           checkInOnTime: ms?.checkInOnTime ?? 0,
           feedback: ms?.feedback ?? 0,
           displayInspection: ms?.displayInspection ?? 0,
+          weeklySummaries: ms?.weeklySummaries ?? 0,
           training: ms?.training ?? 0,
+          bonusSuggestions: ms?.bonusSuggestions ?? 0,
           salesVol: ms?.salesVol,
           salesVal: ms?.salesVal,
         };
@@ -220,7 +226,7 @@ export default function LeaderboardPage() {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
 
-  const colCount = 10 + (hasDispoData ? 2 : 0) + (showTrend ? trendMonths.length - 1 : 0);
+  const colCount = 12 + (hasDispoData ? 2 : 0) + (showTrend ? trendMonths.length - 1 : 0);
 
   return (
     <div style={{ display: 'flex' }}>
@@ -273,7 +279,7 @@ export default function LeaderboardPage() {
                         BA Name{sortArrow('repName')}{resizeHandle(1)}
                       </th>
                       {/* Frozen: Store */}
-                      <th style={{ ...stickyHead(FROZEN_LEFT[2]), cursor: 'pointer', borderRight: '2px solid rgba(255,255,255,0.3)' }} onClick={() => toggleSort('storeName')}>
+                      <th style={{ ...stickyHead(FROZEN_LEFT[2]), cursor: 'pointer', borderRight: '2px solid rgba(255,255,255,0.3)', maxWidth: colWidths[2] }} onClick={() => toggleSort('storeName')}>
                         Store{sortArrow('storeName')}{resizeHandle(2)}
                       </th>
                       {/* Scrollable columns */}
@@ -302,17 +308,27 @@ export default function LeaderboardPage() {
                         {resizeHandle(8)}
                       </th>
                       <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('feedback')}>
-                        <div>Feedback{sortArrow('feedback')}</div>
+                        <div>Feedback/Esc.{sortArrow('feedback')}</div>
                         <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/10</div>
                         {resizeHandle(9)}
+                      </th>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('weeklySummaries')}>
+                        <div>Weekly{sortArrow('weeklySummaries')}</div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/10</div>
+                        {resizeHandle(10)}
+                      </th>
+                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('bonusSuggestions')}>
+                        <div>Bonus{sortArrow('bonusSuggestions')}</div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/10</div>
+                        {resizeHandle(11)}
                       </th>
                       {hasDispoData && (
                         <>
                           <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVol')}>
-                            Sales Vol{sortArrow('salesVol')}{resizeHandle(10)}
+                            Sales Vol{sortArrow('salesVol')}{resizeHandle(12)}
                           </th>
                           <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVal')}>
-                            Sales Val{sortArrow('salesVal')}{resizeHandle(11)}
+                            Sales Val{sortArrow('salesVal')}{resizeHandle(13)}
                           </th>
                         </>
                       )}
@@ -351,7 +367,7 @@ export default function LeaderboardPage() {
                             <div style={{ fontSize: '0.7rem', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.email}</div>
                           </td>
                           {/* Frozen: Store */}
-                          <td style={{ ...stickyCell(FROZEN_LEFT[2]), color: '#374151', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderRight: '2px solid #d1d5db' }}>
+                          <td style={{ ...stickyCell(FROZEN_LEFT[2]), color: '#374151', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderRight: '2px solid #d1d5db', maxWidth: colWidths[2] }}>
                             {entry.storeName || <span style={{ color: '#d1d5db' }}>—</span>}
                           </td>
                           {/* Scrollable columns */}
@@ -374,6 +390,8 @@ export default function LeaderboardPage() {
                           <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.displayInspection}</td>
                           <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.training}</td>
                           <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.feedback}</td>
+                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.weeklySummaries}</td>
+                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.bonusSuggestions}</td>
                           {hasDispoData && (
                             <>
                               <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
