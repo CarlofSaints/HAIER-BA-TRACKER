@@ -4,6 +4,7 @@ import { loadTargetData, saveTargetData, TargetEntry, TargetUploadMeta } from '@
 import { writeJson } from '@/lib/blob';
 import { put } from '@vercel/blob';
 import { logFromUser } from '@/lib/activityLog';
+import { runAutoCalcForMonth } from '@/lib/autoCalc';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -150,13 +151,23 @@ export async function POST(req: NextRequest) {
 
     await saveTargetData(data);
 
-    logFromUser(user, 'upload_targets', `targets/${uploadId}`, `Uploaded targets — ${allStores.size} stores, months: ${[...allMonths].join(', ')}`);
+    // Auto-recalculate sales scores for affected months
+    const autoCalcResults = [];
+    for (const mm of allMonths) {
+      // Target months are MM-YYYY, convert to YYYY-MM
+      const [mmPart, yyyyPart] = mm.split('-');
+      const yyyyMm = `${yyyyPart}-${mmPart}`;
+      try { autoCalcResults.push(await runAutoCalcForMonth(yyyyMm, ['sales'])); } catch { /* logged internally */ }
+    }
+
+    logFromUser(user, 'upload_targets', `targets/${uploadId}`, `Uploaded targets — ${allStores.size} stores, months: ${[...allMonths].join(', ')}. Sales scores auto-recalculated.`);
     return NextResponse.json({
       ok: true,
       uploadId,
       months: [...allMonths],
       storeCount: allStores.size,
       sheets: processedSheets,
+      autoCalc: autoCalcResults,
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Target upload error:', err);

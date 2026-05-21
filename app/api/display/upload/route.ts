@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { logFromUser } from '@/lib/activityLog';
+import { runAutoCalcForMonth } from '@/lib/autoCalc';
 import {
   loadDisplayIndex,
   saveDisplayIndex,
@@ -285,12 +286,21 @@ export async function POST(req: NextRequest) {
     await saveDisplayIndex(index);
 
     logFromUser(user, 'upload_display', `display/${uploadId}`, `Uploaded ${records.length} display records from ${fileName}`);
+
+    // Auto-recalculate display scores for affected months
+    const months = new Set(records.map(r => r.date?.substring(0, 7)).filter(Boolean));
+    const autoCalcResults = [];
+    for (const m of months) {
+      try { autoCalcResults.push(await runAutoCalcForMonth(m, ['display'])); } catch { /* logged internally */ }
+    }
+
     return NextResponse.json({
       ok: true,
       uploadId,
       rowCount: records.length,
       imagesCached,
       columns: headers.length,
+      autoCalc: autoCalcResults,
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Display upload error:', err);

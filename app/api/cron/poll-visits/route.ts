@@ -4,6 +4,7 @@ import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData, vi
 import { seedScoresFromVisits } from '@/lib/seedScores';
 import { requireRole } from '@/lib/auth';
 import { logActivity } from '@/lib/activityLog';
+import { runAutoCalcForMonth } from '@/lib/autoCalc';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -295,6 +296,12 @@ export async function GET(req: NextRequest) {
 
     // Auto-seed scores
     await seedScoresFromVisits('Cron (auto-seed)');
+
+    // Auto-recalculate check-in + sales scores for affected months
+    const affectedMonths = new Set(newVisits.map(v => v.checkInDate?.substring(0, 7)).filter(Boolean));
+    for (const m of affectedMonths) {
+      try { await runAutoCalcForMonth(m, ['checkin', 'sales']); } catch { /* logged internally */ }
+    }
 
     logEntry.result = 'Success';
     logEntry.imported = newVisits.length;

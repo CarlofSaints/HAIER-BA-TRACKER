@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { logFromUser } from '@/lib/activityLog';
+import { runAutoCalcForMonth } from '@/lib/autoCalc';
 import {
   loadTrainingIndex,
   saveTrainingIndex,
@@ -267,12 +268,21 @@ export async function POST(req: NextRequest) {
     await saveTrainingIndex(index);
 
     logFromUser(user, 'upload_training', `training/${uploadId}`, `Uploaded ${records.length} training records from ${fileName}`);
+
+    // Auto-recalculate training scores for affected months
+    const months = new Set(records.map(r => r.date?.substring(0, 7)).filter(Boolean));
+    const autoCalcResults = [];
+    for (const m of months) {
+      try { autoCalcResults.push(await runAutoCalcForMonth(m, ['training'])); } catch { /* logged internally */ }
+    }
+
     return NextResponse.json({
       ok: true,
       uploadId,
       rowCount: records.length,
       imagesCached,
       imageColumns: imageColumns.length,
+      autoCalc: autoCalcResults,
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Training upload error:', err);

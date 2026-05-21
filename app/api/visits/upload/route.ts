@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadVisitIndex, saveVisitIndex, saveVisitData, Visit } from '@/lib/visitData';
 import { logFromUser } from '@/lib/activityLog';
+import { runAutoCalcForMonth } from '@/lib/autoCalc';
 import * as zlib from 'zlib';
 
 export const dynamic = 'force-dynamic';
@@ -203,7 +204,15 @@ export async function POST(req: NextRequest) {
       await saveVisitIndex(index);
 
       logFromUser(user, 'upload_visits', `visits/${uploadId}`, `Uploaded ${visits.length} visit rows from ${fileName}`);
-      return NextResponse.json({ ok: true, uploadId, rowCount: visits.length }, { headers: noCacheHeaders() });
+
+      // Auto-recalculate check-in + sales scores for affected months
+      const months = new Set(visits.map(v => v.checkInDate?.substring(0, 7)).filter(Boolean));
+      const autoCalcResults = [];
+      for (const m of months) {
+        try { autoCalcResults.push(await runAutoCalcForMonth(m, ['checkin', 'sales'])); } catch { /* logged internally */ }
+      }
+
+      return NextResponse.json({ ok: true, uploadId, rowCount: visits.length, autoCalc: autoCalcResults }, { headers: noCacheHeaders() });
     }
 
     // FormData path — server-side Excel parsing
@@ -238,12 +247,20 @@ export async function POST(req: NextRequest) {
     await saveVisitIndex(index);
 
     logFromUser(user, 'upload_visits', `visits/${uploadId}`, `Uploaded ${parsed.visits.length} visit rows from ${fileName}`);
-    // Include sample repName for debugging
+
+    // Auto-recalculate check-in + sales scores for affected months
+    const months = new Set(parsed.visits.map(v => v.checkInDate?.substring(0, 7)).filter(Boolean));
+    const autoCalcResults = [];
+    for (const m of months) {
+      try { autoCalcResults.push(await runAutoCalcForMonth(m, ['checkin', 'sales'])); } catch { /* logged internally */ }
+    }
+
     const sampleName = parsed.visits.find(v => v.repName)?.repName || '(none detected)';
     return NextResponse.json({
       ok: true, uploadId, rowCount: parsed.visits.length,
       detectedHeaders: parsed.detectedHeaders,
       sampleRepName: sampleName,
+      autoCalc: autoCalcResults,
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Visit upload error:', err);

@@ -4,6 +4,7 @@ import { loadDispoData, saveDispoData, DispoUploadMeta } from '@/lib/dispoData';
 import { loadStores, saveStores } from '@/lib/storeData';
 import { writeJson } from '@/lib/blob';
 import { logFromUser } from '@/lib/activityLog';
+import { runAutoCalcForMonth } from '@/lib/autoCalc';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -301,17 +302,33 @@ export async function POST(req: NextRequest) {
 
     await saveDispoData(data);
 
-    logFromUser(user, 'upload_dispo', `dispo/${uploadId}`, `Uploaded ${rowCount} DISPO rows — ${allStores.size} stores, ${allProducts.size} products`);
+    // Auto-recalculate sales scores for affected months
+    const affectedMonths = [...new Set(Object.values(monthMap))];
+    const autoCalcResults: { month: string; updated: number }[] = [];
+    for (const mm of affectedMonths) {
+      // Convert MM-YYYY to YYYY-MM for the score system
+      const [mmPart, yyyyPart] = mm.split('-');
+      const yyyyMm = `${yyyyPart}-${mmPart}`;
+      try {
+        const result = await runAutoCalcForMonth(yyyyMm, ['sales']);
+        autoCalcResults.push(result);
+      } catch (err) {
+        console.error(`Auto-calc sales failed for ${yyyyMm}:`, err);
+      }
+    }
+
+    logFromUser(user, 'upload_dispo', `dispo/${uploadId}`, `Uploaded ${rowCount} DISPO rows — ${allStores.size} stores, ${allProducts.size} products. Sales scores auto-recalculated.`);
     return NextResponse.json({
       ok: true,
       rowCount,
-      months: [...new Set(Object.values(monthMap))],
+      months: affectedMonths,
       products: allProducts.size,
       stores: allStores.size,
       currentMonth: currentMonthKey,
       headerRow: headerIdx + 1,
       dataStartRow: dataStartIdx + 1,
       newStoreNames: newStoreEntries.map(e => e.storeName),
+      autoCalc: autoCalcResults,
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('DISPO upload error:', err);
