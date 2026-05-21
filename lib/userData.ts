@@ -12,6 +12,8 @@ export interface User {
   role: Role;
   forcePasswordChange: boolean;
   createdAt: string;
+  resetToken?: string;
+  resetTokenExpiry?: string;
 }
 
 const BLOB_KEY = 'users.json';

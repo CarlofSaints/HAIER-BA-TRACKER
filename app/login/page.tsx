@@ -11,6 +11,30 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Forgot password state
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMsg, setForgotMsg] = useState('');
+
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault();
+    setForgotMsg('');
+    setForgotLoading(true);
+    try {
+      await fetch('/api/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      setForgotMsg('If that email exists, a reset link has been sent. Check your inbox.');
+    } catch {
+      setForgotMsg('Network error. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -131,6 +155,45 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+
+        <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+          <button
+            onClick={() => { setShowForgot(!showForgot); setForgotMsg(''); }}
+            style={{ background: 'none', border: 'none', color: '#0054A6', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            Forgot My Password?
+          </button>
+        </div>
+
+        {showForgot && (
+          <form onSubmit={handleForgot} style={{ marginTop: '1rem', padding: '1rem', background: '#f3f4f6', borderRadius: 8 }}>
+            <p style={{ fontSize: '0.8rem', color: '#374151', margin: '0 0 0.75rem' }}>
+              Enter your email and we&apos;ll send you a reset link.
+            </p>
+            <input
+              className="input"
+              type="email"
+              value={forgotEmail}
+              onChange={e => setForgotEmail(e.target.value)}
+              required
+              placeholder="you@company.com"
+              style={{ marginBottom: '0.75rem' }}
+            />
+            {forgotMsg && (
+              <div style={{ fontSize: '0.8rem', color: forgotMsg.includes('error') ? '#dc2626' : '#059669', marginBottom: '0.75rem' }}>
+                {forgotMsg}
+              </div>
+            )}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={forgotLoading}
+              style={{ width: '100%', justifyContent: 'center', padding: '0.5rem', fontSize: '0.8rem' }}
+            >
+              {forgotLoading ? 'Sending...' : 'Send Reset Link'}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
