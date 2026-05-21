@@ -119,6 +119,9 @@ export async function countRedFlagsForMonth(
 
   for (const r of monthRecords) {
     const normType = normalizeType(r.problemType);
+    // Skip records whose type doesn't resolve to a recognized RED_FLAG_TYPE
+    if (!(RED_FLAG_TYPES as readonly string[]).includes(normType)) continue;
+
     const normModel = (r.modelNumber || '').trim().toUpperCase();
     const dedupKey = r.visitUUID ? `${r.visitUUID}|${normType}|${normModel}` : '';
     if (dedupKey && seen.has(dedupKey)) continue;
