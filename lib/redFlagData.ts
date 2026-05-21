@@ -81,6 +81,20 @@ export const RED_FLAG_TYPES = [
 
 export type RedFlagType = typeof RED_FLAG_TYPES[number];
 
+/** Normalize problemType variations to canonical RED_FLAG_TYPES values */
+function normalizeType(raw: string): string {
+  const upper = (raw || '').trim().toUpperCase();
+  if (!upper) return 'OTHER';
+  if ((RED_FLAG_TYPES as readonly string[]).includes(upper)) return upper;
+  // Common short/variant forms
+  if (upper === 'OOS' || upper === 'STOCK OUT' || upper === 'OUT-OF-STOCK') return 'OUT OF STOCK';
+  if (upper === 'MISSING PART') return 'MISSING PARTS';
+  if (upper === 'DENTED' || upper === 'DENTED PRODUCT') return 'DENTED PRODUCTS';
+  if (upper === 'POS' || upper === 'POS MATERIAL' || upper === 'POS MATERIALS') return 'POS SHORTAGE';
+  if (upper === 'ENERGY LABELS' || upper === 'ENERGY LABEL' || upper === 'ENERGY LABEL SHORTAGE') return 'ENERGY LABELS SHORTAGE';
+  return upper;
+}
+
 /**
  * Count red flags per BA for a given month (YYYY-MM).
  * Loads all uploads, filters to month, dedupes by visitUUID+problemType.
@@ -99,12 +113,13 @@ export async function countRedFlagsForMonth(
   // Filter to month
   const monthRecords = allRecords.filter(r => r.date.substring(0, 7) === month);
 
-  // Dedup by visitUUID + problemType
+  // Dedup by visitUUID + normalized problemType
   const seen = new Set<string>();
   const result = new Map<string, { repName: string; count: number; byType: Record<string, number> }>();
 
   for (const r of monthRecords) {
-    const dedupKey = r.visitUUID ? `${r.visitUUID}|${r.problemType}` : '';
+    const normType = normalizeType(r.problemType);
+    const dedupKey = r.visitUUID ? `${r.visitUUID}|${normType}` : '';
     if (dedupKey && seen.has(dedupKey)) continue;
     if (dedupKey) seen.add(dedupKey);
 
@@ -116,11 +131,16 @@ export async function countRedFlagsForMonth(
     }
     const entry = result.get(email)!;
     if (r.repName) entry.repName = r.repName;
-    entry.count++;
 
-    const type = r.problemType || 'OTHER';
-    entry.byType[type] = (entry.byType[type] || 0) + 1;
+    entry.byType[normType] = (entry.byType[normType] || 0) + 1;
   }
+
+  // Compute count as sum of byType values so total always matches displayed columns
+  result.forEach(entry => {
+    let sum = 0;
+    for (const k of Object.keys(entry.byType)) sum += entry.byType[k];
+    entry.count = sum;
+  });
 
   return result;
 }
