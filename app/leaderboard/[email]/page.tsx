@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
@@ -10,6 +10,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend,
 } from 'recharts';
+import { toPng } from 'html-to-image';
 import type { BAScore } from '@/lib/scoreData';
 import { KPI_DEFS, CORE_KPI_DEFS, calcTotal, calcGrandTotal } from '@/lib/scoreData';
 
@@ -50,6 +51,9 @@ export default function BADetailPage() {
 
   const [allScores, setAllScores] = useState<Record<string, BAScore>>({});
   const [loadingData, setLoadingData] = useState(true);
+  const captureRef = useRef<HTMLDivElement>(null);
+  const [capturing, setCapturing] = useState(false);
+  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
 
   const months = useMemo(() => getLastNMonths(12), []);
 
@@ -105,12 +109,42 @@ export default function BADetailPage() {
       });
   }, [allScores, months]);
 
-  // Determine rank among all BAs for current month
-  const [rank, totalBAs] = useMemo(() => {
-    // We only have this BA's data loaded per month, so we use the leaderboard API concept
-    // For simplicity, just show the score without rank (rank would require loading all BAs)
-    return [0, 0];
-  }, []);
+  async function handleCapture() {
+    if (!captureRef.current) return;
+    setCapturing(true);
+    setCapturedBlob(null);
+    try {
+      const dataUrl = await toPng(captureRef.current, { backgroundColor: '#ffffff', pixelRatio: 2 });
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      setCapturedBlob(blob);
+    } catch { /* ignore */ }
+    setCapturing(false);
+  }
+
+  function handleDownload() {
+    if (!capturedBlob) return;
+    const url = URL.createObjectURL(capturedBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${repName.replace(/\s+/g, '_')}-scorecard.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleShare() {
+    if (!capturedBlob) return;
+    const file = new File([capturedBlob], `${repName.replace(/\s+/g, '_')}-scorecard.png`, { type: 'image/png' });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: `${repName} Scorecard` });
+      } catch { /* user cancelled */ }
+    } else {
+      handleDownload();
+    }
+  }
 
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
@@ -158,6 +192,62 @@ export default function BADetailPage() {
               </div>
             </div>
           )}
+
+          {/* Screenshot / Share buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {capturedBlob ? (
+              <>
+                <button
+                  onClick={handleDownload}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                    background: '#0054A6', color: 'white', border: 'none', borderRadius: 6,
+                    fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer',
+                  }}
+                >
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" /></svg>
+                  Download
+                </button>
+                <button
+                  onClick={handleShare}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                    background: '#059669', color: 'white', border: 'none', borderRadius: 6,
+                    fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer',
+                  }}
+                >
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                  Share
+                </button>
+                <button
+                  onClick={() => setCapturedBlob(null)}
+                  style={{ padding: '6px', color: '#9ca3af', border: 'none', background: 'none', cursor: 'pointer' }}
+                  title="Dismiss"
+                >
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleCapture}
+                disabled={capturing || Object.keys(allScores).length === 0}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                  background: '#0054A6', color: 'white', border: 'none', borderRadius: 6,
+                  fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer',
+                  opacity: (capturing || Object.keys(allScores).length === 0) ? 0.5 : 1,
+                }}
+                title="Screenshot scorecard"
+              >
+                {capturing ? (
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}><circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
+                ) : (
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                )}
+                Screenshot
+              </button>
+            )}
+          </div>
         </div>
 
         {loadingData ? (
@@ -167,7 +257,27 @@ export default function BADetailPage() {
             No score data found for this BA.
           </div>
         ) : (
-          <>
+          <div ref={captureRef} style={{ background: 'white', padding: '1rem', borderRadius: 12 }}>
+            {/* Captured header — visible in screenshot */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#111827' }}>{repName}</div>
+                <div style={{ color: '#6b7280', fontSize: '0.8rem' }}>{email}</div>
+              </div>
+              {currentScore && (
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.65rem', color: '#6b7280' }}>Score</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: scoreColor(curTotal) }}>{curTotal}/100</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.65rem', color: '#6b7280' }}>Grand Total</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0054A6' }}>{curGrand}/110</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Charts row */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
               {/* Radar chart */}
@@ -274,7 +384,7 @@ export default function BADetailPage() {
                 </table>
               </div>
             </div>
-          </>
+          </div>
         )}
 
         <div style={{ flex: 1 }} />
