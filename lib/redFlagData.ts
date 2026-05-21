@@ -97,7 +97,7 @@ function normalizeType(raw: string): string {
 
 /**
  * Count red flags per BA for a given month (YYYY-MM).
- * Loads all uploads, filters to month, dedupes by visitUUID+problemType.
+ * Loads all uploads, filters to month, dedupes by visitUUID+problemType+modelNumber.
  * Returns Map<email, { repName, count, byType }>.
  */
 export async function countRedFlagsForMonth(
@@ -113,13 +113,14 @@ export async function countRedFlagsForMonth(
   // Filter to month
   const monthRecords = allRecords.filter(r => r.date.substring(0, 7) === month);
 
-  // Dedup by visitUUID + normalized problemType
+  // Dedup by visitUUID + problemType + modelNumber (same product in same visit = duplicate)
   const seen = new Set<string>();
   const result = new Map<string, { repName: string; count: number; byType: Record<string, number> }>();
 
   for (const r of monthRecords) {
     const normType = normalizeType(r.problemType);
-    const dedupKey = r.visitUUID ? `${r.visitUUID}|${normType}` : '';
+    const normModel = (r.modelNumber || '').trim().toUpperCase();
+    const dedupKey = r.visitUUID ? `${r.visitUUID}|${normType}|${normModel}` : '';
     if (dedupKey && seen.has(dedupKey)) continue;
     if (dedupKey) seen.add(dedupKey);
 
