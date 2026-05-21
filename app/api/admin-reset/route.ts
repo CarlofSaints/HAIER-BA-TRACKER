@@ -29,6 +29,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, email: users[idx].email });
   } catch (err) {
     console.error('Admin reset error:', err);
-    return NextResponse.json({ error: 'Reset failed' }, { status: 500 });
+    return NextResponse.json({
+      error: 'Reset failed',
+      message: String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    }, { status: 500 });
   }
 }
