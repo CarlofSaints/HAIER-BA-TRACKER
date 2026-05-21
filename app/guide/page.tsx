@@ -35,8 +35,8 @@ const KPI_ROWS: KPIRow[] = [
     ),
     name: 'Monthly Sales vs Target',
     maxPts: 40,
-    source: 'Manual (binary)',
-    description: 'Hit monthly sales target = 40 points. Miss = 0. All-or-nothing.',
+    source: 'Auto-calculated from DISPO',
+    description: 'Points are earned once MTD sales reach the threshold % set in KPI Controls (default 80%). Above the threshold, points scale proportionally — e.g. 90% of target = 36/40 points, 100% = 40/40. Sales are measured against the full monthly target (no mid-month prorating).',
   },
   {
     num: 2,
@@ -55,30 +55,18 @@ const KPI_ROWS: KPIRow[] = [
     num: 3,
     icon: (
       <SvgIcon>
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      </SvgIcon>
-    ),
-    name: 'Feedback/Escalations',
-    maxPts: 10,
-    source: 'Auto (3) + Manual (7)',
-    description: 'Auto: 3 points based on red flag entries vs. monthly minimum target (set in KPI Controls). Manual: 7 points scored by admin for quality and timeliness of feedback/escalations.',
-  },
-  {
-    num: 4,
-    icon: (
-      <SvgIcon>
         <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
         <line x1="8" y1="21" x2="16" y2="21" />
         <line x1="12" y1="17" x2="12" y2="21" />
       </SvgIcon>
     ),
     name: 'Display Inspection',
-    maxPts: 15,
-    source: 'Manual (0–15)',
-    description: 'Quality of in-store product display maintenance, merchandising standards, and POP material.',
+    maxPts: 20,
+    source: 'Auto (5) + Manual (15)',
+    description: '5 points awarded automatically based on display checks vs. monthly minimum target (set in KPI Controls). 15 points awarded manually by admin for quality of in-store product display maintenance, merchandising standards, and POP material.',
   },
   {
-    num: 5,
+    num: 4,
     icon: (
       <SvgIcon>
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -93,7 +81,7 @@ const KPI_ROWS: KPIRow[] = [
     description: 'Submission and quality of weekly activity summary reports.',
   },
   {
-    num: 6,
+    num: 5,
     icon: (
       <SvgIcon>
         <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
@@ -101,12 +89,12 @@ const KPI_ROWS: KPIRow[] = [
       </SvgIcon>
     ),
     name: 'Training',
-    maxPts: 15,
-    source: 'Auto (5) + Manual (10)',
-    description: '5 points awarded automatically based on completed trainings vs. monthly minimum target (set in KPI Controls). 10 points awarded manually by admin for quality of training delivery.',
+    maxPts: 20,
+    source: 'Auto (5) + Manual (15)',
+    description: '5 points awarded automatically based on completed trainings vs. monthly minimum target (set in KPI Controls). 15 points awarded manually by admin for quality of training delivery.',
   },
   {
-    num: 7,
+    num: 6,
     icon: (
       <SvgIcon>
         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
@@ -145,7 +133,7 @@ export default function GuidePage() {
         }}>
           <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: '0.75rem', opacity: 0.8, marginBottom: 4 }}>Core KPIs (6)</div>
+              <div style={{ fontSize: '0.75rem', opacity: 0.8, marginBottom: 4 }}>Core KPIs (5)</div>
               <div style={{ fontSize: '2rem', fontWeight: 700 }}>100 <span style={{ fontSize: '0.9rem', fontWeight: 400, opacity: 0.8 }}>points</span></div>
             </div>
             <div style={{ fontSize: '1.5rem', opacity: 0.5 }}>+</div>
@@ -244,7 +232,7 @@ export default function GuidePage() {
             </div>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <span style={{ color: BRAND, fontWeight: 700, minWidth: 20 }}>3.</span>
-              <span>Admins manually enter the remaining 4 core KPIs, the training quality score (up to 10), and the bonus score on the <strong>Score Entry</strong> page each month.</span>
+              <span>Admins manually enter <strong>Weekly Summaries</strong>, the training quality score (up to 15), the display quality score (up to 15), and the bonus score on the <strong>Score Entry</strong> page each month.</span>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <span style={{ color: BRAND, fontWeight: 700, minWidth: 20 }}>4.</span>

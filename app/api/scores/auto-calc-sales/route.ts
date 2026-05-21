@@ -17,30 +17,6 @@ function toDispoMonth(yyyyMm: string): string {
   return `${mm}-${yyyy}`;
 }
 
-/**
- * Get days in a given month.
- */
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
-}
-
-/**
- * Parse DD.MM.YYYY export date string and return the day-of-month.
- * Returns null if not parseable.
- */
-function parseExportDay(exportDate: string, targetMonth: string): number | null {
-  // exportDate = "DD.MM.YYYY", targetMonth = "MM-YYYY"
-  const m = exportDate.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
-  if (!m) return null;
-  const day = parseInt(m[1], 10);
-  const mm = m[2].padStart(2, '0');
-  const yyyy = m[3];
-  const exportMonthKey = `${mm}-${yyyy}`;
-  // Only prorate if the export is in the same month as the target
-  if (exportMonthKey === targetMonth) return day;
-  // Export is in a later month — full target applies (no prorating)
-  return null;
-}
 
 export async function POST(req: NextRequest) {
   const user = await requireRole(req, ['super_admin', 'admin']);
@@ -54,8 +30,6 @@ export async function POST(req: NextRequest) {
     }
 
     const dispoMonth = toDispoMonth(month); // MM-YYYY
-    const [yyyy, mm] = month.split('-').map(Number);
-    const totalDays = daysInMonth(yyyy, mm);
 
     // Load all data in parallel
     const [targetData, dispoData, stores, visitIndex, kpiControls] = await Promise.all([
@@ -73,21 +47,6 @@ export async function POST(req: NextRequest) {
     for (const s of stores) {
       if (s.siteCode) siteCodeToName[s.siteCode.trim().toUpperCase()] = s.storeName;
     }
-
-    // Find latest DISPO export date for this month (for prorating)
-    let latestExportDay: number | null = null;
-    for (const upload of dispoData.uploads) {
-      const exportDate = (upload as any).exportDate as string | undefined;
-      if (exportDate) {
-        const day = parseExportDay(exportDate, dispoMonth);
-        if (day !== null && (latestExportDay === null || day > latestExportDay)) {
-          latestExportDay = day;
-        }
-      }
-    }
-
-    // Prorate factor: if we have a mid-month export, prorate; otherwise full month
-    const prorateFactor = latestExportDay !== null ? latestExportDay / totalDays : 1;
 
     // Load all visits and group by BA email → set of stores visited in this month
     // Track both siteCode and storeName for each store
@@ -128,7 +87,6 @@ export async function POST(req: NextRequest) {
       repName: string;
       storeNames: string[];
       valueTarget: number;
-      proratedTarget: number;
       actualValue: number;
       variance: number;
       points: number;
@@ -159,14 +117,13 @@ export async function POST(req: NextRequest) {
       if (totalValueTarget === 0) {
         results.push({
           email, repName, storeNames: storeNamesList,
-          valueTarget: 0, proratedTarget: 0, actualValue: totalActualValue,
+          valueTarget: 0, actualValue: totalActualValue,
           variance: 0, points: 0,
         });
         continue;
       }
 
-      const proratedTarget = totalValueTarget * prorateFactor;
-      const variance = proratedTarget > 0 ? (totalActualValue / proratedTarget) * 100 : 0;
+      const variance = totalValueTarget > 0 ? (totalActualValue / totalValueTarget) * 100 : 0;
 
       let points: number;
       if (variance < salesThreshold) {
@@ -178,7 +135,6 @@ export async function POST(req: NextRequest) {
       results.push({
         email, repName, storeNames: storeNamesList,
         valueTarget: totalValueTarget,
-        proratedTarget: Math.round(proratedTarget * 100) / 100,
         actualValue: Math.round(totalActualValue * 100) / 100,
         variance: Math.round(variance * 10) / 10,
         points,

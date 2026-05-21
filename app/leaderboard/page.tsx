@@ -11,7 +11,6 @@ interface MonthScore {
   grandTotal: number;
   monthlySales: number;
   checkInOnTime: number;
-  feedback: number;
   displayInspection: number;
   weeklySummaries: number;
   training: number;
@@ -69,7 +68,7 @@ function scoreBarColor(total: number): string {
   return '#dc2626';
 }
 
-type SortKey = 'total' | 'repName' | 'storeName' | 'monthlySales' | 'checkInOnTime' | 'displayInspection' | 'training' | 'feedback' | 'weeklySummaries' | 'bonusSuggestions' | 'salesVol' | 'salesVal';
+type SortKey = 'total' | 'repName' | 'storeName' | 'monthlySales' | 'checkInOnTime' | 'displayInspection' | 'training' | 'weeklySummaries' | 'bonusSuggestions' | 'salesVol' | 'salesVal';
 
 export default function LeaderboardPage() {
   const { session, loading: authLoading, logout } = useAuth();
@@ -83,7 +82,7 @@ export default function LeaderboardPage() {
   const trendMonths = useMemo(() => getLastNMonths(6), []);
 
   // Column resize state
-  const DEFAULT_WIDTHS = useMemo(() => [60, 180, 120, 200, 70, 70, 60, 60, 60, 60, 60, 60, 80, 80], []);
+  const DEFAULT_WIDTHS = useMemo(() => [60, 180, 120, 200, 70, 70, 60, 60, 60, 60, 60, 80, 80], []);
   const [colWidths, setColWidths] = useState<number[]>(DEFAULT_WIDTHS);
   const [trendColWidth, setTrendColWidth] = useState(70);
   const dragRef = useRef<{ colIdx: number; startX: number; startW: number; isTrend: boolean } | null>(null);
@@ -163,7 +162,6 @@ export default function LeaderboardPage() {
           grandTotal: ms?.grandTotal ?? 0,
           monthlySales: ms?.monthlySales ?? 0,
           checkInOnTime: ms?.checkInOnTime ?? 0,
-          feedback: ms?.feedback ?? 0,
           displayInspection: ms?.displayInspection ?? 0,
           weeklySummaries: ms?.weeklySummaries ?? 0,
           training: ms?.training ?? 0,
@@ -226,7 +224,7 @@ export default function LeaderboardPage() {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
 
-  const colCount = 12 + (hasDispoData ? 2 : 0) + (showTrend ? trendMonths.length - 1 : 0);
+  const colCount = 11 + (hasDispoData ? 2 : 0) + (showTrend ? trendMonths.length - 1 : 0);
 
   return (
     <div style={{ display: 'flex' }}>
@@ -299,36 +297,31 @@ export default function LeaderboardPage() {
                       </th>
                       <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('displayInspection')}>
                         <div>Display{sortArrow('displayInspection')}</div>
-                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/15</div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/20</div>
                         {resizeHandle(7)}
                       </th>
                       <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('training')}>
                         <div>Training{sortArrow('training')}</div>
-                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/15</div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/20</div>
                         {resizeHandle(8)}
-                      </th>
-                      <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('feedback')}>
-                        <div>Feedback/Esc.{sortArrow('feedback')}</div>
-                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/10</div>
-                        {resizeHandle(9)}
                       </th>
                       <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('weeklySummaries')}>
                         <div>Weekly{sortArrow('weeklySummaries')}</div>
                         <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/10</div>
-                        {resizeHandle(10)}
+                        {resizeHandle(9)}
                       </th>
                       <th style={{ textAlign: 'center', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('bonusSuggestions')}>
                         <div>Bonus{sortArrow('bonusSuggestions')}</div>
                         <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 400 }}>/10</div>
-                        {resizeHandle(11)}
+                        {resizeHandle(10)}
                       </th>
                       {hasDispoData && (
                         <>
                           <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVol')}>
-                            Sales Vol{sortArrow('salesVol')}{resizeHandle(12)}
+                            Sales Vol{sortArrow('salesVol')}{resizeHandle(11)}
                           </th>
                           <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVal')}>
-                            Sales Val{sortArrow('salesVal')}{resizeHandle(13)}
+                            Sales Val{sortArrow('salesVal')}{resizeHandle(12)}
                           </th>
                         </>
                       )}
@@ -389,7 +382,6 @@ export default function LeaderboardPage() {
                           <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.checkInOnTime}</td>
                           <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.displayInspection}</td>
                           <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.training}</td>
-                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.feedback}</td>
                           <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.weeklySummaries}</td>
                           <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.bonusSuggestions}</td>
                           {hasDispoData && (

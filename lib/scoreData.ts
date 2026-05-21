@@ -4,14 +4,14 @@ export interface BAScore {
   email: string;
   repName: string;
   month: string;              // "YYYY-MM"
-  monthlySales: number;       // 0 or 40
+  monthlySales: number;       // 0–40
   dailySales: number;         // tracked but not scored as KPI
   checkInOnTime: number;      // 0–10
-  feedback: number;           // 0–10 (combined: auto 3 + manual 7)
-  feedbackAuto: number;       // 0–3 (auto-calculated from red flag data)
-  displayInspection: number;  // 0–15
+  feedback: number;           // legacy — no longer scored
+  feedbackAuto: number;       // legacy — no longer scored
+  displayInspection: number;  // 0–20 (auto 5 + manual 15)
   weeklySummaries: number;    // 0–10
-  training: number;           // 0–15 (combined: auto + manual)
+  training: number;           // 0–20 (auto 5 + manual 15)
   trainingAuto: number;       // 0–5 (auto-calculated from training form data)
   displayAuto: number;        // 0–5 (auto-calculated from display checks threshold)
   bonusSuggestions: number;   // 0–10 (bonus)
@@ -29,10 +29,9 @@ export interface KPIDef {
 export const KPI_DEFS: KPIDef[] = [
   { key: 'monthlySales', label: 'Monthly Sales vs Target', max: 40, isBonus: false },
   { key: 'checkInOnTime', label: 'Check-in on Time', max: 10, isBonus: false },
-  { key: 'feedback', label: 'Feedback/Escalations', max: 10, isBonus: false },
-  { key: 'displayInspection', label: 'Display Inspection', max: 15, isBonus: false },
+  { key: 'displayInspection', label: 'Display Inspection', max: 20, isBonus: false },
   { key: 'weeklySummaries', label: 'Weekly Summaries', max: 10, isBonus: false },
-  { key: 'training', label: 'Training', max: 15, isBonus: false },
+  { key: 'training', label: 'Training', max: 20, isBonus: false },
   { key: 'bonusSuggestions', label: 'Bonus Suggestions', max: 10, isBonus: true },
 ];
 
@@ -40,7 +39,7 @@ export const CORE_KPI_DEFS = KPI_DEFS.filter(k => !k.isBonus);
 
 export function calcTotal(s: BAScore): number {
   const sum = s.monthlySales + s.checkInOnTime +
-    s.feedback + s.displayInspection + s.weeklySummaries + s.training;
+    s.displayInspection + s.weeklySummaries + s.training;
   return Math.min(sum, 100);
 }
 

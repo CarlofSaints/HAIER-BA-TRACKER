@@ -12,7 +12,6 @@ interface MonthScore {
   grandTotal: number;
   monthlySales: number;
   checkInOnTime: number;
-  feedback: number;
   displayInspection: number;
   weeklySummaries: number;
   training: number;
@@ -46,7 +45,6 @@ function buildMonthScore(s: BAScore): MonthScore {
     grandTotal: calcGrandTotal(s),
     monthlySales: s.monthlySales,
     checkInOnTime: s.checkInOnTime,
-    feedback: s.feedback,
     displayInspection: s.displayInspection,
     weeklySummaries: s.weeklySummaries,
     training: s.training,
