@@ -14,6 +14,31 @@ import { toPng } from 'html-to-image';
 import type { BAScore } from '@/lib/scoreData';
 import { KPI_DEFS, CORE_KPI_DEFS, calcTotal, calcGrandTotal } from '@/lib/scoreData';
 
+interface GuidanceData {
+  sales: {
+    valueTarget: number; actualValue: number; variance: number;
+    threshold: number; points: number; maxPoints: number;
+    amountLeft: number; toThreshold: number;
+  };
+  checkin: {
+    totalVisits: number; onTimeVisits: number; earlyCheckouts: number;
+    lateVisits: number; points: number; maxPoints: number;
+    lateCheckinTime: string; earlyCheckoutTime: string;
+  };
+  display: {
+    completedChecks: number; minRequired: number; autoPoints: number;
+    manualPoints: number; maxAutoPoints: number; maxManualPoints: number;
+    maxPoints: number; totalPoints: number;
+  };
+  training: {
+    completedTrainings: number; minRequired: number; autoPoints: number;
+    manualPoints: number; maxAutoPoints: number; maxManualPoints: number;
+    maxPoints: number; totalPoints: number;
+  };
+  weeklySummaries: { current: number; maxPoints: number };
+  bonus: { current: number; maxPoints: number };
+}
+
 function formatMonth(m: string) {
   const [y, mo] = m.split('-');
   const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -51,6 +76,8 @@ export default function BADetailPage() {
 
   const [allScores, setAllScores] = useState<Record<string, BAScore>>({});
   const [loadingData, setLoadingData] = useState(true);
+  const [guidance, setGuidance] = useState<GuidanceData | null>(null);
+  const [guidanceLoading, setGuidanceLoading] = useState(false);
   const captureRef = useRef<HTMLDivElement>(null);
   const [capturing, setCapturing] = useState(false);
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
@@ -79,7 +106,24 @@ export default function BADetailPage() {
     if (session) loadData();
   }, [session, loadData]);
 
+  // Load guidance data for current month
   const curMonth = currentMonth();
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    (async () => {
+      setGuidanceLoading(true);
+      try {
+        const res = await authFetch(`/api/scores/guidance?month=${curMonth}&email=${encodeURIComponent(email)}`);
+        if (res.ok && !cancelled) {
+          setGuidance(await res.json());
+        }
+      } catch { /* ignore */ }
+      if (!cancelled) setGuidanceLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [session, curMonth, email]);
   const currentScore = allScores[curMonth];
   const repName = currentScore?.repName || Object.values(allScores)[0]?.repName || email;
 
@@ -277,6 +321,199 @@ export default function BADetailPage() {
                 </div>
               )}
             </div>
+
+            {/* KPI Guidance Cards */}
+            {guidance && !guidanceLoading && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                {/* Sales Card */}
+                {(() => {
+                  const g = guidance.sales;
+                  const isMax = g.points >= g.maxPoints;
+                  const belowThreshold = g.variance < g.threshold && g.valueTarget > 0;
+                  const pct = g.maxPoints > 0 ? Math.round((g.points / g.maxPoints) * 100) : 0;
+                  const borderColor = isMax ? '#059669' : g.points === 0 ? '#dc2626' : '#d97706';
+                  const bgColor = isMax ? '#f0fdf4' : g.points === 0 ? '#fef2f2' : '#fffbeb';
+                  return (
+                    <div style={{ background: bgColor, borderRadius: 10, padding: '0.85rem', border: `2px solid ${borderColor}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={borderColor} strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#374151' }}>Sales vs Target</span>
+                        <span style={{ marginLeft: 'auto', fontSize: '0.7rem', fontWeight: 700, color: borderColor }}>{g.points}/{g.maxPoints}</span>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#111827', marginBottom: 6 }}>
+                        {isMax ? 'Target achieved!' : belowThreshold
+                          ? `Below ${g.threshold}% threshold — need R${g.toThreshold.toLocaleString()} more to start earning points`
+                          : g.valueTarget === 0
+                            ? 'No target data available'
+                            : `R${g.amountLeft.toLocaleString()} left to reach 100% of target`}
+                      </div>
+                      <div style={{ background: '#e5e7eb', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                        <div style={{ background: borderColor, height: '100%', width: `${Math.min(100, pct)}%`, borderRadius: 4, transition: 'width 0.3s' }} />
+                      </div>
+                      {g.valueTarget > 0 && <div style={{ fontSize: '0.65rem', color: '#6b7280', marginTop: 3 }}>{g.variance}% of target achieved</div>}
+                    </div>
+                  );
+                })()}
+
+                {/* Check-in Card */}
+                {(() => {
+                  const g = guidance.checkin;
+                  const isMax = g.points >= g.maxPoints;
+                  const hasIssues = g.lateVisits > 0 || g.earlyCheckouts > 0;
+                  const pct = g.maxPoints > 0 ? Math.round((g.points / g.maxPoints) * 100) : 0;
+                  const borderColor = isMax ? '#059669' : g.points === 0 && g.totalVisits > 0 ? '#dc2626' : hasIssues ? '#d97706' : '#059669';
+                  const bgColor = isMax ? '#f0fdf4' : g.points === 0 && g.totalVisits > 0 ? '#fef2f2' : hasIssues ? '#fffbeb' : '#f0fdf4';
+                  const msgs: string[] = [];
+                  if (g.totalVisits === 0) msgs.push('No visits recorded this month');
+                  else if (!hasIssues) msgs.push('All check-ins on time!');
+                  else {
+                    if (g.lateVisits > 0) msgs.push(`${g.lateVisits} late arrival${g.lateVisits > 1 ? 's' : ''} — check in before ${g.lateCheckinTime}`);
+                    if (g.earlyCheckouts > 0) msgs.push(`${g.earlyCheckouts} early departure${g.earlyCheckouts > 1 ? 's' : ''} — stay until ${g.earlyCheckoutTime}`);
+                  }
+                  return (
+                    <div style={{ background: bgColor, borderRadius: 10, padding: '0.85rem', border: `2px solid ${borderColor}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={borderColor} strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#374151' }}>Check-in on Time</span>
+                        <span style={{ marginLeft: 'auto', fontSize: '0.7rem', fontWeight: 700, color: borderColor }}>{g.points}/{g.maxPoints}</span>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#111827', marginBottom: 6 }}>
+                        {msgs.map((m, i) => <div key={i}>{m}</div>)}
+                      </div>
+                      <div style={{ background: '#e5e7eb', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                        <div style={{ background: borderColor, height: '100%', width: `${Math.min(100, pct)}%`, borderRadius: 4, transition: 'width 0.3s' }} />
+                      </div>
+                      {g.totalVisits > 0 && <div style={{ fontSize: '0.65rem', color: '#6b7280', marginTop: 3 }}>{g.onTimeVisits}/{g.totalVisits} on-time check-ins</div>}
+                    </div>
+                  );
+                })()}
+
+                {/* Display Inspection Card */}
+                {(() => {
+                  const g = guidance.display;
+                  const isMax = g.totalPoints >= g.maxPoints;
+                  const pct = g.maxPoints > 0 ? Math.round((g.totalPoints / g.maxPoints) * 100) : 0;
+                  const borderColor = isMax ? '#059669' : g.totalPoints === 0 ? '#dc2626' : '#3b82f6';
+                  const bgColor = isMax ? '#f0fdf4' : g.totalPoints === 0 ? '#fef2f2' : '#eff6ff';
+                  const autoRemaining = Math.max(0, g.minRequired - g.completedChecks);
+                  const manualRemaining = Math.max(0, g.maxManualPoints - g.manualPoints);
+                  const msgs: string[] = [];
+                  if (isMax) { msgs.push('All checks done!'); }
+                  else {
+                    if (autoRemaining > 0) msgs.push(`Complete ${autoRemaining} more display check${autoRemaining > 1 ? 's' : ''} this month`);
+                    else if (g.autoPoints < g.maxAutoPoints) msgs.push(`${g.completedChecks}/${g.minRequired} checks done`);
+                    else msgs.push('Auto-score at maximum (5/5)');
+                    if (manualRemaining > 0) msgs.push(`Manual: ${g.manualPoints}/${g.maxManualPoints} (admin-assessed)`);
+                  }
+                  return (
+                    <div style={{ background: bgColor, borderRadius: 10, padding: '0.85rem', border: `2px solid ${borderColor}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={borderColor} strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#374151' }}>Display Inspection</span>
+                        <span style={{ marginLeft: 'auto', fontSize: '0.7rem', fontWeight: 700, color: borderColor }}>{g.totalPoints}/{g.maxPoints}</span>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#111827', marginBottom: 6 }}>
+                        {msgs.map((m, i) => <div key={i}>{m}</div>)}
+                      </div>
+                      <div style={{ background: '#e5e7eb', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                        <div style={{ background: borderColor, height: '100%', width: `${Math.min(100, pct)}%`, borderRadius: 4, transition: 'width 0.3s' }} />
+                      </div>
+                      <div style={{ fontSize: '0.65rem', color: '#6b7280', marginTop: 3 }}>{g.completedChecks} checks completed (need {g.minRequired})</div>
+                    </div>
+                  );
+                })()}
+
+                {/* Training Card */}
+                {(() => {
+                  const g = guidance.training;
+                  const isMax = g.totalPoints >= g.maxPoints;
+                  const pct = g.maxPoints > 0 ? Math.round((g.totalPoints / g.maxPoints) * 100) : 0;
+                  const borderColor = isMax ? '#059669' : g.totalPoints === 0 ? '#dc2626' : '#8b5cf6';
+                  const bgColor = isMax ? '#f0fdf4' : g.totalPoints === 0 ? '#fef2f2' : '#f5f3ff';
+                  const autoRemaining = Math.max(0, g.minRequired - g.completedTrainings);
+                  const manualRemaining = Math.max(0, g.maxManualPoints - g.manualPoints);
+                  const msgs: string[] = [];
+                  if (isMax) { msgs.push('All trainings done!'); }
+                  else {
+                    if (autoRemaining > 0) msgs.push(`Complete ${autoRemaining} more training${autoRemaining > 1 ? 's' : ''} this month`);
+                    else if (g.autoPoints < g.maxAutoPoints) msgs.push(`${g.completedTrainings}/${g.minRequired} trainings done`);
+                    else msgs.push('Auto-score at maximum (5/5)');
+                    if (manualRemaining > 0) msgs.push(`Manual: ${g.manualPoints}/${g.maxManualPoints} (admin-assessed)`);
+                  }
+                  return (
+                    <div style={{ background: bgColor, borderRadius: 10, padding: '0.85rem', border: `2px solid ${borderColor}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={borderColor} strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#374151' }}>Training</span>
+                        <span style={{ marginLeft: 'auto', fontSize: '0.7rem', fontWeight: 700, color: borderColor }}>{g.totalPoints}/{g.maxPoints}</span>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#111827', marginBottom: 6 }}>
+                        {msgs.map((m, i) => <div key={i}>{m}</div>)}
+                      </div>
+                      <div style={{ background: '#e5e7eb', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                        <div style={{ background: borderColor, height: '100%', width: `${Math.min(100, pct)}%`, borderRadius: 4, transition: 'width 0.3s' }} />
+                      </div>
+                      <div style={{ fontSize: '0.65rem', color: '#6b7280', marginTop: 3 }}>{g.completedTrainings} trainings completed (need {g.minRequired})</div>
+                    </div>
+                  );
+                })()}
+
+                {/* Weekly Summaries Card */}
+                {(() => {
+                  const g = guidance.weeklySummaries;
+                  const isMax = g.current >= g.maxPoints;
+                  const pct = g.maxPoints > 0 ? Math.round((g.current / g.maxPoints) * 100) : 0;
+                  const borderColor = isMax ? '#059669' : g.current === 0 ? '#dc2626' : '#f59e0b';
+                  const bgColor = isMax ? '#f0fdf4' : g.current === 0 ? '#fef2f2' : '#fffbeb';
+                  const needed = Math.max(0, g.maxPoints - g.current);
+                  return (
+                    <div style={{ background: bgColor, borderRadius: 10, padding: '0.85rem', border: `2px solid ${borderColor}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={borderColor} strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#374151' }}>Weekly Summaries</span>
+                        <span style={{ marginLeft: 'auto', fontSize: '0.7rem', fontWeight: 700, color: borderColor }}>{g.current}/{g.maxPoints}</span>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#111827', marginBottom: 6 }}>
+                        {isMax ? 'Full marks!' : `${needed} more point${needed > 1 ? 's' : ''} needed (admin-assessed)`}
+                      </div>
+                      <div style={{ background: '#e5e7eb', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                        <div style={{ background: borderColor, height: '100%', width: `${Math.min(100, pct)}%`, borderRadius: 4, transition: 'width 0.3s' }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Bonus Suggestions Card */}
+                {(() => {
+                  const g = guidance.bonus;
+                  const isMax = g.current >= g.maxPoints;
+                  const pct = g.maxPoints > 0 ? Math.round((g.current / g.maxPoints) * 100) : 0;
+                  const borderColor = isMax ? '#059669' : g.current === 0 ? '#9ca3af' : '#0ea5e9';
+                  const bgColor = isMax ? '#f0fdf4' : g.current === 0 ? '#f9fafb' : '#f0f9ff';
+                  const available = Math.max(0, g.maxPoints - g.current);
+                  return (
+                    <div style={{ background: bgColor, borderRadius: 10, padding: '0.85rem', border: `2px solid ${borderColor}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={borderColor} strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#374151' }}>Bonus Suggestions</span>
+                        <span style={{ marginLeft: 'auto', fontSize: '0.7rem', fontWeight: 700, color: borderColor }}>{g.current}/{g.maxPoints}</span>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#111827', marginBottom: 6 }}>
+                        {isMax ? 'Max bonus earned!' : `${available} bonus point${available > 1 ? 's' : ''} available (admin-assessed)`}
+                      </div>
+                      <div style={{ background: '#e5e7eb', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                        <div style={{ background: borderColor, height: '100%', width: `${Math.min(100, pct)}%`, borderRadius: 4, transition: 'width 0.3s' }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+            {guidanceLoading && (
+              <div style={{ textAlign: 'center', padding: '1rem', color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+                Loading guidance...
+              </div>
+            )}
 
             {/* Charts row */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
