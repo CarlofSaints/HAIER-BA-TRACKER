@@ -15,6 +15,7 @@ export interface BAScore {
   trainingAuto: number;       // 0–5 (auto-calculated from training form data)
   displayAuto: number;        // 0–5 (auto-calculated from display checks threshold)
   bonusSuggestions: number;   // 0–10 (bonus)
+  salesVariance?: number;     // % of target achieved (set by auto-calc-sales)
   updatedAt: string;
   updatedBy: string;
 }

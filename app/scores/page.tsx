@@ -205,13 +205,13 @@ export default function ScoreEntryPage() {
       }
       const results: { email: string; repName: string; points: number; variance: number }[] = await res.json();
 
-      // Build updated scores array
+      // Build updated scores array — save both points and variance for debugging
       const updated = [...scores];
       let updatedCount = 0;
       for (const r of results) {
         const idx = updated.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
         if (idx >= 0) {
-          updated[idx] = { ...updated[idx], monthlySales: r.points };
+          updated[idx] = { ...updated[idx], monthlySales: r.points, salesVariance: r.variance };
           updatedCount++;
         }
       }
@@ -448,10 +448,11 @@ export default function ScoreEntryPage() {
                           const val = Number(s[key]) || 0;
                           // Monthly sales — locked (data-driven from DISPO)
                           if (kpi.key === 'monthlySales') {
+                            const pct = s.salesVariance;
                             return (
                               <td key={kpi.key} style={{ textAlign: 'center' }}>
                                 <div
-                                  title="Auto-calculated from DISPO sales data"
+                                  title={pct != null ? `${pct}% of target achieved` : 'Auto-calculated from DISPO sales data'}
                                   style={{
                                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
                                     background: '#f3f4f6', borderRadius: 4, padding: '3px 8px',
@@ -465,6 +466,9 @@ export default function ScoreEntryPage() {
                                   </svg>
                                   {val}
                                 </div>
+                                {pct != null && (
+                                  <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>{pct}%</div>
+                                )}
                               </td>
                             );
                           }

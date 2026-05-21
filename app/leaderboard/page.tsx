@@ -377,7 +377,13 @@ export default function LeaderboardPage() {
               <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 260px)', minHeight: 200 }}>
                 <table className="data-table" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                   <colgroup>
-                    {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+                    {colWidths.slice(0, 11).map((w, i) => <col key={i} style={{ width: w }} />)}
+                    {hasDispoData && (
+                      <>
+                        <col data-sales-col="" style={{ width: colWidths[11] }} />
+                        <col data-sales-col="" style={{ width: colWidths[12] }} />
+                      </>
+                    )}
                     {showTrend && trendMonths.slice(1).map(m => (
                       <col key={m} style={{ width: trendColWidth }} />
                     ))}
