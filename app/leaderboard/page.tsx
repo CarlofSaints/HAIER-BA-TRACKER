@@ -5,6 +5,7 @@ import { useAuth, authFetch } from '@/lib/useAuth';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
+import { toPng } from 'html-to-image';
 
 interface MonthScore {
   total: number;
@@ -80,6 +81,12 @@ export default function LeaderboardPage() {
   const [sortKey, setSortKey] = useState<SortKey>('total');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   const trendMonths = useMemo(() => getLastNMonths(6), []);
+
+  // Screenshot & share
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [includeSales, setIncludeSales] = useState(true);
+  const [capturing, setCapturing] = useState(false);
+  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
 
   // Column resize state
   const DEFAULT_WIDTHS = useMemo(() => [60, 180, 120, 200, 70, 70, 60, 60, 60, 60, 60, 80, 80], []);
@@ -220,6 +227,53 @@ export default function LeaderboardPage() {
     background: 'inherit',
   });
 
+  // Screenshot capture
+  async function handleCapture() {
+    if (!tableRef.current) return;
+    setCapturing(true);
+    setCapturedBlob(null);
+    try {
+      const salesEls = tableRef.current.querySelectorAll<HTMLElement>('[data-sales-col]');
+      if (!includeSales) {
+        salesEls.forEach(el => { el.style.display = 'none'; });
+      }
+      const dataUrl = await toPng(tableRef.current, { backgroundColor: '#ffffff', pixelRatio: 2 });
+      salesEls.forEach(el => { el.style.display = ''; });
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      setCapturedBlob(blob);
+    } catch {
+      const salesEls = tableRef.current.querySelectorAll<HTMLElement>('[data-sales-col]');
+      salesEls.forEach(el => { el.style.display = ''; });
+    } finally {
+      setCapturing(false);
+    }
+  }
+
+  function handleDownload() {
+    if (!capturedBlob) return;
+    const url = URL.createObjectURL(capturedBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `leaderboard-${selectedMonth}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleShare() {
+    if (!capturedBlob) return;
+    const file = new File([capturedBlob], `leaderboard-${selectedMonth}.png`, { type: 'image/png' });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'BA Leaderboard' });
+      } catch { /* user cancelled */ }
+    } else {
+      handleDownload();
+    }
+  }
+
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
@@ -247,6 +301,68 @@ export default function LeaderboardPage() {
             <input type="checkbox" checked={showTrend} onChange={e => setShowTrend(e.target.checked)} style={{ width: 16, height: 16 }} />
             Show monthly trend
           </label>
+
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'flex-end', gap: '0.75rem' }}>
+            {hasDispoData && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', color: '#374151', cursor: 'pointer', paddingBottom: 6 }}>
+                <input type="checkbox" checked={includeSales} onChange={e => setIncludeSales(e.target.checked)} style={{ width: 16, height: 16 }} />
+                Include Sales Data
+              </label>
+            )}
+
+            {capturedBlob ? (
+              <div style={{ display: 'flex', gap: 6, paddingBottom: 2 }}>
+                <button
+                  onClick={handleDownload}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                    background: '#0054A6', color: 'white', border: 'none', borderRadius: 6,
+                    fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer',
+                  }}
+                >
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" /></svg>
+                  Download
+                </button>
+                <button
+                  onClick={handleShare}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                    background: '#059669', color: 'white', border: 'none', borderRadius: 6,
+                    fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer',
+                  }}
+                >
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                  Share
+                </button>
+                <button
+                  onClick={() => setCapturedBlob(null)}
+                  style={{ padding: '6px', color: '#9ca3af', border: 'none', background: 'none', cursor: 'pointer' }}
+                  title="Dismiss"
+                >
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleCapture}
+                disabled={capturing || ranked.length === 0}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                  background: '#0054A6', color: 'white', border: 'none', borderRadius: 6,
+                  fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer',
+                  opacity: (capturing || ranked.length === 0) ? 0.5 : 1,
+                }}
+                title="Screenshot leaderboard"
+              >
+                {capturing ? (
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}><circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
+                ) : (
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                )}
+                Screenshot
+              </button>
+            )}
+          </div>
         </div>
 
         {loadingData ? (
@@ -254,7 +370,7 @@ export default function LeaderboardPage() {
         ) : (
           <>
             {/* Ranking Table */}
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+            <div ref={tableRef} style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
               <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}>
                 Rankings — {formatMonth(selectedMonth)}
               </div>
@@ -317,10 +433,10 @@ export default function LeaderboardPage() {
                       </th>
                       {hasDispoData && (
                         <>
-                          <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVol')}>
+                          <th data-sales-col="" style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVol')}>
                             Sales Vol{sortArrow('salesVol')}{resizeHandle(11)}
                           </th>
-                          <th style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVal')}>
+                          <th data-sales-col="" style={{ textAlign: 'right', cursor: 'pointer', position: 'sticky', top: 0, zIndex: 2, background: '#0054A6', color: 'white' }} onClick={() => toggleSort('salesVal')}>
                             Sales Val{sortArrow('salesVal')}{resizeHandle(12)}
                           </th>
                         </>
@@ -386,10 +502,10 @@ export default function LeaderboardPage() {
                           <td style={{ textAlign: 'center', fontSize: '0.8rem', color: '#374151' }}>{entry.bonusSuggestions}</td>
                           {hasDispoData && (
                             <>
-                              <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
+                              <td data-sales-col="" style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
                                 {entry.salesVol != null ? entry.salesVol.toLocaleString() : '-'}
                               </td>
-                              <td style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
+                              <td data-sales-col="" style={{ textAlign: 'right', fontSize: '0.8rem', color: '#374151' }}>
                                 {entry.salesVal != null ? `R ${entry.salesVal.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}` : '-'}
                               </td>
                             </>
