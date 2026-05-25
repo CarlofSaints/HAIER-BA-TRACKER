@@ -10,18 +10,19 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 export const runtime = 'nodejs';
 
-// Column indices (0-based)
-const COL_ARTICLE_DESC = 9;   // J
-const COL_SITE_CODE = 26;     // AA — "Site"
-const COL_SITE_NAME = 27;     // AB
-const COL_YTD = 23;           // X — "Curr Y/S" (YTD sales)
-const COL_SOH = 30;           // AE
-const COL_SOO = 31;           // AF
-const COL_INCL_SP = 41;       // AP
-const COL_PROM_SP = 42;       // AQ
-// Sales columns Q through W = indices 16..22
-const SALES_COL_START = 16;   // Q
-const SALES_COL_END = 22;     // W
+/** Known header patterns for dynamic column lookup (lowercase) */
+const FIELD_PATTERNS: Record<string, (h: string) => boolean> = {
+  articleDesc: (h) => h === 'article desc' || h === 'articledesc',
+  siteCode:    (h) => h === 'site',
+  siteName:    (h) => h === 'site name' || h === 'sitename',
+  ytd:         (h) => h === 'curr y/s' || h === 'curr ys' || h === 'ytd',
+  soh:         (h) => h.includes('soh'),
+  soo:         (h) => h.includes('soo'),
+  inclSP:      (h) => h === 'incl sp' || h === 'inclsp' || h === 'incl selling price',
+  promSP:      (h) => h === 'prom sp' || h === 'promsp' || h === 'prom selling price',
+};
+
+type ColumnMap = Record<keyof typeof FIELD_PATTERNS, number>;
 
 function parseMonthFromHeader(header: unknown): string | null {
   if (header === undefined || header === null) return null;
@@ -85,25 +86,54 @@ function parseExportDate(val: unknown): string | null {
 }
 
 /**
- * Scan the first N rows to find the header row — the one that has
- * parseable month values in columns Q-W.
+ * Scan the first N rows to find the header row.
+ * The header row is whichever row has both recognizable field names
+ * AND at least 2 parseable month columns.
+ * Returns the field column map AND the month column map in one pass.
  */
-function findHeaderRow(rows: unknown[][], maxScan = 10): { headerIdx: number; monthMap: Record<number, string> } | null {
+function findHeaderRow(rows: unknown[][], maxScan = 10): {
+  headerIdx: number;
+  cols: ColumnMap;
+  monthMap: Record<number, string>;
+} | null {
+  const fieldKeys = Object.keys(FIELD_PATTERNS) as (keyof typeof FIELD_PATTERNS)[];
   const limit = Math.min(maxScan, rows.length);
+
   for (let r = 0; r < limit; r++) {
     const row = rows[r] as unknown[];
     if (!row) continue;
+
+    // --- field columns ---
+    const cols: Partial<ColumnMap> = {};
+    // --- month columns ---
     const monthMap: Record<number, string> = {};
-    for (let col = SALES_COL_START; col <= SALES_COL_END; col++) {
+
+    for (let col = 0; col < row.length; col++) {
       const val = row[col];
-      if (val !== undefined && val !== null && val !== '') {
-        const month = parseMonthFromHeader(val);
-        if (month) monthMap[col] = month;
+      if (val === undefined || val === null || val === '') continue;
+
+      // Check for month header first
+      const month = parseMonthFromHeader(val);
+      if (month) {
+        monthMap[col] = month;
+        continue;           // month columns won't also be field columns
+      }
+
+      // Check for known field name
+      const h = String(val).trim().toLowerCase();
+      if (!h) continue;
+      for (const key of fieldKeys) {
+        if (cols[key] === undefined && FIELD_PATTERNS[key](h)) {
+          cols[key] = col;
+          break;
+        }
       }
     }
-    // Need at least 2 month columns to be confident this is the header row
-    if (Object.keys(monthMap).length >= 2) {
-      return { headerIdx: r, monthMap };
+
+    // Need at least 2 month columns + all 8 required fields
+    const missingFields = fieldKeys.filter(k => cols[k] === undefined);
+    if (Object.keys(monthMap).length >= 2 && missingFields.length === 0) {
+      return { headerIdx: r, cols: cols as ColumnMap, monthMap };
     }
   }
   return null;
@@ -161,6 +191,29 @@ export async function POST(req: NextRequest) {
       debug['_fileName'] = file.name;
       debug['_fileSize'] = file.size;
 
+      // Show which fields were found in the best candidate row
+      const fieldKeys = Object.keys(FIELD_PATTERNS) as (keyof typeof FIELD_PATTERNS)[];
+      const candidateInfo: Record<string, unknown> = {};
+      for (let r = 0; r < Math.min(10, rows.length); r++) {
+        const row = rows[r] as unknown[];
+        if (!row) continue;
+        const foundFields: string[] = [];
+        let monthCount = 0;
+        for (let col = 0; col < row.length; col++) {
+          const val = row[col];
+          if (val === undefined || val === null || val === '') continue;
+          if (parseMonthFromHeader(val)) { monthCount++; continue; }
+          const h = String(val).trim().toLowerCase();
+          for (const key of fieldKeys) {
+            if (FIELD_PATTERNS[key](h)) { foundFields.push(`${key}=${col}`); break; }
+          }
+        }
+        if (foundFields.length > 0 || monthCount > 0) {
+          candidateInfo[`row${r + 1}`] = { months: monthCount, fields: foundFields };
+        }
+      }
+      debug['_candidates'] = candidateInfo;
+
       // Dump first 5 rows — ALL columns (as array of values with col letter keys)
       for (let r = 0; r < Math.min(5, rows.length); r++) {
         const row = rows[r] as unknown[];
@@ -168,7 +221,6 @@ export async function POST(req: NextRequest) {
         const cells: Record<string, string> = {};
         cells['_len'] = String(row.length);
         for (let col = 0; col < Math.min(row.length, 50); col++) {
-          // Column letter: A=0..Z=25, AA=26..AZ=51
           const letter = col < 26 ? String.fromCharCode(65 + col) : 'A' + String.fromCharCode(65 + col - 26);
           const val = row[col];
           cells[letter] = val === null ? 'null' : val === undefined ? 'undefined' : `${typeof val}: ${String(val).slice(0, 60)}`;
@@ -177,23 +229,27 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({
-        error: 'Could not find header row with month columns (Q-W). Expected MM-YYYY format (e.g. "05-2026").',
+        error: 'Could not find header row. Need all 8 required fields (Article Desc, Site, Site Name, Curr Y/S, SOH, SOO, Incl SP, Prom SP) and at least 2 month columns.',
         debug,
       }, { status: 400 });
     }
 
-    const { headerIdx, monthMap } = found;
+    const { headerIdx, cols, monthMap } = found;
     // Data starts after the header row, skipping any blank rows
     let dataStartIdx = headerIdx + 1;
     while (dataStartIdx < rows.length) {
       const row = rows[dataStartIdx] as unknown[];
-      if (row && row[COL_ARTICLE_DESC]) break;
+      if (row && row[cols.articleDesc]) break;
       dataStartIdx++;
     }
 
-    // Determine which is the current (rightmost) month
+    // Determine which month column has the LATEST date (not rightmost position)
     const sortedCols = Object.keys(monthMap).map(Number).sort((a, b) => a - b);
-    const currentMonthCol = sortedCols[sortedCols.length - 1];
+    const currentMonthCol = sortedCols.reduce((best, col) => {
+      const [mm, yyyy] = monthMap[col].split('-').map(Number);
+      const [bmm, byyyy] = monthMap[best].split('-').map(Number);
+      return (yyyy * 100 + mm) > (byyyy * 100 + bmm) ? col : best;
+    }, sortedCols[0]);
     const currentMonthKey = monthMap[currentMonthCol];
 
     const allStores = new Set<string>();
@@ -212,9 +268,9 @@ export async function POST(req: NextRequest) {
     for (let i = dataStartIdx; i < rows.length; i++) {
       const row = rows[i] as unknown[];
       if (!row) continue;
-      const articleDesc = row[COL_ARTICLE_DESC] ? String(row[COL_ARTICLE_DESC]).trim() : '';
-      const siteName = row[COL_SITE_NAME] ? String(row[COL_SITE_NAME]).trim() : '';
-      const siteCode = row[COL_SITE_CODE] ? String(row[COL_SITE_CODE]).trim() : '';
+      const articleDesc = row[cols.articleDesc] ? String(row[cols.articleDesc]).trim() : '';
+      const siteName = row[cols.siteName] ? String(row[cols.siteName]).trim() : '';
+      const siteCode = row[cols.siteCode] ? String(row[cols.siteCode]).trim() : '';
 
       if (!articleDesc || !siteName) continue;
 
@@ -252,20 +308,20 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // YTD sales (Col X)
-      const ytdUnits = Number(row[COL_YTD]) || 0;
+      // YTD sales
+      const ytdUnits = Number(row[cols.ytd]) || 0;
       if (!data.ytd[siteName]) data.ytd[siteName] = {};
       data.ytd[siteName][articleDesc] = ytdUnits;
 
       // Stock (latest snapshot)
-      const soh = Number(row[COL_SOH]) || 0;
-      const soo = Number(row[COL_SOO]) || 0;
+      const soh = Number(row[cols.soh]) || 0;
+      const soo = Number(row[cols.soo]) || 0;
       if (!data.stock[siteName]) data.stock[siteName] = {};
       data.stock[siteName][articleDesc] = { soh, soo };
 
       // Prices (latest)
-      const inclSP = Number(row[COL_INCL_SP]) || 0;
-      const promSP = Number(row[COL_PROM_SP]) || 0;
+      const inclSP = Number(row[cols.inclSP]) || 0;
+      const promSP = Number(row[cols.promSP]) || 0;
       if (inclSP > 0 || promSP > 0) {
         data.prices[articleDesc] = { inclSP, promSP };
       }
