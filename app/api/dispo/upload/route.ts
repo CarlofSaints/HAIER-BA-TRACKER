@@ -259,6 +259,13 @@ export async function POST(req: NextRequest) {
     // Raw rows for rebuild-on-delete
     const rawRows: { articleDesc: string; siteName: string; siteCode: string; sales: Record<string, number>; ytd: number; soh: number; soo: number; inclSP: number; promSP: number }[] = [];
 
+    // Clear sales for every month in this upload so stale data from
+    // previous uploads doesn't inflate totals.  The raw files + rebuild-
+    // on-delete ensure no data is permanently lost.
+    for (const monthKey of new Set(Object.values(monthMap))) {
+      data.sales[monthKey] = {};
+    }
+
     // Load store master for new-store detection
     const storeMaster = await loadStores();
     const existingStoreNames = new Set(storeMaster.map(s => s.storeName));
@@ -294,18 +301,10 @@ export async function POST(req: NextRequest) {
 
         rowSales[monthKey] = units;
 
-        if (units === 0 && col !== currentMonthCol) continue;
+        if (units === 0) continue;
 
-        if (!data.sales[monthKey]) data.sales[monthKey] = {};
         if (!data.sales[monthKey][siteName]) data.sales[monthKey][siteName] = {};
-
-        if (col === currentMonthCol) {
-          data.sales[monthKey][siteName][articleDesc] = units;
-        } else {
-          if (data.sales[monthKey][siteName][articleDesc] === undefined) {
-            data.sales[monthKey][siteName][articleDesc] = units;
-          }
-        }
+        data.sales[monthKey][siteName][articleDesc] = units;
       }
 
       // YTD sales
