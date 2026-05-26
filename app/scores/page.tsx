@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 import type { BAScore } from '@/lib/scoreData';
-import { KPI_DEFS, CORE_KPI_DEFS } from '@/lib/scoreData';
+import { KPI_DEFS } from '@/lib/scoreData';
+import type { WeeklyBAScore } from '@/lib/weeklyScoreData';
+import { getWeeksForMonth, getCurrentWeek } from '@/lib/weekUtils';
+import type { WeekDef } from '@/lib/weekUtils';
 
 interface AutoCalcItem {
   email: string;
@@ -28,14 +31,33 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 function clamp(v: number, max: number) {
-  return Math.max(0, Math.min(Math.round(v), max));
+  return Math.max(0, Math.min(round2(v), max));
+}
+
+function monthLabel(month: string) {
+  const [y, m] = month.split('-');
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${names[parseInt(m, 10) - 1]} ${y}`;
 }
 
 export default function ScoreEntryPage() {
   const { session, loading: authLoading, logout } = useAuth(['admin', 'super_admin']);
   const [month, setMonth] = useState(currentMonth());
-  const [scores, setScores] = useState<BAScore[]>([]);
+  const [weeks, setWeeks] = useState<WeekDef[]>([]);
+  const [selectedWeek, setSelectedWeek] = useState(1);
+
+  // Monthly scores (auto-calc values + aggregated totals)
+  const [monthlyScores, setMonthlyScores] = useState<BAScore[]>([]);
+  // Current week's editable scores
+  const [weeklyScores, setWeeklyScores] = useState<WeeklyBAScore[]>([]);
+  // All weeks' data for running totals
+  const [allWeeksMap, setAllWeeksMap] = useState<Map<number, WeeklyBAScore[]>>(new Map());
+
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [autoCalcing, setAutoCalcing] = useState(false);
@@ -45,26 +67,45 @@ export default function ScoreEntryPage() {
   const [seeding, setSeeding] = useState(false);
   const [toast, setToast] = useState('');
 
+  // Compute weeks when month changes
+  useEffect(() => {
+    const w = getWeeksForMonth(month);
+    setWeeks(w);
+    const cw = getCurrentWeek(month);
+    setSelectedWeek(cw);
+  }, [month]);
+
   const loadData = useCallback(async () => {
     setLoadingData(true);
     try {
-      // Load existing scores + visit-derived BA list in parallel
-      const [scoresRes, visitsRes] = await Promise.all([
+      // Load monthly scores + visits BA list + selected week's scores in parallel
+      const [scoresRes, visitsRes, weekRes] = await Promise.all([
         authFetch(`/api/scores?month=${month}`),
         authFetch('/api/visits'),
+        authFetch(`/api/scores/weekly?month=${month}&week=${selectedWeek}`),
       ]);
       const existingScores: BAScore[] = scoresRes.ok ? await scoresRes.json() : [];
       const visits = visitsRes.ok ? await visitsRes.json() : [];
+      const existingWeekly: WeeklyBAScore[] = weekRes.ok ? await weekRes.json() : [];
+
+      // Load all weeks for running totals
+      const allWeekPromises = weeks.map(w =>
+        authFetch(`/api/scores/weekly?month=${month}&week=${w.week}`)
+          .then(r => r.ok ? r.json() : [])
+          .then((scores: WeeklyBAScore[]) => [w.week, scores] as [number, WeeklyBAScore[]])
+      );
+      const allWeekResults = await Promise.all(allWeekPromises);
+      const weekMap = new Map<number, WeeklyBAScore[]>(allWeekResults);
+      setAllWeeksMap(weekMap);
 
       // Build BA list from visits
-      const baMap = new Map<string, string>(); // email -> repName
+      const baMap = new Map<string, string>();
       for (const v of visits) {
         const email = (v.email || '').toLowerCase();
         if (email && !baMap.has(email)) {
           baMap.set(email, v.repName || v.email);
         }
       }
-      // Also include any BAs already in scores
       for (const s of existingScores) {
         const email = s.email.toLowerCase();
         if (!baMap.has(email)) {
@@ -72,7 +113,7 @@ export default function ScoreEntryPage() {
         }
       }
 
-      // Merge: use existing scores where available, create empty for new BAs
+      // Merge monthly scores
       const scoreMap = new Map<string, BAScore>();
       for (const s of existingScores) {
         scoreMap.set(s.email.toLowerCase(), s);
@@ -81,7 +122,6 @@ export default function ScoreEntryPage() {
       const merged: BAScore[] = [];
       for (const [email, repName] of baMap) {
         if (scoreMap.has(email)) {
-          // Use fresh name from visit data, keep scores
           merged.push({ ...scoreMap.get(email)!, repName });
         } else {
           merged.push({
@@ -93,36 +133,78 @@ export default function ScoreEntryPage() {
           });
         }
       }
-
-      // Sort by name
       merged.sort((a, b) => a.repName.localeCompare(b.repName));
-      setScores(merged);
+      setMonthlyScores(merged);
+
+      // Build weekly scores for this week, matched to BA list
+      const weekMap2 = new Map<string, WeeklyBAScore>();
+      for (const ws of existingWeekly) {
+        weekMap2.set(ws.email.toLowerCase(), ws);
+      }
+
+      const weekLabel = weeks.find(w => w.week === selectedWeek)?.label || `Week ${selectedWeek}`;
+      const mergedWeekly: WeeklyBAScore[] = merged.map(s => {
+        const email = s.email.toLowerCase();
+        const existing = weekMap2.get(email);
+        if (existing) return { ...existing, repName: s.repName };
+        return {
+          email, repName: s.repName, month, week: selectedWeek, weekLabel,
+          displayManual: 0, weeklySummaries: 0, trainingManual: 0, bonusSuggestions: 0,
+          updatedAt: '', updatedBy: '',
+        };
+      });
+      setWeeklyScores(mergedWeekly);
     } catch { /* ignore */ }
     setLoadingData(false);
-  }, [month]);
+  }, [month, selectedWeek, weeks]);
 
   useEffect(() => {
-    if (session) loadData();
-  }, [session, loadData]);
+    if (session && weeks.length > 0) loadData();
+  }, [session, loadData, weeks]);
 
-  function updateScore(index: number, key: keyof BAScore, value: number | string) {
-    setScores(prev => {
+  function updateWeeklyScore(index: number, key: keyof WeeklyBAScore, value: number) {
+    setWeeklyScores(prev => {
       const next = [...prev];
       next[index] = { ...next[index], [key]: value };
       return next;
     });
   }
 
-  function calcRowTotal(s: BAScore) {
-    return Math.min(
-      s.monthlySales + s.checkInOnTime +
-      s.displayInspection + s.weeklySummaries + s.training,
-      100
-    );
+  /**
+   * Calculate the running monthly total for a given BA by summing all weeks,
+   * using the live-edited values for the current week.
+   */
+  function getMonthlyManualSum(email: string, field: 'displayManual' | 'weeklySummaries' | 'trainingManual' | 'bonusSuggestions'): number {
+    const emailLc = email.toLowerCase();
+    let sum = 0;
+    for (const [weekNum, weekScores] of allWeeksMap) {
+      if (weekNum === selectedWeek) continue; // use live data for current week
+      const ws = weekScores.find(s => s.email.toLowerCase() === emailLc);
+      if (ws) sum += ws[field] || 0;
+    }
+    // Add current week's live value
+    const currentWs = weeklyScores.find(s => s.email.toLowerCase() === emailLc);
+    if (currentWs) sum += currentWs[field] || 0;
+    return round2(sum);
   }
 
-  function calcRowGrand(s: BAScore) {
-    return Math.min(calcRowTotal(s) + s.bonusSuggestions, 110);
+  function calcRunningTotal(s: BAScore, email: string): number {
+    const trainingAuto = s.trainingAuto || 0;
+    const displayAuto = s.displayAuto || 0;
+    const trainingManualSum = Math.min(15, getMonthlyManualSum(email, 'trainingManual'));
+    const displayManualSum = Math.min(15, getMonthlyManualSum(email, 'displayManual'));
+    const weeklySumSum = Math.min(10, getMonthlyManualSum(email, 'weeklySummaries'));
+
+    const training = Math.min(20, trainingAuto + trainingManualSum);
+    const display = Math.min(20, displayAuto + displayManualSum);
+    const total = s.monthlySales + s.checkInOnTime + display + weeklySumSum + training;
+    return round2(Math.min(total, 100));
+  }
+
+  function calcRunningGrand(s: BAScore, email: string): number {
+    const total = calcRunningTotal(s, email);
+    const bonusSum = Math.min(10, getMonthlyManualSum(email, 'bonusSuggestions'));
+    return round2(Math.min(total + bonusSum, 110));
   }
 
   async function handleAutoCalc() {
@@ -136,7 +218,7 @@ export default function ScoreEntryPage() {
       if (!res.ok) throw new Error('Auto-calc failed');
       const results: AutoCalcItem[] = await res.json();
 
-      setScores(prev => {
+      setMonthlyScores(prev => {
         const next = [...prev];
         for (const r of results) {
           const idx = next.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
@@ -164,19 +246,17 @@ export default function ScoreEntryPage() {
       if (!res.ok) throw new Error('Training auto-calc failed');
       const results: TrainingAutoItem[] = await res.json();
 
-      // Build updated scores array
-      const updated = [...scores];
+      // Rebuild monthly scores with new auto values, let weekly aggregation handle manual
+      const updated = [...monthlyScores];
       for (const r of results) {
         const idx = updated.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
         if (idx >= 0) {
-          const manualPart = Math.max(0, (updated[idx].training || 0) - (updated[idx].trainingAuto || 0));
-          const newTotal = Math.min(20, r.autoPoints + manualPart);
-          updated[idx] = { ...updated[idx], trainingAuto: r.autoPoints, training: newTotal };
+          updated[idx] = { ...updated[idx], trainingAuto: r.autoPoints };
         }
       }
-      setScores(updated);
+      setMonthlyScores(updated);
 
-      // Auto-save to persist to leaderboard
+      // Save monthly scores with new auto values
       const saveRes = await authFetch('/api/scores', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -205,8 +285,7 @@ export default function ScoreEntryPage() {
       }
       const results: { email: string; repName: string; points: number; variance: number }[] = await res.json();
 
-      // Build updated scores array — save both points and variance for debugging
-      const updated = [...scores];
+      const updated = [...monthlyScores];
       let updatedCount = 0;
       for (const r of results) {
         const idx = updated.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
@@ -215,9 +294,8 @@ export default function ScoreEntryPage() {
           updatedCount++;
         }
       }
-      setScores(updated);
+      setMonthlyScores(updated);
 
-      // Auto-save to persist to leaderboard
       const saveRes = await authFetch('/api/scores', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -243,18 +321,15 @@ export default function ScoreEntryPage() {
       if (!res.ok) throw new Error('Display auto-calc failed');
       const results: { email: string; repName: string; completedCount: number; autoPoints: number }[] = await res.json();
 
-      const updated = [...scores];
+      const updated = [...monthlyScores];
       for (const r of results) {
         const idx = updated.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
         if (idx >= 0) {
-          const manualPart = Math.max(0, (updated[idx].displayInspection || 0) - (updated[idx].displayAuto || 0));
-          const newTotal = Math.min(20, r.autoPoints + manualPart);
-          updated[idx] = { ...updated[idx], displayAuto: r.autoPoints, displayInspection: newTotal };
+          updated[idx] = { ...updated[idx], displayAuto: r.autoPoints };
         }
       }
-      setScores(updated);
+      setMonthlyScores(updated);
 
-      // Auto-save
       const saveRes = await authFetch('/api/scores', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -279,7 +354,6 @@ export default function ScoreEntryPage() {
       if (!res.ok) throw new Error('Seed failed');
       const result = await res.json();
       showToast(`Seeded ${result.bas} BA scores across ${result.months} months from visit data`);
-      // Reload current month's data
       loadData();
     } catch {
       showToast('Failed to seed scores from visits');
@@ -287,18 +361,40 @@ export default function ScoreEntryPage() {
     setSeeding(false);
   }
 
-  async function handleSave() {
+  async function handleSaveWeek() {
     setSaving(true);
     try {
-      const res = await authFetch('/api/scores', {
+      const res = await authFetch('/api/scores/weekly', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month, scores }),
+        body: JSON.stringify({ month, week: selectedWeek, scores: weeklyScores }),
       });
       if (!res.ok) throw new Error('Save failed');
-      showToast('Scores saved successfully');
+
+      // Update allWeeksMap with the saved data for correct totals display
+      setAllWeeksMap(prev => {
+        const next = new Map(prev);
+        next.set(selectedWeek, [...weeklyScores]);
+        return next;
+      });
+
+      // Reload monthly scores to get the aggregated values
+      const scoresRes = await authFetch(`/api/scores?month=${month}`);
+      if (scoresRes.ok) {
+        const updated: BAScore[] = await scoresRes.json();
+        const scoreMap = new Map<string, BAScore>();
+        for (const s of updated) scoreMap.set(s.email.toLowerCase(), s);
+        setMonthlyScores(prev =>
+          prev.map(s => {
+            const u = scoreMap.get(s.email.toLowerCase());
+            return u ? { ...u, repName: s.repName } : s;
+          })
+        );
+      }
+
+      showToast('Week scores saved successfully');
     } catch {
-      showToast('Failed to save scores');
+      showToast('Failed to save week scores');
     }
     setSaving(false);
   }
@@ -308,19 +404,11 @@ export default function ScoreEntryPage() {
     setTimeout(() => setToast(''), 3000);
   }
 
-  // Short labels for table header
-  const kpiShortLabels: Record<string, string> = {
-    monthlySales: 'Monthly Sales',
-    checkInOnTime: 'Visits',
-    displayInspection: 'Display',
-    weeklySummaries: 'Weekly Summaries',
-    training: 'Training',
-    bonusSuggestions: 'Bonus',
-  };
-
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
+
+  const currentWeekDef = weeks.find(w => w.week === selectedWeek);
 
   return (
     <div style={{ display: 'flex' }}>
@@ -330,7 +418,7 @@ export default function ScoreEntryPage() {
           Score Entry
         </h1>
         <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          Enter monthly KPI scores for each BA
+          Enter weekly KPI scores for each BA — monthly totals build up automatically
         </p>
 
         {/* Controls row */}
@@ -344,6 +432,19 @@ export default function ScoreEntryPage() {
               onChange={e => setMonth(e.target.value)}
               style={{ width: 180 }}
             />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Week</label>
+            <select
+              className="input"
+              value={selectedWeek}
+              onChange={e => setSelectedWeek(Number(e.target.value))}
+              style={{ width: 180 }}
+            >
+              {weeks.map(w => (
+                <option key={w.week} value={w.week}>{w.label}</option>
+              ))}
+            </select>
           </div>
           <button
             className="btn btn-outline"
@@ -386,10 +487,10 @@ export default function ScoreEntryPage() {
           </button>
           <button
             className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || loadingData || scores.length === 0}
+            onClick={handleSaveWeek}
+            disabled={saving || loadingData || weeklyScores.length === 0}
           >
-            {saving ? 'Saving...' : 'Save Scores'}
+            {saving ? 'Saving...' : 'Save Week Scores'}
           </button>
         </div>
 
@@ -407,187 +508,238 @@ export default function ScoreEntryPage() {
 
         {loadingData ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>Loading scores...</div>
-        ) : scores.length === 0 ? (
+        ) : monthlyScores.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: '#9ca3af' }}>
             No BAs found. Upload visit data first, then return here to enter scores.
           </div>
         ) : (
           <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-            <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.8rem', color: '#6b7280' }}>
-              {scores.length} BAs — enter scores for {month}
+            <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.8rem', color: '#6b7280', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>
+                {monthlyScores.length} BAs — {currentWeekDef?.label || `Week ${selectedWeek}`} of {monthLabel(month)}
+              </span>
+              <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>
+                Auto-calc KPIs are monthly. Manual KPIs are entered per week and sum to monthly totals.
+              </span>
             </div>
             <div style={{ overflowX: 'auto' }}>
-              <table className="data-table" style={{ minWidth: 900 }}>
+              <table className="data-table" style={{ minWidth: 1000 }}>
                 <thead>
                   <tr>
                     <th style={{ position: 'sticky', left: 0, background: '#f9fafb', zIndex: 2, minWidth: 160 }}>BA Name</th>
-                    {KPI_DEFS.map(kpi => (
-                      <th key={kpi.key} style={{ textAlign: 'center', minWidth: (kpi.key === 'training' || kpi.key === 'displayInspection' || kpi.key === 'feedback') ? 110 : 80 }}>
-                        <div>{kpiShortLabels[kpi.key]}</div>
-                        <div style={{ fontSize: '0.65rem', color: '#9ca3af', fontWeight: 400 }}>
-                          {kpi.key === 'training' ? 'auto 5 + manual 15' : kpi.key === 'displayInspection' ? 'auto 5 + manual 15' : `max ${kpi.max}${kpi.isBonus ? ' (bonus)' : ''}`}
-                        </div>
-                      </th>
-                    ))}
-                    <th style={{ textAlign: 'center', minWidth: 60 }}>Total</th>
-                    <th style={{ textAlign: 'center', minWidth: 60 }}>Grand</th>
+                    {/* Monthly Sales — auto, locked */}
+                    <th style={{ textAlign: 'center', minWidth: 80 }}>
+                      <div>Monthly Sales</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>auto / max 40</div>
+                    </th>
+                    {/* Check-in — auto, locked */}
+                    <th style={{ textAlign: 'center', minWidth: 80 }}>
+                      <div>Visits</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>auto / max 10</div>
+                    </th>
+                    {/* Display — auto badge + weekly manual input */}
+                    <th style={{ textAlign: 'center', minWidth: 130 }}>
+                      <div>Display</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>auto 5 + weekly manual 15</div>
+                    </th>
+                    {/* Weekly Summaries — weekly manual input */}
+                    <th style={{ textAlign: 'center', minWidth: 100 }}>
+                      <div>Weekly Summaries</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>weekly / max 10</div>
+                    </th>
+                    {/* Training — auto badge + weekly manual input */}
+                    <th style={{ textAlign: 'center', minWidth: 130 }}>
+                      <div>Training</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>auto 5 + weekly manual 15</div>
+                    </th>
+                    {/* Bonus — weekly manual input */}
+                    <th style={{ textAlign: 'center', minWidth: 100 }}>
+                      <div>Bonus</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>weekly / max 10</div>
+                    </th>
+                    <th style={{ textAlign: 'center', minWidth: 60 }}>
+                      <div>Total</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>monthly /100</div>
+                    </th>
+                    <th style={{ textAlign: 'center', minWidth: 60 }}>
+                      <div>Grand</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/110</div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {scores.map((s, i) => {
-                    const total = calcRowTotal(s);
-                    const grand = calcRowGrand(s);
+                  {monthlyScores.map((s, i) => {
+                    const ws = weeklyScores[i];
+                    const total = calcRunningTotal(s, s.email);
+                    const grand = calcRunningGrand(s, s.email);
+
                     return (
                       <tr key={s.email}>
                         <td style={{ position: 'sticky', left: 0, background: 'white', zIndex: 1, fontWeight: 500, fontSize: '0.8rem' }}>
                           <div>{s.repName}</div>
                           <div style={{ fontSize: '0.65rem', color: '#9ca3af' }}>{s.email}</div>
                         </td>
-                        {KPI_DEFS.map(kpi => {
-                          const key = kpi.key as keyof BAScore;
-                          const val = Number(s[key]) || 0;
-                          // Monthly sales — locked (data-driven from DISPO)
-                          if (kpi.key === 'monthlySales') {
-                            const pct = s.salesVariance;
-                            return (
-                              <td key={kpi.key} style={{ textAlign: 'center' }}>
-                                <div
-                                  title={pct != null ? `${pct}% of target achieved` : 'Auto-calculated from DISPO sales data'}
-                                  style={{
-                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                                    background: '#f3f4f6', borderRadius: 4, padding: '3px 8px',
-                                    fontSize: '0.8rem', fontWeight: 600, color: val === 40 ? '#059669' : '#9ca3af',
-                                    border: '1px solid #e5e7eb', minWidth: 52,
-                                  }}
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
-                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                                  </svg>
-                                  {val}
-                                </div>
-                                {pct != null && (
-                                  <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>{pct}%</div>
-                                )}
-                              </td>
-                            );
-                          }
-                          // Check-in — locked (auto-calculated from visit data)
-                          if (kpi.key === 'checkInOnTime') {
-                            return (
-                              <td key={kpi.key} style={{ textAlign: 'center' }}>
-                                <div
-                                  title="Auto-calculated from visit check-in data"
-                                  style={{
-                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                                    background: '#f3f4f6', borderRadius: 4, padding: '3px 8px',
-                                    fontSize: '0.8rem', fontWeight: 600, color: val > 0 ? '#0054A6' : '#9ca3af',
-                                    border: '1px solid #e5e7eb', minWidth: 52,
-                                  }}
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
-                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                                  </svg>
-                                  {val}
-                                </div>
-                              </td>
-                            );
-                          }
-                          // Training: auto badge (0–5) + manual input (0–15)
-                          if (kpi.key === 'training') {
-                            const autoVal = Number(s.trainingAuto) || 0;
-                            const manualVal = Math.max(0, val - autoVal);
-                            return (
-                              <td key={kpi.key} style={{ textAlign: 'center' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                                  <span
-                                    style={{
-                                      background: '#ede9fe', color: '#7c3aed', fontSize: '0.7rem',
-                                      fontWeight: 600, padding: '2px 6px', borderRadius: 4,
-                                      minWidth: 28, textAlign: 'center',
-                                    }}
-                                    title={`Auto-calculated: ${autoVal}/5`}
-                                  >
-                                    {autoVal}
-                                  </span>
-                                  <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={15}
-                                    value={manualVal}
-                                    onChange={e => {
-                                      const manual = clamp(Number(e.target.value) || 0, 15);
-                                      updateScore(i, 'training', Math.min(20, autoVal + manual));
-                                    }}
-                                    style={{
-                                      width: 42, textAlign: 'center', padding: '3px 4px',
-                                      border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
-                                    }}
-                                  />
-                                </div>
-                              </td>
-                            );
-                          }
-                          // Display Inspection: auto badge (0–5) + manual input (0–15)
-                          if (kpi.key === 'displayInspection') {
-                            const autoVal = Number(s.displayAuto) || 0;
-                            const manualVal = Math.max(0, val - autoVal);
-                            return (
-                              <td key={kpi.key} style={{ textAlign: 'center' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                                  <span
-                                    style={{
-                                      background: '#dbeafe', color: '#1e40af', fontSize: '0.7rem',
-                                      fontWeight: 600, padding: '2px 6px', borderRadius: 4,
-                                      minWidth: 28, textAlign: 'center',
-                                    }}
-                                    title={`Auto-calculated: ${autoVal}/5`}
-                                  >
-                                    {autoVal}
-                                  </span>
-                                  <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={15}
-                                    value={manualVal}
-                                    onChange={e => {
-                                      const manual = clamp(Number(e.target.value) || 0, 15);
-                                      updateScore(i, 'displayInspection', Math.min(20, autoVal + manual));
-                                    }}
-                                    style={{
-                                      width: 42, textAlign: 'center', padding: '3px 4px',
-                                      border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
-                                    }}
-                                  />
-                                </div>
-                              </td>
-                            );
-                          }
-                          return (
-                            <td key={kpi.key} style={{ textAlign: 'center' }}>
-                              <input
-                                type="number"
-                                min={0}
-                                max={kpi.max}
-                                value={val}
-                                onChange={e => {
-                                  const n = clamp(Number(e.target.value) || 0, kpi.max);
-                                  updateScore(i, key, n);
-                                }}
-                                style={{
-                                  width: 52, textAlign: 'center', padding: '3px 4px',
-                                  border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
-                                }}
-                              />
-                            </td>
-                          );
-                        })}
+
+                        {/* Monthly Sales — locked auto badge */}
+                        <td style={{ textAlign: 'center' }}>
+                          <div
+                            title={s.salesVariance != null ? `${s.salesVariance}% of target achieved` : 'Auto-calculated from DISPO sales data'}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                              background: '#f3f4f6', borderRadius: 4, padding: '3px 8px',
+                              fontSize: '0.8rem', fontWeight: 600, color: s.monthlySales === 40 ? '#059669' : '#9ca3af',
+                              border: '1px solid #e5e7eb', minWidth: 52,
+                            }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                            </svg>
+                            {s.monthlySales}
+                          </div>
+                          {s.salesVariance != null && (
+                            <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>{s.salesVariance}%</div>
+                          )}
+                        </td>
+
+                        {/* Check-in — locked auto badge */}
+                        <td style={{ textAlign: 'center' }}>
+                          <div
+                            title="Auto-calculated from visit check-in data"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                              background: '#f3f4f6', borderRadius: 4, padding: '3px 8px',
+                              fontSize: '0.8rem', fontWeight: 600, color: s.checkInOnTime > 0 ? '#0054A6' : '#9ca3af',
+                              border: '1px solid #e5e7eb', minWidth: 52,
+                            }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                            </svg>
+                            {s.checkInOnTime}
+                          </div>
+                        </td>
+
+                        {/* Display: auto badge (monthly) + manual input (this week) */}
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            <span
+                              style={{
+                                background: '#dbeafe', color: '#1e40af', fontSize: '0.7rem',
+                                fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+                                minWidth: 28, textAlign: 'center',
+                              }}
+                              title={`Auto-calculated: ${s.displayAuto || 0}/5`}
+                            >
+                              {s.displayAuto || 0}
+                            </span>
+                            <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={15}
+                              step="0.01"
+                              value={ws?.displayManual || 0}
+                              onChange={e => {
+                                const v = clamp(Number(e.target.value) || 0, 15);
+                                updateWeeklyScore(i, 'displayManual', v);
+                              }}
+                              style={{
+                                width: 48, textAlign: 'center', padding: '3px 4px',
+                                border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
+                              }}
+                            />
+                          </div>
+                          <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>
+                            month: {round2(Math.min(20, (s.displayAuto || 0) + Math.min(15, getMonthlyManualSum(s.email, 'displayManual'))))}/20
+                          </div>
+                        </td>
+
+                        {/* Weekly Summaries — editable per week */}
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min={0}
+                            max={10}
+                            step="0.01"
+                            value={ws?.weeklySummaries || 0}
+                            onChange={e => {
+                              const v = clamp(Number(e.target.value) || 0, 10);
+                              updateWeeklyScore(i, 'weeklySummaries', v);
+                            }}
+                            style={{
+                              width: 52, textAlign: 'center', padding: '3px 4px',
+                              border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
+                            }}
+                          />
+                          <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>
+                            month: {round2(Math.min(10, getMonthlyManualSum(s.email, 'weeklySummaries')))}/10
+                          </div>
+                        </td>
+
+                        {/* Training: auto badge (monthly) + manual input (this week) */}
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            <span
+                              style={{
+                                background: '#ede9fe', color: '#7c3aed', fontSize: '0.7rem',
+                                fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+                                minWidth: 28, textAlign: 'center',
+                              }}
+                              title={`Auto-calculated: ${s.trainingAuto || 0}/5`}
+                            >
+                              {s.trainingAuto || 0}
+                            </span>
+                            <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={15}
+                              step="0.01"
+                              value={ws?.trainingManual || 0}
+                              onChange={e => {
+                                const v = clamp(Number(e.target.value) || 0, 15);
+                                updateWeeklyScore(i, 'trainingManual', v);
+                              }}
+                              style={{
+                                width: 48, textAlign: 'center', padding: '3px 4px',
+                                border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
+                              }}
+                            />
+                          </div>
+                          <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>
+                            month: {round2(Math.min(20, (s.trainingAuto || 0) + Math.min(15, getMonthlyManualSum(s.email, 'trainingManual'))))}/20
+                          </div>
+                        </td>
+
+                        {/* Bonus — editable per week */}
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min={0}
+                            max={10}
+                            step="0.01"
+                            value={ws?.bonusSuggestions || 0}
+                            onChange={e => {
+                              const v = clamp(Number(e.target.value) || 0, 10);
+                              updateWeeklyScore(i, 'bonusSuggestions', v);
+                            }}
+                            style={{
+                              width: 52, textAlign: 'center', padding: '3px 4px',
+                              border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
+                            }}
+                          />
+                          <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>
+                            month: {round2(Math.min(10, getMonthlyManualSum(s.email, 'bonusSuggestions')))}/10
+                          </div>
+                        </td>
+
+                        {/* Total (monthly running) */}
                         <td style={{ textAlign: 'center', fontWeight: 600, color: total >= 80 ? '#059669' : total >= 60 ? '#d97706' : '#dc2626' }}>
                           {total}
                         </td>
+                        {/* Grand (monthly running) */}
                         <td style={{ textAlign: 'center', fontWeight: 700, color: '#0054A6' }}>
                           {grand}
                         </td>

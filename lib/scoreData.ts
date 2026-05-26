@@ -38,14 +38,18 @@ export const KPI_DEFS: KPIDef[] = [
 
 export const CORE_KPI_DEFS = KPI_DEFS.filter(k => !k.isBonus);
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 export function calcTotal(s: BAScore): number {
   const sum = s.monthlySales + s.checkInOnTime +
     s.displayInspection + s.weeklySummaries + s.training;
-  return Math.min(sum, 100);
+  return round2(Math.min(sum, 100));
 }
 
 export function calcGrandTotal(s: BAScore): number {
-  return Math.min(calcTotal(s) + s.bonusSuggestions, 110);
+  return round2(Math.min(calcTotal(s) + s.bonusSuggestions, 110));
 }
 
 export function emptyScore(email: string, repName: string, month: string): BAScore {
