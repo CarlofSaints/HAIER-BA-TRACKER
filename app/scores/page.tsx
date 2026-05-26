@@ -45,15 +45,18 @@ function monthLabel(month: string) {
   return `${names[parseInt(m, 10) - 1]} ${y}`;
 }
 
+/** selectedWeek = 0 means MTD (month-to-date summary view) */
+const MTD = 0;
+
 export default function ScoreEntryPage() {
   const { session, loading: authLoading, logout } = useAuth(['admin', 'super_admin']);
   const [month, setMonth] = useState(currentMonth());
   const [weeks, setWeeks] = useState<WeekDef[]>([]);
-  const [selectedWeek, setSelectedWeek] = useState(1);
+  const [selectedWeek, setSelectedWeek] = useState<number>(MTD);
 
   // Monthly scores (auto-calc values + aggregated totals)
   const [monthlyScores, setMonthlyScores] = useState<BAScore[]>([]);
-  // Current week's editable scores
+  // Current week's editable scores (empty when MTD)
   const [weeklyScores, setWeeklyScores] = useState<WeeklyBAScore[]>([]);
   // All weeks' data for running totals
   const [allWeeksMap, setAllWeeksMap] = useState<Map<number, WeeklyBAScore[]>>(new Map());
@@ -67,6 +70,8 @@ export default function ScoreEntryPage() {
   const [seeding, setSeeding] = useState(false);
   const [toast, setToast] = useState('');
 
+  const isMTD = selectedWeek === MTD;
+
   // Compute weeks when month changes
   useEffect(() => {
     const w = getWeeksForMonth(month);
@@ -78,17 +83,22 @@ export default function ScoreEntryPage() {
   const loadData = useCallback(async () => {
     setLoadingData(true);
     try {
-      // Load monthly scores + visits BA list + selected week's scores in parallel
-      const [scoresRes, visitsRes, weekRes] = await Promise.all([
+      // Base fetches: monthly scores + visit-derived BA list
+      const fetches: Promise<Response>[] = [
         authFetch(`/api/scores?month=${month}`),
         authFetch('/api/visits'),
-        authFetch(`/api/scores/weekly?month=${month}&week=${selectedWeek}`),
-      ]);
-      const existingScores: BAScore[] = scoresRes.ok ? await scoresRes.json() : [];
-      const visits = visitsRes.ok ? await visitsRes.json() : [];
-      const existingWeekly: WeeklyBAScore[] = weekRes.ok ? await weekRes.json() : [];
+      ];
+      // If a specific week is selected, also fetch that week's scores
+      if (!isMTD) {
+        fetches.push(authFetch(`/api/scores/weekly?month=${month}&week=${selectedWeek}`));
+      }
 
-      // Load all weeks for running totals
+      const responses = await Promise.all(fetches);
+      const existingScores: BAScore[] = responses[0].ok ? await responses[0].json() : [];
+      const visits = responses[1].ok ? await responses[1].json() : [];
+      const existingWeekly: WeeklyBAScore[] = (!isMTD && responses[2]?.ok) ? await responses[2].json() : [];
+
+      // Load all weeks for running totals / MTD view
       const allWeekPromises = weeks.map(w =>
         authFetch(`/api/scores/weekly?month=${month}&week=${w.week}`)
           .then(r => r.ok ? r.json() : [])
@@ -137,26 +147,29 @@ export default function ScoreEntryPage() {
       setMonthlyScores(merged);
 
       // Build weekly scores for this week, matched to BA list
-      const weekMap2 = new Map<string, WeeklyBAScore>();
-      for (const ws of existingWeekly) {
-        weekMap2.set(ws.email.toLowerCase(), ws);
+      if (!isMTD) {
+        const weekMap2 = new Map<string, WeeklyBAScore>();
+        for (const ws of existingWeekly) {
+          weekMap2.set(ws.email.toLowerCase(), ws);
+        }
+        const weekLabel = weeks.find(w => w.week === selectedWeek)?.label || `Week ${selectedWeek}`;
+        const mergedWeekly: WeeklyBAScore[] = merged.map(s => {
+          const email = s.email.toLowerCase();
+          const existing = weekMap2.get(email);
+          if (existing) return { ...existing, repName: s.repName };
+          return {
+            email, repName: s.repName, month, week: selectedWeek, weekLabel,
+            displayManual: 0, weeklySummaries: 0, trainingManual: 0, bonusSuggestions: 0,
+            updatedAt: '', updatedBy: '',
+          };
+        });
+        setWeeklyScores(mergedWeekly);
+      } else {
+        setWeeklyScores([]);
       }
-
-      const weekLabel = weeks.find(w => w.week === selectedWeek)?.label || `Week ${selectedWeek}`;
-      const mergedWeekly: WeeklyBAScore[] = merged.map(s => {
-        const email = s.email.toLowerCase();
-        const existing = weekMap2.get(email);
-        if (existing) return { ...existing, repName: s.repName };
-        return {
-          email, repName: s.repName, month, week: selectedWeek, weekLabel,
-          displayManual: 0, weeklySummaries: 0, trainingManual: 0, bonusSuggestions: 0,
-          updatedAt: '', updatedBy: '',
-        };
-      });
-      setWeeklyScores(mergedWeekly);
     } catch { /* ignore */ }
     setLoadingData(false);
-  }, [month, selectedWeek, weeks]);
+  }, [month, selectedWeek, weeks, isMTD]);
 
   useEffect(() => {
     if (session && weeks.length > 0) loadData();
@@ -171,20 +184,31 @@ export default function ScoreEntryPage() {
   }
 
   /**
-   * Calculate the running monthly total for a given BA by summing all weeks,
-   * using the live-edited values for the current week.
+   * Calculate the monthly manual sum for a given BA across all weeks.
+   * When a specific week is selected, uses live-edited values for that week.
+   * When MTD, sums all weeks from allWeeksMap (no live edits).
    */
   function getMonthlyManualSum(email: string, field: 'displayManual' | 'weeklySummaries' | 'trainingManual' | 'bonusSuggestions'): number {
     const emailLc = email.toLowerCase();
     let sum = 0;
-    for (const [weekNum, weekScores] of allWeeksMap) {
-      if (weekNum === selectedWeek) continue; // use live data for current week
-      const ws = weekScores.find(s => s.email.toLowerCase() === emailLc);
-      if (ws) sum += ws[field] || 0;
+
+    if (isMTD) {
+      // Sum all weeks from saved data
+      for (const [, weekScores] of allWeeksMap) {
+        const ws = weekScores.find(s => s.email.toLowerCase() === emailLc);
+        if (ws) sum += ws[field] || 0;
+      }
+    } else {
+      // Sum other weeks from saved data, use live data for selected week
+      for (const [weekNum, weekScores] of allWeeksMap) {
+        if (weekNum === selectedWeek) continue;
+        const ws = weekScores.find(s => s.email.toLowerCase() === emailLc);
+        if (ws) sum += ws[field] || 0;
+      }
+      const currentWs = weeklyScores.find(s => s.email.toLowerCase() === emailLc);
+      if (currentWs) sum += currentWs[field] || 0;
     }
-    // Add current week's live value
-    const currentWs = weeklyScores.find(s => s.email.toLowerCase() === emailLc);
-    if (currentWs) sum += currentWs[field] || 0;
+
     return round2(sum);
   }
 
@@ -246,7 +270,6 @@ export default function ScoreEntryPage() {
       if (!res.ok) throw new Error('Training auto-calc failed');
       const results: TrainingAutoItem[] = await res.json();
 
-      // Rebuild monthly scores with new auto values, let weekly aggregation handle manual
       const updated = [...monthlyScores];
       for (const r of results) {
         const idx = updated.findIndex(s => s.email.toLowerCase() === r.email.toLowerCase());
@@ -256,7 +279,6 @@ export default function ScoreEntryPage() {
       }
       setMonthlyScores(updated);
 
-      // Save monthly scores with new auto values
       const saveRes = await authFetch('/api/scores', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -362,6 +384,7 @@ export default function ScoreEntryPage() {
   }
 
   async function handleSaveWeek() {
+    if (isMTD) return;
     setSaving(true);
     try {
       const res = await authFetch('/api/scores/weekly', {
@@ -371,14 +394,12 @@ export default function ScoreEntryPage() {
       });
       if (!res.ok) throw new Error('Save failed');
 
-      // Update allWeeksMap with the saved data for correct totals display
       setAllWeeksMap(prev => {
         const next = new Map(prev);
         next.set(selectedWeek, [...weeklyScores]);
         return next;
       });
 
-      // Reload monthly scores to get the aggregated values
       const scoresRes = await authFetch(`/api/scores?month=${month}`);
       if (scoresRes.ok) {
         const updated: BAScore[] = await scoresRes.json();
@@ -409,6 +430,7 @@ export default function ScoreEntryPage() {
   }
 
   const currentWeekDef = weeks.find(w => w.week === selectedWeek);
+  const viewLabel = isMTD ? `MTD — ${monthLabel(month)}` : `${currentWeekDef?.label || `Week ${selectedWeek}`} of ${monthLabel(month)}`;
 
   return (
     <div style={{ display: 'flex' }}>
@@ -434,13 +456,14 @@ export default function ScoreEntryPage() {
             />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Week</label>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>View</label>
             <select
               className="input"
               value={selectedWeek}
               onChange={e => setSelectedWeek(Number(e.target.value))}
               style={{ width: 180 }}
             >
+              <option value={MTD}>MTD (Full Month)</option>
               {weeks.map(w => (
                 <option key={w.week} value={w.week}>{w.label}</option>
               ))}
@@ -485,13 +508,15 @@ export default function ScoreEntryPage() {
           >
             {seeding ? 'Seeding...' : 'Seed All Months from Visits'}
           </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSaveWeek}
-            disabled={saving || loadingData || weeklyScores.length === 0}
-          >
-            {saving ? 'Saving...' : 'Save Week Scores'}
-          </button>
+          {!isMTD && (
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveWeek}
+              disabled={saving || loadingData || weeklyScores.length === 0}
+            >
+              {saving ? 'Saving...' : 'Save Week Scores'}
+            </button>
+          )}
         </div>
 
         {/* Toast */}
@@ -516,10 +541,21 @@ export default function ScoreEntryPage() {
           <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
             <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e5e7eb', fontSize: '0.8rem', color: '#6b7280', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>
-                {monthlyScores.length} BAs — {currentWeekDef?.label || `Week ${selectedWeek}`} of {monthLabel(month)}
+                {monthlyScores.length} BAs — {viewLabel}
+                {isMTD && (
+                  <span style={{
+                    marginLeft: 8, background: '#dbeafe', color: '#1e40af',
+                    fontSize: '0.7rem', fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                  }}>
+                    Read-only summary
+                  </span>
+                )}
               </span>
               <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>
-                Auto-calc KPIs are monthly. Manual KPIs are entered per week and sum to monthly totals.
+                {isMTD
+                  ? 'Showing monthly totals across all weeks. Select a week to edit.'
+                  : 'Auto-calc KPIs are monthly. Manual KPIs are entered per week and sum to monthly totals.'
+                }
               </span>
             </div>
             <div style={{ overflowX: 'auto' }}>
@@ -527,39 +563,41 @@ export default function ScoreEntryPage() {
                 <thead>
                   <tr>
                     <th style={{ position: 'sticky', left: 0, background: '#f9fafb', zIndex: 2, minWidth: 160 }}>BA Name</th>
-                    {/* Monthly Sales — auto, locked */}
                     <th style={{ textAlign: 'center', minWidth: 80 }}>
                       <div>Monthly Sales</div>
                       <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>auto / max 40</div>
                     </th>
-                    {/* Check-in — auto, locked */}
                     <th style={{ textAlign: 'center', minWidth: 80 }}>
                       <div>Visits</div>
                       <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>auto / max 10</div>
                     </th>
-                    {/* Display — auto badge + weekly manual input */}
                     <th style={{ textAlign: 'center', minWidth: 130 }}>
                       <div>Display</div>
-                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>auto 5 + weekly manual 15</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>
+                        {isMTD ? 'auto 5 + manual 15 / max 20' : 'auto 5 + weekly manual 15'}
+                      </div>
                     </th>
-                    {/* Weekly Summaries — weekly manual input */}
                     <th style={{ textAlign: 'center', minWidth: 100 }}>
                       <div>Weekly Summaries</div>
-                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>weekly / max 10</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>
+                        {isMTD ? 'max 10' : 'weekly / max 10'}
+                      </div>
                     </th>
-                    {/* Training — auto badge + weekly manual input */}
                     <th style={{ textAlign: 'center', minWidth: 130 }}>
                       <div>Training</div>
-                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>auto 5 + weekly manual 15</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>
+                        {isMTD ? 'auto 5 + manual 15 / max 20' : 'auto 5 + weekly manual 15'}
+                      </div>
                     </th>
-                    {/* Bonus — weekly manual input */}
                     <th style={{ textAlign: 'center', minWidth: 100 }}>
                       <div>Bonus</div>
-                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>weekly / max 10</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>
+                        {isMTD ? 'max 10' : 'weekly / max 10'}
+                      </div>
                     </th>
                     <th style={{ textAlign: 'center', minWidth: 60 }}>
                       <div>Total</div>
-                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>monthly /100</div>
+                      <div style={{ fontSize: '0.6rem', color: '#9ca3af', fontWeight: 400 }}>/100</div>
                     </th>
                     <th style={{ textAlign: 'center', minWidth: 60 }}>
                       <div>Grand</div>
@@ -569,9 +607,26 @@ export default function ScoreEntryPage() {
                 </thead>
                 <tbody>
                   {monthlyScores.map((s, i) => {
-                    const ws = weeklyScores[i];
+                    const ws = weeklyScores[i]; // undefined in MTD mode
                     const total = calcRunningTotal(s, s.email);
                     const grand = calcRunningGrand(s, s.email);
+
+                    // Monthly manual sums for sub-labels and MTD display
+                    const displayManualSum = getMonthlyManualSum(s.email, 'displayManual');
+                    const displayManualCapped = round2(Math.min(15, displayManualSum));
+                    const displayAutoVal = s.displayAuto || 0;
+                    const displayTotal = round2(Math.min(20, displayAutoVal + displayManualCapped));
+
+                    const trainingManualSum = getMonthlyManualSum(s.email, 'trainingManual');
+                    const trainingManualCapped = round2(Math.min(15, trainingManualSum));
+                    const trainingAutoVal = s.trainingAuto || 0;
+                    const trainingTotal = round2(Math.min(20, trainingAutoVal + trainingManualCapped));
+
+                    const weeklySumSum = getMonthlyManualSum(s.email, 'weeklySummaries');
+                    const weeklySumCapped = round2(Math.min(10, weeklySumSum));
+
+                    const bonusSum = getMonthlyManualSum(s.email, 'bonusSuggestions');
+                    const bonusCapped = round2(Math.min(10, bonusSum));
 
                     return (
                       <tr key={s.email}>
@@ -621,125 +676,137 @@ export default function ScoreEntryPage() {
                           </div>
                         </td>
 
-                        {/* Display: auto badge (monthly) + manual input (this week) */}
+                        {/* Display: auto + manual */}
                         <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                            <span
-                              style={{
-                                background: '#dbeafe', color: '#1e40af', fontSize: '0.7rem',
-                                fontWeight: 600, padding: '2px 6px', borderRadius: 4,
-                                minWidth: 28, textAlign: 'center',
-                              }}
-                              title={`Auto-calculated: ${s.displayAuto || 0}/5`}
-                            >
-                              {s.displayAuto || 0}
+                          {isMTD ? (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                <span style={{ background: '#dbeafe', color: '#1e40af', fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, minWidth: 28, textAlign: 'center' }}
+                                  title={`Auto: ${displayAutoVal}/5`}>{displayAutoVal}</span>
+                                <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
+                                <span style={{ background: '#f3f4f6', color: '#374151', fontSize: '0.8rem', fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: '1px solid #e5e7eb', minWidth: 42, textAlign: 'center' }}
+                                  title={`Manual total across weeks: ${displayManualCapped}/15`}>{displayManualCapped}</span>
+                                <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>=</span>
+                                <span style={{ fontWeight: 700, fontSize: '0.85rem', color: displayTotal >= 20 ? '#059669' : '#374151' }}>{displayTotal}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                <span
+                                  style={{ background: '#dbeafe', color: '#1e40af', fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, minWidth: 28, textAlign: 'center' }}
+                                  title={`Auto-calculated: ${displayAutoVal}/5`}
+                                >{displayAutoVal}</span>
+                                <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
+                                <input
+                                  type="number" min={0} max={15} step="0.01"
+                                  value={ws?.displayManual || 0}
+                                  onChange={e => {
+                                    const v = clamp(Number(e.target.value) || 0, 15);
+                                    updateWeeklyScore(i, 'displayManual', v);
+                                  }}
+                                  style={{ width: 48, textAlign: 'center', padding: '3px 4px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem' }}
+                                />
+                              </div>
+                              <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 2 }}>
+                                MTD: <span style={{ color: '#1e40af' }}>auto {displayAutoVal}</span> + <span style={{ color: '#374151' }}>manual {displayManualCapped}</span> = <b>{displayTotal}</b>/20
+                              </div>
+                            </>
+                          )}
+                        </td>
+
+                        {/* Weekly Summaries */}
+                        <td style={{ textAlign: 'center' }}>
+                          {isMTD ? (
+                            <span style={{ background: '#f3f4f6', color: '#374151', fontSize: '0.8rem', fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: '1px solid #e5e7eb', display: 'inline-block', minWidth: 42 }}>
+                              {weeklySumCapped}
                             </span>
-                            <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={15}
-                              step="0.01"
-                              value={ws?.displayManual || 0}
-                              onChange={e => {
-                                const v = clamp(Number(e.target.value) || 0, 15);
-                                updateWeeklyScore(i, 'displayManual', v);
-                              }}
-                              style={{
-                                width: 48, textAlign: 'center', padding: '3px 4px',
-                                border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
-                              }}
-                            />
-                          </div>
-                          <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>
-                            month: {round2(Math.min(20, (s.displayAuto || 0) + Math.min(15, getMonthlyManualSum(s.email, 'displayManual'))))}/20
-                          </div>
+                          ) : (
+                            <>
+                              <input
+                                type="number" min={0} max={10} step="0.01"
+                                value={ws?.weeklySummaries || 0}
+                                onChange={e => {
+                                  const v = clamp(Number(e.target.value) || 0, 10);
+                                  updateWeeklyScore(i, 'weeklySummaries', v);
+                                }}
+                                style={{ width: 52, textAlign: 'center', padding: '3px 4px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem' }}
+                              />
+                              <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 2 }}>
+                                MTD: <b>{weeklySumCapped}</b>/10
+                              </div>
+                            </>
+                          )}
                         </td>
 
-                        {/* Weekly Summaries — editable per week */}
+                        {/* Training: auto + manual */}
                         <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="number"
-                            min={0}
-                            max={10}
-                            step="0.01"
-                            value={ws?.weeklySummaries || 0}
-                            onChange={e => {
-                              const v = clamp(Number(e.target.value) || 0, 10);
-                              updateWeeklyScore(i, 'weeklySummaries', v);
-                            }}
-                            style={{
-                              width: 52, textAlign: 'center', padding: '3px 4px',
-                              border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
-                            }}
-                          />
-                          <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>
-                            month: {round2(Math.min(10, getMonthlyManualSum(s.email, 'weeklySummaries')))}/10
-                          </div>
+                          {isMTD ? (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                <span style={{ background: '#ede9fe', color: '#7c3aed', fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, minWidth: 28, textAlign: 'center' }}
+                                  title={`Auto: ${trainingAutoVal}/5`}>{trainingAutoVal}</span>
+                                <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
+                                <span style={{ background: '#f3f4f6', color: '#374151', fontSize: '0.8rem', fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: '1px solid #e5e7eb', minWidth: 42, textAlign: 'center' }}
+                                  title={`Manual total across weeks: ${trainingManualCapped}/15`}>{trainingManualCapped}</span>
+                                <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>=</span>
+                                <span style={{ fontWeight: 700, fontSize: '0.85rem', color: trainingTotal >= 20 ? '#059669' : '#374151' }}>{trainingTotal}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                <span
+                                  style={{ background: '#ede9fe', color: '#7c3aed', fontSize: '0.7rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, minWidth: 28, textAlign: 'center' }}
+                                  title={`Auto-calculated: ${trainingAutoVal}/5`}
+                                >{trainingAutoVal}</span>
+                                <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
+                                <input
+                                  type="number" min={0} max={15} step="0.01"
+                                  value={ws?.trainingManual || 0}
+                                  onChange={e => {
+                                    const v = clamp(Number(e.target.value) || 0, 15);
+                                    updateWeeklyScore(i, 'trainingManual', v);
+                                  }}
+                                  style={{ width: 48, textAlign: 'center', padding: '3px 4px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem' }}
+                                />
+                              </div>
+                              <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 2 }}>
+                                MTD: <span style={{ color: '#7c3aed' }}>auto {trainingAutoVal}</span> + <span style={{ color: '#374151' }}>manual {trainingManualCapped}</span> = <b>{trainingTotal}</b>/20
+                              </div>
+                            </>
+                          )}
                         </td>
 
-                        {/* Training: auto badge (monthly) + manual input (this week) */}
+                        {/* Bonus */}
                         <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                            <span
-                              style={{
-                                background: '#ede9fe', color: '#7c3aed', fontSize: '0.7rem',
-                                fontWeight: 600, padding: '2px 6px', borderRadius: 4,
-                                minWidth: 28, textAlign: 'center',
-                              }}
-                              title={`Auto-calculated: ${s.trainingAuto || 0}/5`}
-                            >
-                              {s.trainingAuto || 0}
+                          {isMTD ? (
+                            <span style={{ background: '#f3f4f6', color: '#374151', fontSize: '0.8rem', fontWeight: 600, padding: '3px 8px', borderRadius: 4, border: '1px solid #e5e7eb', display: 'inline-block', minWidth: 42 }}>
+                              {bonusCapped}
                             </span>
-                            <span style={{ color: '#9ca3af', fontSize: '0.7rem' }}>+</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={15}
-                              step="0.01"
-                              value={ws?.trainingManual || 0}
-                              onChange={e => {
-                                const v = clamp(Number(e.target.value) || 0, 15);
-                                updateWeeklyScore(i, 'trainingManual', v);
-                              }}
-                              style={{
-                                width: 48, textAlign: 'center', padding: '3px 4px',
-                                border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
-                              }}
-                            />
-                          </div>
-                          <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>
-                            month: {round2(Math.min(20, (s.trainingAuto || 0) + Math.min(15, getMonthlyManualSum(s.email, 'trainingManual'))))}/20
-                          </div>
+                          ) : (
+                            <>
+                              <input
+                                type="number" min={0} max={10} step="0.01"
+                                value={ws?.bonusSuggestions || 0}
+                                onChange={e => {
+                                  const v = clamp(Number(e.target.value) || 0, 10);
+                                  updateWeeklyScore(i, 'bonusSuggestions', v);
+                                }}
+                                style={{ width: 52, textAlign: 'center', padding: '3px 4px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem' }}
+                              />
+                              <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 2 }}>
+                                MTD: <b>{bonusCapped}</b>/10
+                              </div>
+                            </>
+                          )}
                         </td>
 
-                        {/* Bonus — editable per week */}
-                        <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="number"
-                            min={0}
-                            max={10}
-                            step="0.01"
-                            value={ws?.bonusSuggestions || 0}
-                            onChange={e => {
-                              const v = clamp(Number(e.target.value) || 0, 10);
-                              updateWeeklyScore(i, 'bonusSuggestions', v);
-                            }}
-                            style={{
-                              width: 52, textAlign: 'center', padding: '3px 4px',
-                              border: '1px solid #d1d5db', borderRadius: 4, fontSize: '0.8rem',
-                            }}
-                          />
-                          <div style={{ fontSize: '0.6rem', color: '#9ca3af', marginTop: 1 }}>
-                            month: {round2(Math.min(10, getMonthlyManualSum(s.email, 'bonusSuggestions')))}/10
-                          </div>
-                        </td>
-
-                        {/* Total (monthly running) */}
+                        {/* Total */}
                         <td style={{ textAlign: 'center', fontWeight: 600, color: total >= 80 ? '#059669' : total >= 60 ? '#d97706' : '#dc2626' }}>
                           {total}
                         </td>
-                        {/* Grand (monthly running) */}
+                        {/* Grand */}
                         <td style={{ textAlign: 'center', fontWeight: 700, color: '#0054A6' }}>
                           {grand}
                         </td>
