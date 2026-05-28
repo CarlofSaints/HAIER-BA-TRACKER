@@ -11,6 +11,7 @@ interface StoreMaster {
   storeName: string;
   channelId: string;
   channelName?: string;
+  area?: string;
 }
 
 interface Channel {
@@ -47,12 +48,12 @@ export default function StoresPage() {
     const q = search.toLowerCase();
     return stores.filter(s =>
       s.storeName.toLowerCase().includes(q) ||
-      s.siteCode.toLowerCase().includes(q)
+      s.siteCode.toLowerCase().includes(q) ||
+      (s.area || '').toLowerCase().includes(q)
     );
   }, [stores, search]);
 
   function handleChannelChange(idx: number, channelId: string) {
-    // Find the store in the full stores array using the filtered index
     const store = filtered[idx];
     const realIdx = stores.findIndex(s => s.siteCode === store.siteCode && s.storeName === store.storeName);
     if (realIdx === -1) return;
@@ -62,10 +63,20 @@ export default function StoresPage() {
     setDirty(true);
   }
 
+  function handleAreaChange(idx: number, area: string) {
+    const store = filtered[idx];
+    const realIdx = stores.findIndex(s => s.siteCode === store.siteCode && s.storeName === store.storeName);
+    if (realIdx === -1) return;
+    const updated = [...stores];
+    updated[realIdx] = { ...updated[realIdx], area };
+    setStores(updated);
+    setDirty(true);
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
-      const payload = stores.map(({ siteCode, storeName, channelId }) => ({ siteCode, storeName, channelId }));
+      const payload = stores.map(({ siteCode, storeName, channelId, area }) => ({ siteCode, storeName, channelId, area: area || '' }));
       const res = await authFetch('/api/stores', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -138,13 +149,14 @@ export default function StoresPage() {
                 <tr>
                   <th style={{ width: 100 }}>Site Code</th>
                   <th>Store Name</th>
+                  <th style={{ width: 150 }}>Area</th>
                   <th style={{ width: 180 }}>Channel</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={3} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                    <td colSpan={4} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                       {stores.length === 0 ? 'No stores yet — upload a DISPO file to populate' : 'No matches'}
                     </td>
                   </tr>
@@ -153,6 +165,15 @@ export default function StoresPage() {
                     <tr key={`${store.siteCode}-${store.storeName}`} style={!store.channelId ? { background: '#fffbeb' } : undefined}>
                       <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{store.siteCode || '—'}</td>
                       <td>{store.storeName}</td>
+                      <td>
+                        <input
+                          className="input"
+                          value={store.area || ''}
+                          onChange={e => handleAreaChange(i, e.target.value)}
+                          placeholder="—"
+                          style={{ width: '100%', fontSize: '0.8rem' }}
+                        />
+                      </td>
                       <td>
                         <select
                           className="select"

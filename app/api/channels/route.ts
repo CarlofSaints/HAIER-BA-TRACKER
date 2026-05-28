@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   const user = await requireRole(req, ['super_admin']);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { name } = await req.json();
+  const { name, parentId } = await req.json();
   if (!name || typeof name !== 'string' || !name.trim()) {
     return NextResponse.json({ error: 'Name is required' }, { status: 400 });
   }
@@ -28,9 +28,52 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Channel already exists' }, { status: 409 });
   }
 
-  channels.push({ id, name: name.trim().toUpperCase() });
+  if (parentId && !channels.some(c => c.id === parentId && !c.parentId)) {
+    return NextResponse.json({ error: 'Parent channel not found' }, { status: 400 });
+  }
+
+  const entry: { id: string; name: string; parentId?: string } = { id, name: name.trim().toUpperCase() };
+  if (parentId) entry.parentId = parentId;
+  channels.push(entry);
   await saveChannels(channels);
 
+  return NextResponse.json({ ok: true, channels }, { headers: noCacheHeaders() });
+}
+
+export async function PATCH(req: NextRequest) {
+  const user = await requireRole(req, ['super_admin']);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { id, name, parentId } = await req.json();
+  if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+
+  const channels = await loadChannels();
+  const idx = channels.findIndex(c => c.id === id);
+  if (idx === -1) return NextResponse.json({ error: 'Channel not found' }, { status: 404 });
+
+  // Prevent setting parentId to self or to a sub-channel
+  if (parentId === id) {
+    return NextResponse.json({ error: 'Channel cannot be its own parent' }, { status: 400 });
+  }
+  if (parentId && !channels.some(c => c.id === parentId && !c.parentId)) {
+    return NextResponse.json({ error: 'Parent must be a main channel' }, { status: 400 });
+  }
+
+  // If converting a main channel to sub-channel, orphan its children first
+  if (parentId && !channels[idx].parentId) {
+    for (const ch of channels) {
+      if (ch.parentId === id) delete ch.parentId;
+    }
+  }
+
+  if (name) channels[idx].name = name.trim().toUpperCase();
+  if (parentId) {
+    channels[idx].parentId = parentId;
+  } else if (parentId === null || parentId === '') {
+    delete channels[idx].parentId;
+  }
+
+  await saveChannels(channels);
   return NextResponse.json({ ok: true, channels }, { headers: noCacheHeaders() });
 }
 
@@ -42,11 +85,13 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'id param required' }, { status: 400 });
 
   const channels = await loadChannels();
-  const filtered = channels.filter(c => c.id !== id);
-
-  if (filtered.length === channels.length) {
+  const target = channels.find(c => c.id === id);
+  if (!target) {
     return NextResponse.json({ error: 'Channel not found' }, { status: 404 });
   }
+
+  // If deleting a main channel, also remove its sub-channels
+  const filtered = channels.filter(c => c.id !== id && c.parentId !== id);
 
   await saveChannels(filtered);
   return NextResponse.json({ ok: true, channels: filtered }, { headers: noCacheHeaders() });

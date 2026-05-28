@@ -26,6 +26,7 @@ const KPI_ITEMS: NavItem[] = [
 
 const AFTER_KPI_ITEMS: NavItem[] = [
   { label: 'Score Entry', href: '/scores', icon: '✏️', roles: ['super_admin', 'admin'] },
+  { label: 'Reports', href: '/reports', icon: '📄', roles: ['super_admin', 'admin'] },
   { label: 'Scoring Guide', href: '/guide', icon: '📖', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Site Guide', href: '/site-guide', icon: '📚', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Activity Log', href: '/activity-log', icon: '📝', roles: ['super_admin', 'admin'] },
@@ -41,6 +42,7 @@ const CONTROL_ITEMS: NavItem[] = [
   { label: 'BA Management', href: '/bas', icon: '🧑‍💼', roles: ['super_admin', 'admin'] },
   { label: 'Users', href: '/users', icon: '👥', roles: ['super_admin', 'admin'] },
   { label: 'KPI Controls', href: '/kpi-controls', icon: '🎯', roles: ['super_admin', 'admin'] },
+  { label: 'Week Mapping', href: '/week-mapping', icon: '📅', roles: ['super_admin', 'admin'] },
   { label: 'Roles', href: '/roles', icon: '🔑', roles: ['super_admin'] },
   { label: 'Settings', href: '/settings', icon: '⚙️', roles: ['super_admin'] },
 ];

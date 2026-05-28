@@ -4,6 +4,7 @@ export interface StoreMaster {
   siteCode: string;
   storeName: string;
   channelId: string;
+  area?: string;
 }
 
 const BLOB_KEY = 'admin/stores.json';

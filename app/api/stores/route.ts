@@ -11,11 +11,17 @@ export async function GET(req: NextRequest) {
 
   const [stores, channels] = await Promise.all([loadStores(), loadChannels()]);
 
-  const channelMap = Object.fromEntries(channels.map(c => [c.id, c.name]));
-  const enriched = stores.map(s => ({
-    ...s,
-    channelName: channelMap[s.channelId] || '',
-  }));
+  const channelMap = Object.fromEntries(channels.map(c => [c.id, c]));
+  const enriched = stores.map(s => {
+    const ch = channelMap[s.channelId];
+    const parent = ch?.parentId ? channelMap[ch.parentId] : undefined;
+    return {
+      ...s,
+      channelName: ch?.name || '',
+      mainChannelId: parent?.id || ch?.id || '',
+      mainChannelName: parent?.name || ch?.name || '',
+    };
+  });
 
   return NextResponse.json(enriched, { headers: noCacheHeaders() });
 }
