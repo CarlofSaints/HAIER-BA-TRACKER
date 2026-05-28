@@ -31,25 +31,61 @@ function dispoMonthKey(mm: string, year: number): string {
   return `${mm}-${year}`;
 }
 
-/** Build a map: storeName (lowercase) → most recent BA name */
-async function buildBaMap(visits: Visit[]): Promise<Record<string, string>> {
-  // Sort by date desc so we keep the most recent
+/**
+ * Build BA map keyed by MULTIPLE keys per store so we can match across
+ * Perigee visit names and DISPO/Massmart names.
+ * Keys: visit storeName, visit storeCode, AND store master storeName (all lowercase).
+ */
+function buildBaMap(visits: Visit[], stores: StoreMaster[]): Record<string, string> {
+  // Also build storeCode → storeName bridge from store master
+  const codeToName: Record<string, string> = {};
+  for (const s of stores) {
+    if (s.siteCode) codeToName[s.siteCode.toLowerCase().trim()] = s.storeName.toLowerCase().trim();
+  }
+
+  // Sort by date desc so we keep the most recent BA per store
   const sorted = [...visits].sort((a, b) => (b.checkInDate || '').localeCompare(a.checkInDate || ''));
   const map: Record<string, string> = {};
+
   for (const v of sorted) {
-    const key = (v.storeName || '').toLowerCase().trim();
-    if (key && !map[key] && v.repName) {
-      map[key] = v.repName;
+    if (!v.repName) continue;
+
+    // Key by visit storeName
+    const nameKey = (v.storeName || '').toLowerCase().trim();
+    if (nameKey && !map[nameKey]) map[nameKey] = v.repName;
+
+    // Key by visit storeCode
+    const codeKey = (v.storeCode || '').toLowerCase().trim();
+    if (codeKey && !map[codeKey]) map[codeKey] = v.repName;
+
+    // Key by store master storeName that matches this storeCode
+    // (bridges Perigee code → DISPO store name)
+    if (codeKey && codeToName[codeKey] && !map[codeToName[codeKey]]) {
+      map[codeToName[codeKey]] = v.repName;
     }
   }
   return map;
 }
 
-/** Build a set of stores that have had display checks */
-async function buildDisplaySet(records: DisplayRecord[]): Promise<Set<string>> {
+/**
+ * Build display set keyed by multiple keys (same bridging logic as BA map).
+ */
+function buildDisplaySet(records: DisplayRecord[], stores: StoreMaster[]): Set<string> {
+  const codeToName: Record<string, string> = {};
+  for (const s of stores) {
+    if (s.siteCode) codeToName[s.siteCode.toLowerCase().trim()] = s.storeName.toLowerCase().trim();
+  }
+
   const set = new Set<string>();
   for (const r of records) {
-    set.add((r.store || '').toLowerCase().trim());
+    const nameKey = (r.store || '').toLowerCase().trim();
+    if (nameKey) set.add(nameKey);
+
+    const codeKey = (r.storeCode || '').toLowerCase().trim();
+    if (codeKey) set.add(codeKey);
+
+    // Bridge: Perigee storeCode → DISPO storeName
+    if (codeKey && codeToName[codeKey]) set.add(codeToName[codeKey]);
   }
   return set;
 }
@@ -232,8 +268,16 @@ export async function GET(req: NextRequest) {
   // Build lookups
   const channelLookup = buildChannelLookup(channels);
   const storeLookup = buildStoreLookup(stores, channelLookup);
-  const baMap = await buildBaMap(allVisits);
-  const displaySet = await buildDisplaySet(allDisplay);
+  const baMap = buildBaMap(allVisits, stores);
+  const displaySet = buildDisplaySet(allDisplay, stores);
+
+  // storeName (lowercase) → siteCode (lowercase) for fallback BA/display lookups
+  const nameToCode: Record<string, string> = {};
+  for (const s of stores) {
+    if (s.siteCode && s.storeName) {
+      nameToCode[s.storeName.toLowerCase().trim()] = s.siteCode.toLowerCase().trim();
+    }
+  }
 
   // Week mapping + weekly deltas from raw DISPO uploads
   const yearConfig = weekConfig.years.find(y => y.year === year);
@@ -362,9 +406,11 @@ export async function GET(req: NextRequest) {
   let rowNum = 1;
   for (const { storeName, articleDesc } of storeProductPairs) {
     const storeKey = storeName.toLowerCase().trim();
+    const codeKey = nameToCode[storeKey] || '';
     const storeInfo = storeLookup[storeKey] || { area: '', mainChannel: '', subChannel: '' };
-    const ba = baMap[storeKey] || '';
-    const hasDisplay = displaySet.has(storeKey) ? 'Y' : '';
+    // Try BA by DISPO store name, then by site code
+    const ba = baMap[storeKey] || (codeKey && baMap[codeKey]) || '';
+    const hasDisplay = (displaySet.has(storeKey) || (codeKey && displaySet.has(codeKey))) ? 'Y' : '';
 
     // Monthly sales (units) for this store/product
     const monthlyUnits: number[] = MONTH_KEYS.map(m => {
