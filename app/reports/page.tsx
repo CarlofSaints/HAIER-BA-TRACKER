@@ -73,7 +73,7 @@ export default function ReportsPage() {
                 SOH, and weekly breakdown columns.
               </div>
               <div style={{ marginTop: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                {['Channels', 'Stores', 'BAs', 'Sales', 'Display', 'SOH', 'Weekly'].map(tag => (
+                {['Channels', 'Stores', 'BAs', 'Sales', 'Display', 'SOH', 'Weekly', 'Industry'].map(tag => (
                   <span key={tag} style={{
                     fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: 4,
                     background: '#f0f9ff', color: '#0369a1', fontWeight: 500,
@@ -81,7 +81,7 @@ export default function ReportsPage() {
                     {tag}
                   </span>
                 ))}
-                {['Industry', 'End Position', 'Flooring', 'POSM'].map(tag => (
+                {['End Position', 'Flooring', 'POSM'].map(tag => (
                   <span key={tag} style={{
                     fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: 4,
                     background: '#fef3c7', color: '#92400e', fontWeight: 500,

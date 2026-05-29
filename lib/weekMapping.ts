@@ -49,14 +49,18 @@ export function getWeeksForYear(yearConfig: WeekMappingYear): { weekNum: number;
 
 /**
  * Get the week number for a given date based on the year's week mapping.
- * Returns undefined if the date is before Week 1 or no mapping exists.
+ * Returns undefined if the date is before Week 1 or beyond the year's weeks.
  */
 export function getWeekNumber(date: Date, yearConfig: WeekMappingYear): number | undefined {
   const w1 = new Date(yearConfig.week1Start + 'T00:00:00');
   if (date < w1) return undefined;
   const diffMs = date.getTime() - w1.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  return Math.floor(diffDays / 7) + 1;
+  const weekNum = Math.floor(diffDays / 7) + 1;
+  // Cap at the total weeks in this year (52 or 53)
+  const totalWeeks = getWeeksForYear(yearConfig).length;
+  if (weekNum > totalWeeks) return undefined;
+  return weekNum;
 }
 
 /**
