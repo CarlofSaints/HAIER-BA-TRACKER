@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth';
 import { loadChannels, Channel } from '@/lib/channelData';
 import { loadStores, StoreMaster } from '@/lib/storeData';
+import { loadProducts, ProductMaster } from '@/lib/productData';
 import { loadDispoData, calcSalesValue, DispoSalesData, DispoUploadMeta } from '@/lib/dispoData';
 import { loadVisitIndex, loadVisitData, Visit } from '@/lib/visitData';
 import { loadDisplayIndex, loadDisplayData, DisplayRecord } from '@/lib/displayData';
@@ -242,9 +243,10 @@ export async function GET(req: NextRequest) {
   const year = new Date().getFullYear();
 
   // Load all data in parallel
-  const [channels, stores, dispo, visitIndex, displayIndex, weekConfig] = await Promise.all([
+  const [channels, stores, products, dispo, visitIndex, displayIndex, weekConfig] = await Promise.all([
     loadChannels(),
     loadStores(),
+    loadProducts(),
     loadDispoData(),
     loadVisitIndex(),
     loadDisplayIndex(),
@@ -270,6 +272,12 @@ export async function GET(req: NextRequest) {
   const storeLookup = buildStoreLookup(stores, channelLookup);
   const baMap = buildBaMap(allVisits, stores);
   const displaySet = buildDisplaySet(allDisplay, stores);
+
+  // articleDesc (lowercase) → ProductMaster for industry lookup
+  const productLookup = new Map<string, ProductMaster>();
+  for (const p of products) {
+    productLookup.set(p.articleDesc.toLowerCase().trim(), p);
+  }
 
   // storeName (lowercase) → siteCode (lowercase) for fallback BA/display lookups
   const nameToCode: Record<string, string> = {};
@@ -449,7 +457,7 @@ export async function GET(req: NextRequest) {
       storeInfo.area,
       storeName,
       ba,
-      '', // industry — blank
+      productLookup.get(articleDesc.toLowerCase().trim())?.industry || '',
       articleDesc,
       hasDisplay,
       '', // end position — blank
