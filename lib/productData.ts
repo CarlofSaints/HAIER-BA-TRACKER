@@ -2,6 +2,7 @@ import { readJson, writeJson } from './blob';
 
 export interface ProductMaster {
   articleDesc: string;
+  productCode: string;
   category: string;
   industry: string;
   status: string;

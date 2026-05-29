@@ -24,15 +24,20 @@ export async function saveWeekMapping(config: WeekMappingConfig): Promise<void> 
 
 /**
  * Given a year config, return all 52/53 weeks with their start and end dates.
+ * Weeks are generated from the start date for a full year (52 weeks minimum,
+ * 53rd added if it starts within 365 days of Week 1).
  */
 export function getWeeksForYear(yearConfig: WeekMappingYear): { weekNum: number; start: Date; end: Date }[] {
   const weeks: { weekNum: number; start: Date; end: Date }[] = [];
   const w1 = new Date(yearConfig.week1Start + 'T00:00:00');
-  const yearEnd = new Date(yearConfig.year, 11, 31);
+
+  // Generate weeks for a full year from the start date
+  const oneYearLater = new Date(w1);
+  oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
 
   let current = new Date(w1);
   let weekNum = 1;
-  while (current <= yearEnd) {
+  while (current < oneYearLater) {
     const end = new Date(current);
     end.setDate(end.getDate() + 6);
     weeks.push({ weekNum, start: new Date(current), end });

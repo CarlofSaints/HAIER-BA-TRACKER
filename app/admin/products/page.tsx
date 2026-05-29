@@ -8,6 +8,7 @@ import Footer from '@/components/Footer';
 
 interface ProductMaster {
   articleDesc: string;
+  productCode: string;
   category: string;
   industry: string;
   status: string;
@@ -38,12 +39,13 @@ export default function ProductsPage() {
     const q = search.toLowerCase();
     return products.filter(p =>
       p.articleDesc.toLowerCase().includes(q) ||
+      (p.productCode || '').toLowerCase().includes(q) ||
       p.category.toLowerCase().includes(q) ||
       p.industry.toLowerCase().includes(q)
     );
   }, [products, search]);
 
-  function handleFieldChange(filteredIdx: number, field: 'category' | 'industry' | 'status', value: string) {
+  function handleFieldChange(filteredIdx: number, field: 'productCode' | 'category' | 'industry' | 'status', value: string) {
     const product = filtered[filteredIdx];
     const realIdx = products.findIndex(p => p.articleDesc === product.articleDesc);
     if (realIdx === -1) return;
@@ -152,6 +154,7 @@ export default function ProductsPage() {
               <thead>
                 <tr>
                   <th>Article Description</th>
+                  <th style={{ width: 130 }}>Product Code</th>
                   <th style={{ width: 160 }}>Category</th>
                   <th style={{ width: 160 }}>Industry</th>
                   <th style={{ width: 140 }}>Status</th>
@@ -160,7 +163,7 @@ export default function ProductsPage() {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                    <td colSpan={5} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                       {products.length === 0 ? 'No products yet — sync from DISPO to populate' : 'No matches'}
                     </td>
                   </tr>
@@ -168,6 +171,15 @@ export default function ProductsPage() {
                   filtered.map((product, i) => (
                     <tr key={product.articleDesc}>
                       <td style={{ fontSize: '0.8rem' }}>{product.articleDesc}</td>
+                      <td>
+                        <input
+                          className="input"
+                          value={product.productCode || ''}
+                          onChange={e => handleFieldChange(i, 'productCode', e.target.value)}
+                          placeholder="—"
+                          style={{ width: '100%', fontSize: '0.8rem' }}
+                        />
+                      </td>
                       <td>
                         <input
                           className="input"

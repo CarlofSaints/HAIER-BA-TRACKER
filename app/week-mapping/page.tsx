@@ -15,15 +15,18 @@ interface WeekMappingConfig {
   years: WeekMappingYear[];
 }
 
-function getWeeksPreview(week1Start: string, year: number): { weekNum: number; start: string; end: string }[] {
+function getWeeksPreview(week1Start: string): { weekNum: number; start: string; end: string }[] {
   const weeks: { weekNum: number; start: string; end: string }[] = [];
   const w1 = new Date(week1Start + 'T00:00:00');
   if (isNaN(w1.getTime())) return [];
-  const yearEnd = new Date(year, 11, 31);
+
+  // Generate weeks for a full year from the start date
+  const oneYearLater = new Date(w1);
+  oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
 
   const current = new Date(w1);
   let weekNum = 1;
-  while (current <= yearEnd) {
+  while (current < oneYearLater) {
     const end = new Date(current);
     end.setDate(end.getDate() + 6);
     weeks.push({
@@ -53,6 +56,14 @@ function daysInMonth(year: number, month: number): number {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+/** Month options: 0 = December of previous year, 1-12 = Jan-Dec of selected year */
+function getMonthOptions(year: number): { value: number; label: string }[] {
+  return [
+    { value: 0, label: `December ${year - 1}` },
+    ...MONTHS.map((name, i) => ({ value: i + 1, label: name })),
+  ];
+}
+
 export default function WeekMappingPage() {
   const { session, loading: authLoading, logout } = useAuth(['super_admin', 'admin']);
   const [config, setConfig] = useState<WeekMappingConfig>({ years: [] });
@@ -72,7 +83,13 @@ export default function WeekMappingPage() {
         const existing = data.years?.find((y: WeekMappingYear) => y.year === selectedYear);
         if (existing) {
           const d = new Date(existing.week1Start + 'T00:00:00');
-          setMonth(d.getMonth() + 1);
+          const m = d.getMonth() + 1;
+          const yr = d.getFullYear();
+          if (m === 12 && yr === selectedYear - 1) {
+            setMonth(0);
+          } else {
+            setMonth(m);
+          }
           setDay(d.getDate());
         }
       }
@@ -88,7 +105,14 @@ export default function WeekMappingPage() {
     const existing = config.years.find(y => y.year === selectedYear);
     if (existing) {
       const d = new Date(existing.week1Start + 'T00:00:00');
-      setMonth(d.getMonth() + 1);
+      const m = d.getMonth() + 1; // 1-12
+      const yr = d.getFullYear();
+      // If the start date is in December of the previous year, set month=0
+      if (m === 12 && yr === selectedYear - 1) {
+        setMonth(0);
+      } else {
+        setMonth(m);
+      }
       setDay(d.getDate());
     } else {
       setMonth(1);
@@ -96,13 +120,16 @@ export default function WeekMappingPage() {
     }
   }, [selectedYear, config.years]);
 
-  const maxDay = daysInMonth(selectedYear, month);
+  // month=0 means December of the previous year
+  const dateYear = month === 0 ? selectedYear - 1 : selectedYear;
+  const dateMonth = month === 0 ? 12 : month;
+  const maxDay = daysInMonth(dateYear, dateMonth);
   const effectiveDay = Math.min(day, maxDay);
 
-  const week1Start = toIsoDate(selectedYear, month, effectiveDay);
+  const week1Start = toIsoDate(dateYear, dateMonth, effectiveDay);
   const dayOfWeek = new Date(week1Start + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
 
-  const weeks = useMemo(() => getWeeksPreview(week1Start, selectedYear), [week1Start, selectedYear]);
+  const weeks = useMemo(() => getWeeksPreview(week1Start), [week1Start]);
 
   const existingConfig = config.years.find(y => y.year === selectedYear);
   const hasChanges = !existingConfig || existingConfig.week1Start !== week1Start;
@@ -177,10 +204,10 @@ export default function WeekMappingPage() {
                 className="input"
                 value={month}
                 onChange={e => setMonth(Number(e.target.value))}
-                style={{ width: 140 }}
+                style={{ width: 170 }}
               >
-                {MONTHS.map((name, i) => (
-                  <option key={i} value={i + 1}>{name}</option>
+                {getMonthOptions(selectedYear).map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
@@ -235,7 +262,7 @@ export default function WeekMappingPage() {
             {config.years.map(y => {
               const d = new Date(y.week1Start + 'T00:00:00');
               const dow = d.toLocaleDateString('en-US', { weekday: 'short' });
-              const wks = getWeeksPreview(y.week1Start, y.year);
+              const wks = getWeeksPreview(y.week1Start);
               return (
                 <div key={y.year} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0', borderBottom: '1px solid #f3f4f6' }}>
                   <div>
