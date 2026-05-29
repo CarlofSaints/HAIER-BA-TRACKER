@@ -288,7 +288,21 @@ export async function GET(req: NextRequest) {
   }
 
   // Week mapping + weekly deltas from raw DISPO uploads
-  const yearConfig = weekConfig.years.find(y => y.year === year);
+  // Use configured year mapping, fall back to Jan 1 if missing or misconfigured
+  let yearConfig = weekConfig.years.find(y => y.year === year);
+
+  // If week1Start is in the future (e.g. old buggy save of 2026-12-29 instead of 2025-12-29),
+  // the config is unusable — fall back to Jan 1
+  if (yearConfig) {
+    const w1 = new Date(yearConfig.week1Start + 'T00:00:00');
+    if (w1 > new Date()) {
+      yearConfig = { year, week1Start: `${year}-01-01` };
+    }
+  } else {
+    // No week mapping configured for this year — use Jan 1 as default
+    yearConfig = { year, week1Start: `${year}-01-01` };
+  }
+
   const { weekNums, data: weeklyLookup } = await buildWeeklyData(dispo, yearConfig, year);
 
   // Collect all unique (storeName, articleDesc) pairs from DISPO
