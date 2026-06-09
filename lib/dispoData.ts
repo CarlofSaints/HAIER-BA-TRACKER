@@ -45,12 +45,13 @@ export async function saveDispoData(data: DispoSalesData): Promise<void> {
 /**
  * Calculate sales value for given units using price logic:
  * If promSP > 0, use promSP; otherwise use inclSP.
+ * Price is divided by 1.15 to strip 15% SA VAT (returns nett of VAT).
  */
 export function calcSalesValue(
   units: number,
   prices: { inclSP: number; promSP: number } | undefined
 ): number {
   if (!prices) return 0;
-  const price = prices.promSP > 0 ? prices.promSP : prices.inclSP;
+  const price = (prices.promSP > 0 ? prices.promSP : prices.inclSP) / 1.15;
   return units * price;
 }

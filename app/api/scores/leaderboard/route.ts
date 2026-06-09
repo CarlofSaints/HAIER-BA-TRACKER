@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
               vol += units;
               const p = dispoData.prices[article];
               if (p) {
-                const price = p.promSP > 0 ? p.promSP : p.inclSP;
+                const price = (p.promSP > 0 ? p.promSP : p.inclSP) / 1.15;
                 val += units * price;
               }
             }
