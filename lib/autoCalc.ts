@@ -80,6 +80,20 @@ export async function calcSalesScores(month: string): Promise<SalesResult[]> {
     if (s.siteCode) siteCodeToName[s.siteCode.trim().toUpperCase()] = s.storeName;
   }
 
+  // Explicit store→BA assignments (siteCode upper → assigned BA). When a store is
+  // assigned, its sales credit the assigned BA and are NOT credited to whoever
+  // happened to visit it (e.g. a departed BA still on record in Perigee).
+  const assignedByCode = new Map<string, { email: string; repName: string; storeName: string }>();
+  for (const s of stores) {
+    if (s.assignedBaEmail && s.siteCode) {
+      assignedByCode.set(s.siteCode.trim().toUpperCase(), {
+        email: s.assignedBaEmail.toLowerCase(),
+        repName: s.assignedBaName || s.assignedBaEmail,
+        storeName: s.storeName,
+      });
+    }
+  }
+
   const baStores = new Map<string, { repName: string; stores: Map<string, string> }>();
   for (const upload of visitIndex) {
     const visits = await loadVisitData(upload.id);
@@ -91,10 +105,20 @@ export async function calcSalesScores(month: string): Promise<SalesResult[]> {
       if (v.storeCode) {
         const code = v.storeCode.trim().toUpperCase();
         const storeName = siteCodeToName[code];
-        if (storeName) entry.stores.set(code, storeName);
+        // Skip stores that are explicitly assigned to another BA — they're
+        // attributed below to the assigned BA, not the visiting one.
+        if (storeName && !assignedByCode.has(code)) entry.stores.set(code, storeName);
       }
       if (v.repName) entry.repName = v.repName;
     }
+  }
+
+  // Attribute each assigned store's sales to its assigned BA.
+  for (const [code, a] of assignedByCode) {
+    if (!baStores.has(a.email)) baStores.set(a.email, { repName: a.repName, stores: new Map() });
+    const entry = baStores.get(a.email)!;
+    entry.repName = a.repName;
+    entry.stores.set(code, a.storeName);
   }
 
   const rawMonthSales = dispoData.sales[dispoMonth] || {};

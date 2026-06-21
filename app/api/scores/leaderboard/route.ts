@@ -120,6 +120,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Explicit store→BA assignments override the visit-derived store, so a
+    // reassigned store's sales follow the assigned BA (storeName is the DISPO name).
+    for (const s of storeMaster) {
+      if (s.assignedBaEmail && s.storeName) {
+        baDispoStore.set(s.assignedBaEmail.toLowerCase(), s.storeName);
+      }
+    }
+
     const baMap = new Map<string, LeaderboardEntry>();
 
     for (const month of months) {

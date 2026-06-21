@@ -65,6 +65,17 @@ function buildBaMap(visits: Visit[], stores: StoreMaster[]): Record<string, stri
       map[codeToName[codeKey]] = v.repName;
     }
   }
+
+  // Explicit store→BA assignments OVERRIDE the visit-derived BA. Set under every
+  // key the row builder might look up (store name + site code) so the assigned
+  // BA wins regardless of which key matches.
+  for (const s of stores) {
+    if (!s.assignedBaName) continue;
+    const nameKey = (s.storeName || '').toLowerCase().trim();
+    const codeKey = (s.siteCode || '').toLowerCase().trim();
+    if (nameKey) map[nameKey] = s.assignedBaName;
+    if (codeKey) map[codeKey] = s.assignedBaName;
+  }
   return map;
 }
 

@@ -12,6 +12,8 @@ interface StoreMaster {
   channelId: string;
   channelName?: string;
   area?: string;
+  assignedBaEmail?: string;
+  assignedBaName?: string;
 }
 
 interface Channel {
@@ -19,10 +21,17 @@ interface Channel {
   name: string;
 }
 
+interface BAOption {
+  email: string;
+  repName: string;
+  lastSeen: string;
+}
+
 export default function StoresPage() {
   const { session, loading: authLoading, logout } = useAuth(['super_admin', 'admin']);
   const [stores, setStores] = useState<StoreMaster[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [bas, setBas] = useState<BAOption[]>([]);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -30,12 +39,14 @@ export default function StoresPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [storesRes, channelsRes] = await Promise.all([
+      const [storesRes, channelsRes, basRes] = await Promise.all([
         authFetch('/api/stores'),
         authFetch('/api/channels'),
+        authFetch('/api/bas'),
       ]);
       if (storesRes.ok) setStores(await storesRes.json());
       if (channelsRes.ok) setChannels(await channelsRes.json());
+      if (basRes.ok) setBas(await basRes.json());
     } catch { /* ignore */ }
   }, []);
 
@@ -73,10 +84,28 @@ export default function StoresPage() {
     setDirty(true);
   }
 
+  function handleBaChange(idx: number, email: string) {
+    const store = filtered[idx];
+    const realIdx = stores.findIndex(s => s.siteCode === store.siteCode && s.storeName === store.storeName);
+    if (realIdx === -1) return;
+    const ba = bas.find(b => b.email === email);
+    const updated = [...stores];
+    updated[realIdx] = {
+      ...updated[realIdx],
+      assignedBaEmail: email || '',
+      assignedBaName: ba?.repName || '',
+    };
+    setStores(updated);
+    setDirty(true);
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
-      const payload = stores.map(({ siteCode, storeName, channelId, area }) => ({ siteCode, storeName, channelId, area: area || '' }));
+      const payload = stores.map(({ siteCode, storeName, channelId, area, assignedBaEmail, assignedBaName }) => ({
+        siteCode, storeName, channelId, area: area || '',
+        assignedBaEmail: assignedBaEmail || '', assignedBaName: assignedBaName || '',
+      }));
       const res = await authFetch('/api/stores', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -151,12 +180,13 @@ export default function StoresPage() {
                   <th>Store Name</th>
                   <th style={{ width: 150 }}>Area</th>
                   <th style={{ width: 180 }}>Channel</th>
+                  <th style={{ width: 200 }}>Assigned BA</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                    <td colSpan={5} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                       {stores.length === 0 ? 'No stores yet — upload a DISPO file to populate' : 'No matches'}
                     </td>
                   </tr>
@@ -184,6 +214,23 @@ export default function StoresPage() {
                           <option value="">— Select —</option>
                           {channels.map(ch => (
                             <option key={ch.id} value={ch.id}>{ch.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          className="select"
+                          value={store.assignedBaEmail || ''}
+                          onChange={e => handleBaChange(i, e.target.value)}
+                          style={{ width: '100%', fontSize: '0.8rem' }}
+                          title="Override which BA gets credited for this store's sales. Leave on Auto to derive from Perigee visits."
+                        >
+                          <option value="">— Auto (from visits) —</option>
+                          {store.assignedBaEmail && !bas.some(b => b.email === store.assignedBaEmail) && (
+                            <option value={store.assignedBaEmail}>{store.assignedBaName || store.assignedBaEmail}</option>
+                          )}
+                          {bas.map(b => (
+                            <option key={b.email} value={b.email}>{b.repName}</option>
                           ))}
                         </select>
                       </td>

@@ -5,6 +5,12 @@ export interface StoreMaster {
   storeName: string;
   channelId: string;
   area?: string;
+  // Explicit BA assignment. When set, this overrides the Perigee-visit-derived
+  // BA for this store everywhere (BA Work report + sales attribution). Used when
+  // a store changes hands (e.g. a BA leaves and is replaced). Empty/undefined
+  // = auto-derive the BA from visit data as before.
+  assignedBaEmail?: string;
+  assignedBaName?: string;
 }
 
 const BLOB_KEY = 'admin/stores.json';
