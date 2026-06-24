@@ -171,10 +171,10 @@ export default function KPIControlsPage() {
                 <input
                   className="input"
                   type="number"
-                  min={50}
+                  min={0}
                   max={100}
                   value={salesThreshold}
-                  onChange={e => setSalesThreshold(Math.max(50, Math.min(100, Number(e.target.value) || 80)))}
+                  onChange={e => setSalesThreshold(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
                   disabled={!isSuperAdmin}
                   style={{ width: 120 }}
                 />
