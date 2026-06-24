@@ -179,7 +179,7 @@ export default function KPIControlsPage() {
                   style={{ width: 120 }}
                 />
                 <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 4 }}>
-                  Range: 50–100%. Default: 80%
+                  Range: 0–100%. Default: 80%
                 </div>
               </div>
 
