@@ -26,7 +26,7 @@ export default function KPIControlsPage() {
       .then(data => {
         if (data.minTrainingsPerMonth) setMinTrainings(data.minTrainingsPerMonth);
         if (data.minVisitsPerMonth) setMinVisits(data.minVisitsPerMonth);
-        if (data.salesThresholdPct) setSalesThreshold(data.salesThresholdPct);
+        if (typeof data.salesThresholdPct === 'number') setSalesThreshold(data.salesThresholdPct);
         if (data.minDisplayChecksPerMonth) setMinDisplayChecks(data.minDisplayChecksPerMonth);
         if (data.minRedFlagsPerMonth) setMinRedFlags(data.minRedFlagsPerMonth);
       })

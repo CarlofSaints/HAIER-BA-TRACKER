@@ -25,7 +25,8 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     const minTrainingsPerMonth = Math.max(1, Math.min(31, Math.round(Number(body.minTrainingsPerMonth) || 4)));
     const minVisitsPerMonth = Math.max(1, Math.min(100, Math.round(Number(body.minVisitsPerMonth) || 20)));
-    const salesThresholdPct = Math.max(50, Math.min(100, Math.round(Number(body.salesThresholdPct) || 80)));
+    const rawSales = Number(body.salesThresholdPct);
+    const salesThresholdPct = Math.max(0, Math.min(100, Math.round(Number.isFinite(rawSales) ? rawSales : 80)));
     const minDisplayChecksPerMonth = Math.max(1, Math.min(31, Math.round(Number(body.minDisplayChecksPerMonth) || 4)));
     const minRedFlagsPerMonth = Math.max(1, Math.min(50, Math.round(Number(body.minRedFlagsPerMonth) || 5)));
     await saveKPIControls({ minTrainingsPerMonth, minVisitsPerMonth, salesThresholdPct, minDisplayChecksPerMonth, minRedFlagsPerMonth });
