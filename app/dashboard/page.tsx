@@ -59,6 +59,31 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** Day-of-week name for a "YYYY-MM-DD" date string (parsed locally to avoid TZ shift). */
+function dayOfWeek(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return DAY_NAMES[new Date(y, m - 1, d).getDay()] ?? '';
+}
+
+/** Tooltip for the check-ins-per-day bar chart: shows weekday + date and a "Visits" label. */
+function VisitsPerDayTooltip({ active, payload, label }: {
+  active?: boolean;
+  label?: string | number;
+  payload?: { payload: { date: string; count: number; dow: string } }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
+  return (
+    <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+      <div style={{ fontWeight: 600, color: '#111827', marginBottom: 2 }}>{p.dow ? `${p.dow}, ` : ''}{label}</div>
+      <div style={{ color: '#374151' }}>Visits: <strong>{p.count}</strong></div>
+    </div>
+  );
+}
+
 type SortKey = keyof Visit;
 
 export default function DashboardPage() {
@@ -253,7 +278,7 @@ export default function DashboardPage() {
     }
     return Array.from(map.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, count]) => ({ date, count }));
+      .map(([date, count]) => ({ date, count, dow: dayOfWeek(date) }));
   }, [filtered]);
 
   // Chart: visits by channel
@@ -458,8 +483,8 @@ export default function DashboardPage() {
                     <BarChart data={visitsPerDay}>
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Bar dataKey="count" fill="#0054A6" radius={[3, 3, 0, 0]} />
+                      <Tooltip content={<VisitsPerDayTooltip />} />
+                      <Bar dataKey="count" name="Visits" fill="#0054A6" radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
