@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   const merged = [...existing];
   for (const desc of allDescs) {
     if (!existingKeys.has(desc.toLowerCase().trim())) {
-      merged.push({ articleDesc: desc, productCode: '', category: '', industry: '', status: '' });
+      merged.push({ articleDesc: desc, productCode: '', category: '', industry: '', status: '', diamondCode: '' });
       added++;
     }
   }

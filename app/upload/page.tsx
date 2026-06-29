@@ -35,6 +35,44 @@ interface TargetUploadMeta {
   storeCount: number;
 }
 
+interface DiamondRow {
+  code: string;
+  description: string;
+  qty: number;
+  soh: number;
+  value: number;
+  mapped?: boolean;
+  articleDesc?: string;
+}
+
+interface DiamondExtract {
+  storeName: string;
+  dept: string;
+  dateFrom: string;
+  dateTo: string;
+  month: string | null;
+  rows: DiamondRow[];
+  fileName: string;
+}
+
+interface DiamondStore {
+  siteCode: string;
+  storeName: string;
+  channelName?: string;
+  mainChannelName?: string;
+}
+
+interface DiamondUploadMeta {
+  id: string;
+  fileName: string;
+  uploadedAt: string;
+  storeName: string;
+  month: string;
+  rowCount: number;
+  totalValue: number;
+  unmappedCodes?: string[];
+}
+
 function Spinner({ size = 20, color = '#0054A6' }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite', display: 'inline-block', verticalAlign: 'middle' }}>
@@ -83,10 +121,22 @@ export default function UploadPage() {
   const [redFlagDragOver, setRedFlagDragOver] = useState(false);
   const redFlagFileRef = useRef<HTMLInputElement>(null);
 
+  // Diamond Corner (PDF OCR) state
+  const [diamondStores, setDiamondStores] = useState<DiamondStore[]>([]);
+  const [diamondFile, setDiamondFile] = useState<File | null>(null);
+  const [diamondExtracting, setDiamondExtracting] = useState(false);
+  const [diamondCommitting, setDiamondCommitting] = useState(false);
+  const [diamondDragOver, setDiamondDragOver] = useState(false);
+  const [diamondExtract, setDiamondExtract] = useState<DiamondExtract | null>(null);
+  const [diamondStoreCode, setDiamondStoreCode] = useState('');
+  const [diamondMonth, setDiamondMonth] = useState('');
+  const [diamondUploads, setDiamondUploads] = useState<DiamondUploadMeta[]>([]);
+  const diamondFileRef = useRef<HTMLInputElement>(null);
+
   // New stores modal
   const [newStoresModal, setNewStoresModal] = useState<string[] | null>(null);
 
-  const anyUploading = uploading || dispoUploading || trainingUploading || targetUploading || displayUploading || redFlagUploading;
+  const anyUploading = uploading || dispoUploading || trainingUploading || targetUploading || displayUploading || redFlagUploading || diamondExtracting || diamondCommitting;
 
   // Warn user before leaving page during upload
   useEffect(() => {
@@ -147,6 +197,23 @@ export default function UploadPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const loadDiamondStores = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/stores');
+      if (res.ok) setDiamondStores(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadDiamondUploads = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/diamond');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.uploads) setDiamondUploads(data.uploads);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (session) {
       loadUploads();
@@ -155,8 +222,10 @@ export default function UploadPage() {
       loadTargetUploads();
       loadDisplayUploads();
       loadRedFlagUploads();
+      loadDiamondStores();
+      loadDiamondUploads();
     }
-  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads, loadRedFlagUploads]);
+  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads, loadRedFlagUploads, loadDiamondStores, loadDiamondUploads]);
 
   async function handleFile(file: File) {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
@@ -444,6 +513,120 @@ export default function UploadPage() {
     }
   }
 
+  // ── Diamond Corner (PDF OCR) ──
+
+  function handleDiamondFile(file: File) {
+    if (!file.name.match(/\.pdf$/i)) {
+      setToast({ msg: 'Please upload a PDF file', type: 'error' });
+      return;
+    }
+    setDiamondFile(file);
+    setDiamondExtract(null);
+  }
+
+  async function handleDiamondExtract() {
+    if (!diamondFile) return;
+    setDiamondExtracting(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', diamondFile);
+      const res = await authFetch('/api/diamond/extract', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setToast({ msg: data.error || 'OCR failed', type: 'error' });
+      } else {
+        setDiamondExtract(data);
+        setDiamondMonth(data.month || '');
+        // Best-effort auto-match the target store by name
+        const guess = (data.storeName || '').toLowerCase().trim();
+        if (guess) {
+          const match = diamondStores.find(s => {
+            const name = s.storeName.toLowerCase();
+            return name.includes(guess) || guess.includes(name);
+          });
+          if (match) setDiamondStoreCode(match.siteCode);
+        }
+        setToast({ msg: `Extracted ${data.rows.length} line item${data.rows.length === 1 ? '' : 's'}`, type: 'success' });
+      }
+    } catch {
+      setToast({ msg: 'OCR failed', type: 'error' });
+    } finally {
+      setDiamondExtracting(false);
+    }
+  }
+
+  async function handleDiamondCommit() {
+    if (!diamondExtract) return;
+    const store = diamondStores.find(s => s.siteCode === diamondStoreCode);
+    if (!store) {
+      setToast({ msg: 'Select the target store first', type: 'error' });
+      return;
+    }
+    if (!/^\d{2}-\d{4}$/.test(diamondMonth)) {
+      setToast({ msg: 'Enter a valid month as MM-YYYY (e.g. 06-2026)', type: 'error' });
+      return;
+    }
+    setDiamondCommitting(true);
+    try {
+      const res = await authFetch('/api/diamond/commit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteCode: store.siteCode,
+          storeName: store.storeName,
+          month: diamondMonth,
+          dateFrom: diamondExtract.dateFrom,
+          dateTo: diamondExtract.dateTo,
+          fileName: diamondExtract.fileName,
+          rows: diamondExtract.rows,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setToast({ msg: data.error || 'Load failed', type: 'error' });
+      } else {
+        const unmapped = data.unmappedCodes?.length
+          ? ` — ${data.unmappedCodes.length} code(s) not mapped to a product (loaded under their PDF description)`
+          : '';
+        setToast({ msg: `Loaded ${data.rowCount} rows to ${data.storeName}${unmapped}`, type: 'success' });
+        setDiamondFile(null);
+        setDiamondExtract(null);
+        setDiamondStoreCode('');
+        setDiamondMonth('');
+        if (diamondFileRef.current) diamondFileRef.current.value = '';
+        loadDiamondUploads();
+      }
+    } catch {
+      setToast({ msg: 'Load failed', type: 'error' });
+    } finally {
+      setDiamondCommitting(false);
+    }
+  }
+
+  function handleDiamondCancel() {
+    setDiamondFile(null);
+    setDiamondExtract(null);
+    setDiamondStoreCode('');
+    setDiamondMonth('');
+    if (diamondFileRef.current) diamondFileRef.current.value = '';
+  }
+
+  async function handleDiamondDelete(id: string) {
+    if (!confirm('Delete this Diamond Corner upload? Its sales & stock will be removed from the store and sales scores recalculated.')) return;
+    try {
+      const res = await authFetch(`/api/diamond/delete/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setToast({ msg: 'Diamond Corner upload deleted', type: 'success' });
+        loadDiamondUploads();
+      } else {
+        const result = await res.json().catch(() => ({}));
+        setToast({ msg: result.error || 'Delete failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Delete failed', type: 'error' });
+    }
+  }
+
   if (authLoading || !session) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>;
   }
@@ -701,6 +884,237 @@ export default function UploadPage() {
           {dispoUploads.length === 0 && (
             <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
               No DISPO uploads yet
+            </div>
+          )}
+        </div>
+
+        {/* === DIAMOND CORNER — SALES (PDF / OCR) === */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
+            Diamond Corner — Sales (PDF)
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+            Upload a Diamond Corner &quot;Sales Analysis By Item&quot; PDF (one store per file). The PDF is read with OCR,
+            you pick the store &amp; month, then it loads into the sales &amp; stock data exactly like DISPO data —
+            feeding scores, the leaderboard and reports. Map Diamond Corner item codes to products on the Products page
+            so they consolidate under the same product.
+          </p>
+
+          {/* Step 1 — PDF drop zone */}
+          {!diamondExtract && (
+            <>
+              <div
+                onDragOver={e => { e.preventDefault(); setDiamondDragOver(true); }}
+                onDragLeave={() => setDiamondDragOver(false)}
+                onDrop={e => {
+                  e.preventDefault();
+                  setDiamondDragOver(false);
+                  const file = e.dataTransfer.files[0];
+                  if (file) handleDiamondFile(file);
+                }}
+                onClick={() => diamondFileRef.current?.click()}
+                style={{
+                  border: `2px dashed ${diamondDragOver ? '#0891b2' : '#d1d5db'}`,
+                  borderRadius: 10,
+                  padding: '2rem 1.5rem',
+                  textAlign: 'center',
+                  cursor: diamondExtracting ? 'not-allowed' : 'pointer',
+                  background: diamondDragOver ? 'rgba(8,145,178,0.04)' : '#fafafa',
+                  transition: 'border-color 0.2s, background 0.2s',
+                  marginBottom: '1rem',
+                  opacity: diamondExtracting ? 0.6 : 1,
+                }}
+              >
+                <input
+                  ref={diamondFileRef}
+                  type="file"
+                  accept=".pdf"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleDiamondFile(file);
+                  }}
+                />
+                {diamondExtracting ? (
+                  <>
+                    <div style={{ marginBottom: '0.6rem' }}><Spinner size={32} color="#0891b2" /></div>
+                    <div style={{ fontWeight: 600, color: '#0891b2', marginBottom: 4, fontSize: '0.9rem' }}>
+                      Reading PDF with OCR...
+                    </div>
+                    <div style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                      This usually takes a few seconds. Please do not close or navigate away.
+                    </div>
+                  </>
+                ) : diamondFile ? (
+                  <>
+                    <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>📄</div>
+                    <div style={{ fontWeight: 600, color: '#374151', fontSize: '0.9rem' }}>{diamondFile.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 4 }}>
+                      {(diamondFile.size / 1024).toFixed(0)} KB — Click to change file
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>💎</div>
+                    <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+                      Drop Diamond Corner PDF here or click to browse
+                    </div>
+                    <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+                      Single-store &quot;Sales Analysis By Item in Dept&quot; PDF
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {diamondFile && !diamondExtracting && (
+                <button
+                  className="btn btn-primary"
+                  onClick={handleDiamondExtract}
+                  style={{ width: '100%', marginBottom: '1rem', background: '#0891b2', borderColor: '#0891b2' }}
+                >
+                  Read PDF (OCR)
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Step 2 — Review & load */}
+          {diamondExtract && (
+            <div style={{ border: '1px solid #cffafe', background: '#ecfeff', borderRadius: 10, padding: '1rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.8rem', color: '#155e75', marginBottom: '0.75rem' }}>
+                Detected store: <strong>{diamondExtract.storeName || '—'}</strong>
+                {diamondExtract.dept ? <> · Dept: <strong>{diamondExtract.dept}</strong></> : null}
+                {diamondExtract.dateFrom ? <> · Period: <strong>{diamondExtract.dateFrom} → {diamondExtract.dateTo}</strong></> : null}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                <div style={{ flex: '1 1 260px' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>
+                    Load against store (site)
+                  </label>
+                  <select
+                    className="select"
+                    value={diamondStoreCode}
+                    onChange={e => setDiamondStoreCode(e.target.value)}
+                    style={{ width: '100%', fontSize: '0.8rem' }}
+                  >
+                    <option value="">— Select store —</option>
+                    {diamondStores
+                      .slice()
+                      .sort((a, b) => a.storeName.localeCompare(b.storeName))
+                      .map(s => (
+                        <option key={s.siteCode || s.storeName} value={s.siteCode}>
+                          {s.storeName}{s.mainChannelName ? ` (${s.mainChannelName})` : ''}{s.siteCode ? ` — ${s.siteCode}` : ''}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div style={{ flex: '0 1 160px' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>
+                    Month (MM-YYYY)
+                  </label>
+                  <input
+                    className="input"
+                    value={diamondMonth}
+                    onChange={e => setDiamondMonth(e.target.value)}
+                    placeholder="06-2026"
+                    style={{ width: '100%', fontSize: '0.8rem' }}
+                  />
+                </div>
+              </div>
+
+              {/* Preview table */}
+              <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', maxHeight: 320 }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Description</th>
+                      <th style={{ textAlign: 'right' }}>Qty</th>
+                      <th style={{ textAlign: 'right' }}>SOH</th>
+                      <th style={{ textAlign: 'right' }}>Value</th>
+                      <th>Maps to product</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {diamondExtract.rows.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ fontSize: '0.75rem', fontFamily: 'monospace' }}>{r.code}</td>
+                        <td style={{ fontSize: '0.78rem' }}>{r.description}</td>
+                        <td style={{ textAlign: 'right' }}>{r.qty}</td>
+                        <td style={{ textAlign: 'right' }}>{r.soh}</td>
+                        <td style={{ textAlign: 'right' }}>{r.value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style={{ fontSize: '0.75rem' }}>
+                          {r.mapped ? (
+                            <span style={{ color: '#065f46' }} title="Mapped via Diamond Corner code on the Products page">
+                              ✓ {r.articleDesc}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#92400e' }} title="No Diamond Corner code mapping — will load under its PDF description">
+                              ⚠ new: {r.articleDesc}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleDiamondCommit}
+                  disabled={diamondCommitting}
+                  style={{ flex: 1, background: '#0891b2', borderColor: '#0891b2' }}
+                >
+                  {diamondCommitting ? (<><Spinner size={16} color="#fff" /> Loading...</>) : 'Load to site'}
+                </button>
+                <button
+                  className="btn btn-outline"
+                  onClick={handleDiamondCancel}
+                  disabled={diamondCommitting}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Upload history */}
+          {diamondUploads.length > 0 && (
+            <>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+                Upload History
+              </h3>
+              <div style={{ maxHeight: 300, overflow: 'auto' }}>
+                {diamondUploads.slice().reverse().map(u => (
+                  <div
+                    key={u.id}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid #f3f4f6', fontSize: '0.8rem' }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, color: '#374151' }}>{u.storeName} <span style={{ color: '#9ca3af', fontWeight: 400 }}>· {u.month}</span></div>
+                      <div style={{ color: '#9ca3af', fontSize: '0.7rem' }}>
+                        {new Date(u.uploadedAt).toLocaleString('en-ZA')} — {u.rowCount} rows, R{u.totalValue.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}
+                        {u.unmappedCodes && u.unmappedCodes.length > 0 ? ` · ${u.unmappedCodes.length} unmapped` : ''}
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-danger"
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', marginLeft: '1rem' }}
+                      onClick={() => handleDiamondDelete(u.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {diamondUploads.length === 0 && (
+            <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
+              No Diamond Corner uploads yet
             </div>
           )}
         </div>

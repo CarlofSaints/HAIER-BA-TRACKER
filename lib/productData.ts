@@ -6,6 +6,10 @@ export interface ProductMaster {
   category: string;
   industry: string;
   status: string;
+  // Diamond Corner item code (from the Diamond Corner sales PDF). Lets the PDF
+  // OCR upload map a Diamond Corner code back to this product's articleDesc so
+  // its sales merge into the DISPO model under the same product key.
+  diamondCode?: string;
 }
 
 const BLOB_KEY = 'admin/products.json';
