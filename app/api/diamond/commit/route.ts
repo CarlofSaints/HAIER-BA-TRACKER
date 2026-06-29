@@ -21,6 +21,8 @@ interface CommitBody {
   dateTo?: string;
   fileName: string;
   rows: DiamondRow[];
+  /** Override the month-to-date staleness guard (load an older range anyway). */
+  force?: boolean;
 }
 
 const MONTH_RE = /^\d{2}-\d{4}$/;
@@ -45,6 +47,25 @@ export async function POST(req: NextRequest) {
     const target = stores.find(s => s.storeName === storeName);
     if (!target) {
       return NextResponse.json({ error: `Store "${storeName}" is not in the store master. Add it (with a channel) on the Stores page first.` }, { status: 400 });
+    }
+
+    // Month-to-date staleness guard: these PDFs are month-to-date and loading
+    // OVERWRITES the store's slice for the month. Block a file whose end-date is
+    // OLDER than one already loaded for this store+month, so a partial range
+    // can't silently replace a fuller one. Caller can override with force:true.
+    const uploads = await loadDiamondUploads();
+    const existingForSlot = uploads.filter(u => u.storeName === storeName && u.month === month);
+    const newEnd = (body.dateTo || '').trim();
+    if (!body.force && newEnd) {
+      const staler = existingForSlot.find(u => (u.dateTo || '') > newEnd);
+      if (staler) {
+        return NextResponse.json({
+          stale: true,
+          existingDateTo: staler.dateTo,
+          newDateTo: newEnd,
+          error: `A more recent Diamond Corner file is already loaded for ${storeName} (${month}) — it covers up to ${staler.dateTo}, but this file only goes to ${newEnd}. Loading it would replace the fuller data with a partial range.`,
+        }, { status: 409 });
+      }
     }
 
     const data = await loadDispoData();
@@ -90,10 +111,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Remove any prior Diamond upload for this same store+month (and its raw),
-    // then record the new one.
-    const uploads = await loadDiamondUploads();
-    const superseded = uploads.filter(u => u.storeName === storeName && u.month === month);
-    for (const old of superseded) await deleteDiamondRaw(old.id);
+    // then record the new one. (`uploads`/`existingForSlot` loaded above.)
+    for (const old of existingForSlot) await deleteDiamondRaw(old.id);
     const kept = uploads.filter(u => !(u.storeName === storeName && u.month === month));
 
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);

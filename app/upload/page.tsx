@@ -568,7 +568,7 @@ export default function UploadPage() {
     }
     setDiamondCommitting(true);
     try {
-      const res = await authFetch('/api/diamond/commit', {
+      const post = (force: boolean) => authFetch('/api/diamond/commit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -579,9 +579,21 @@ export default function UploadPage() {
           dateTo: diamondExtract.dateTo,
           fileName: diamondExtract.fileName,
           rows: diamondExtract.rows,
+          force,
         }),
       });
-      const data = await res.json();
+
+      let res = await post(false);
+      let data = await res.json();
+      // Month-to-date staleness guard — confirm before overwriting fuller data.
+      if (res.status === 409 && data.stale) {
+        if (!confirm(`${data.error}\n\nLoad it anyway and overwrite?`)) {
+          setDiamondCommitting(false);
+          return;
+        }
+        res = await post(true);
+        data = await res.json();
+      }
       if (!res.ok || !data.ok) {
         setToast({ msg: data.error || 'Load failed', type: 'error' });
       } else {
