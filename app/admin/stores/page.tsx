@@ -37,6 +37,11 @@ export default function StoresPage() {
   const [dirty, setDirty] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
+  // Add-store modal
+  const [showAdd, setShowAdd] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newStore, setNewStore] = useState({ siteCode: '', storeName: '', channelId: '', area: '', assignedBaEmail: '' });
+
   const loadData = useCallback(async () => {
     try {
       const [storesRes, channelsRes, basRes] = await Promise.all([
@@ -99,6 +104,57 @@ export default function StoresPage() {
     setDirty(true);
   }
 
+  function storesPayload(list: StoreMaster[]) {
+    return list.map(({ siteCode, storeName, channelId, area, assignedBaEmail, assignedBaName }) => ({
+      siteCode, storeName, channelId, area: area || '',
+      assignedBaEmail: assignedBaEmail || '', assignedBaName: assignedBaName || '',
+    }));
+  }
+
+  async function handleAddStore() {
+    const siteCode = newStore.siteCode.trim();
+    const storeName = newStore.storeName.trim();
+    if (!storeName) { setToast({ msg: 'Store name is required', type: 'error' }); return; }
+    if (stores.some(s => s.storeName.toLowerCase() === storeName.toLowerCase())) {
+      setToast({ msg: 'A store with that name already exists', type: 'error' }); return;
+    }
+    if (siteCode && stores.some(s => s.siteCode && s.siteCode.toLowerCase() === siteCode.toLowerCase())) {
+      setToast({ msg: 'A store with that site code already exists', type: 'error' }); return;
+    }
+    const ba = bas.find(b => b.email === newStore.assignedBaEmail);
+    const entry: StoreMaster = {
+      siteCode, storeName, channelId: newStore.channelId,
+      area: newStore.area.trim(),
+      assignedBaEmail: newStore.assignedBaEmail || '',
+      assignedBaName: ba?.repName || '',
+    };
+    const updated = [entry, ...stores];
+    setAdding(true);
+    try {
+      // Persist the whole list (including any pending table edits) so the new
+      // store exists immediately — e.g. for the Diamond Corner PDF upload.
+      const res = await authFetch('/api/stores', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stores: storesPayload(updated) }),
+      });
+      if (res.ok) {
+        setStores(updated);
+        setDirty(false);
+        setShowAdd(false);
+        setNewStore({ siteCode: '', storeName: '', channelId: '', area: '', assignedBaEmail: '' });
+        setToast({ msg: `Store "${storeName}" added`, type: 'success' });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setToast({ msg: data.error || 'Add failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Add failed', type: 'error' });
+    } finally {
+      setAdding(false);
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -139,7 +195,8 @@ export default function StoresPage() {
           Stores
         </h1>
         <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1rem' }}>
-          Manage store-to-channel assignments. Stores are auto-populated from DISPO uploads.
+          Manage store-to-channel assignments. Stores are auto-populated from DISPO uploads — use
+          <strong> Add Store</strong> for channels without a DISPO feed (e.g. Diamond Corner).
         </p>
 
         {unassignedCount > 0 && (
@@ -157,6 +214,12 @@ export default function StoresPage() {
             onChange={e => setSearch(e.target.value)}
             style={{ minWidth: 200, maxWidth: 300 }}
           />
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowAdd(true)}
+          >
+            + Add Store
+          </button>
           <button
             className="btn btn-primary"
             onClick={handleSave}
@@ -187,7 +250,7 @@ export default function StoresPage() {
                 {filtered.length === 0 ? (
                   <tr>
                     <td colSpan={5} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
-                      {stores.length === 0 ? 'No stores yet — upload a DISPO file to populate' : 'No matches'}
+                      {stores.length === 0 ? 'No stores yet — upload a DISPO file or click “+ Add Store”' : 'No matches'}
                     </td>
                   </tr>
                 ) : (
@@ -244,6 +307,92 @@ export default function StoresPage() {
 
         <Footer />
       </main>
+
+      {showAdd && (
+        <div
+          onClick={() => !adding && setShowAdd(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 8, padding: '1.5rem',
+              width: '100%', maxWidth: 420, boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+            }}
+          >
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.25rem' }}>Add Store</h2>
+            <p style={{ color: '#6b7280', fontSize: '0.8rem', marginBottom: '1rem' }}>
+              Manually add a store for channels without a DISPO feed (e.g. Diamond Corner).
+            </p>
+
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: 4 }}>Store Name *</label>
+            <input
+              className="input"
+              value={newStore.storeName}
+              onChange={e => setNewStore(s => ({ ...s, storeName: e.target.value }))}
+              placeholder="e.g. DIAMOND CORNER WOODMEAD"
+              style={{ width: '100%', marginBottom: '0.75rem' }}
+              autoFocus
+            />
+
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: 4 }}>Site Code</label>
+            <input
+              className="input"
+              value={newStore.siteCode}
+              onChange={e => setNewStore(s => ({ ...s, siteCode: e.target.value }))}
+              placeholder="optional"
+              style={{ width: '100%', marginBottom: '0.75rem', fontFamily: 'monospace' }}
+            />
+
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: 4 }}>Area</label>
+            <input
+              className="input"
+              value={newStore.area}
+              onChange={e => setNewStore(s => ({ ...s, area: e.target.value }))}
+              placeholder="optional"
+              style={{ width: '100%', marginBottom: '0.75rem' }}
+            />
+
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: 4 }}>Channel</label>
+            <select
+              className="select"
+              value={newStore.channelId}
+              onChange={e => setNewStore(s => ({ ...s, channelId: e.target.value }))}
+              style={{ width: '100%', marginBottom: '0.75rem' }}
+            >
+              <option value="">— Select —</option>
+              {channels.map(ch => (
+                <option key={ch.id} value={ch.id}>{ch.name}</option>
+              ))}
+            </select>
+
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: 4 }}>Assigned BA</label>
+            <select
+              className="select"
+              value={newStore.assignedBaEmail}
+              onChange={e => setNewStore(s => ({ ...s, assignedBaEmail: e.target.value }))}
+              style={{ width: '100%', marginBottom: '1.25rem' }}
+              title="Which BA gets credited for this store's sales. Leave on Auto to derive from Perigee visits."
+            >
+              <option value="">— Auto (from visits) —</option>
+              {bas.map(b => (
+                <option key={b.email} value={b.email}>{b.repName}</option>
+              ))}
+            </select>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button className="btn" onClick={() => setShowAdd(false)} disabled={adding}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleAddStore} disabled={adding}>
+                {adding ? 'Adding…' : 'Add Store'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
