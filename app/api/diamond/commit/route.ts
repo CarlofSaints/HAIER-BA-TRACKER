@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadDispoData, saveDispoData } from '@/lib/dispoData';
-import { loadStores } from '@/lib/storeData';
+import { loadStores, saveStores } from '@/lib/storeData';
 import {
   loadDiamondUploads, saveDiamondUploads, saveDiamondRaw, deleteDiamondRaw,
   DiamondRow, DiamondUploadMeta,
@@ -16,6 +16,13 @@ export const runtime = 'nodejs';
 interface CommitBody {
   siteCode: string;
   storeName: string;
+  /** Store-master fields, editable in the UI (not in the PDF). The store is
+   *  upserted from these so Diamond Corner stores can be created at upload
+   *  time, just like DISPO uploads auto-create stores. */
+  channelId?: string;
+  area?: string;
+  assignedBaEmail?: string;
+  assignedBaName?: string;
   month: string;       // "MM-YYYY"
   dateFrom?: string;
   dateTo?: string;
@@ -42,12 +49,34 @@ export async function POST(req: NextRequest) {
     if (!MONTH_RE.test(month)) return NextResponse.json({ error: 'A valid month (MM-YYYY) is required.' }, { status: 400 });
     if (rows.length === 0) return NextResponse.json({ error: 'No rows to load.' }, { status: 400 });
 
-    // Confirm the target store exists in the store master (so scoring/reports can resolve it).
+    // Upsert the target store into the store master from the editable fields the
+    // admin filled in on the upload screen (site code, area, channel, BA) — the
+    // PDF only supplies the store name, so the rest is provided in the UI. This
+    // lets a Diamond Corner store be created at upload time, mirroring how DISPO
+    // uploads auto-populate stores.
+    const channelId = (body.channelId || '').trim();
+    const area = (body.area || '').trim();
+    const assignedBaEmail = (body.assignedBaEmail || '').trim();
+    const assignedBaName = (body.assignedBaName || '').trim();
+
     const stores = await loadStores();
-    const target = stores.find(s => s.storeName === storeName);
+    let target = stores.find(s => s.storeName.toLowerCase() === storeName.toLowerCase());
+    let storesChanged = false;
     if (!target) {
-      return NextResponse.json({ error: `Store "${storeName}" is not in the store master. Add it (with a channel) on the Stores page first.` }, { status: 400 });
+      target = { siteCode, storeName, channelId, area, assignedBaEmail, assignedBaName };
+      stores.push(target);
+      storesChanged = true;
+    } else {
+      // Apply edits to the existing store (the form is prefilled from it, so
+      // unchanged fields round-trip unchanged). Don't blank the site code if the
+      // field was left empty.
+      if (siteCode && target.siteCode !== siteCode) { target.siteCode = siteCode; storesChanged = true; }
+      if (channelId && target.channelId !== channelId) { target.channelId = channelId; storesChanged = true; }
+      if (area !== (target.area || '')) { target.area = area; storesChanged = true; }
+      if (assignedBaEmail !== (target.assignedBaEmail || '')) { target.assignedBaEmail = assignedBaEmail; storesChanged = true; }
+      if (assignedBaName !== (target.assignedBaName || '')) { target.assignedBaName = assignedBaName; storesChanged = true; }
     }
+    if (storesChanged) await saveStores(stores);
 
     // Month-to-date staleness guard: these PDFs are month-to-date and loading
     // OVERWRITES the store's slice for the month. Block a file whose end-date is

@@ -58,8 +58,22 @@ interface DiamondExtract {
 interface DiamondStore {
   siteCode: string;
   storeName: string;
+  channelId?: string;
+  area?: string;
+  assignedBaEmail?: string;
   channelName?: string;
   mainChannelName?: string;
+}
+
+interface ChannelOpt {
+  id: string;
+  name: string;
+  parentId?: string;
+}
+
+interface BaOpt {
+  email: string;
+  repName: string;
 }
 
 interface DiamondUploadMeta {
@@ -123,12 +137,21 @@ export default function UploadPage() {
 
   // Diamond Corner (PDF OCR) state
   const [diamondStores, setDiamondStores] = useState<DiamondStore[]>([]);
+  const [diamondChannels, setDiamondChannels] = useState<ChannelOpt[]>([]);
+  const [diamondBas, setDiamondBas] = useState<BaOpt[]>([]);
   const [diamondFile, setDiamondFile] = useState<File | null>(null);
   const [diamondExtracting, setDiamondExtracting] = useState(false);
   const [diamondCommitting, setDiamondCommitting] = useState(false);
   const [diamondDragOver, setDiamondDragOver] = useState(false);
   const [diamondExtract, setDiamondExtract] = useState<DiamondExtract | null>(null);
-  const [diamondStoreCode, setDiamondStoreCode] = useState('');
+  // Editable store fields (the PDF only supplies the store name; the rest is
+  // filled in here so the store is upserted into the master on load).
+  const [diamondStoreName, setDiamondStoreName] = useState('');
+  const [diamondSiteCode, setDiamondSiteCode] = useState('');
+  const [diamondArea, setDiamondArea] = useState('');
+  const [diamondChannelId, setDiamondChannelId] = useState('');
+  const [diamondBaEmail, setDiamondBaEmail] = useState('');
+  const [diamondMatchedExisting, setDiamondMatchedExisting] = useState(false);
   const [diamondMonth, setDiamondMonth] = useState('');
   const [diamondUploads, setDiamondUploads] = useState<DiamondUploadMeta[]>([]);
   const diamondFileRef = useRef<HTMLInputElement>(null);
@@ -204,6 +227,20 @@ export default function UploadPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const loadDiamondChannels = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/channels');
+      if (res.ok) setDiamondChannels(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadDiamondBas = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/bas');
+      if (res.ok) setDiamondBas(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
   const loadDiamondUploads = useCallback(async () => {
     try {
       const res = await authFetch('/api/diamond');
@@ -223,9 +260,11 @@ export default function UploadPage() {
       loadDisplayUploads();
       loadRedFlagUploads();
       loadDiamondStores();
+      loadDiamondChannels();
+      loadDiamondBas();
       loadDiamondUploads();
     }
-  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads, loadRedFlagUploads, loadDiamondStores, loadDiamondUploads]);
+  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads, loadRedFlagUploads, loadDiamondStores, loadDiamondChannels, loadDiamondBas, loadDiamondUploads]);
 
   async function handleFile(file: File) {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
@@ -537,14 +576,32 @@ export default function UploadPage() {
       } else {
         setDiamondExtract(data);
         setDiamondMonth(data.month || '');
-        // Best-effort auto-match the target store by name
+        setDiamondStoreName(data.storeName || '');
+        // Best-effort: if this store already exists in the master, prefill the
+        // editable fields from it; otherwise it's a new store and the admin fills
+        // them in (e.g. a made-up site code).
         const guess = (data.storeName || '').toLowerCase().trim();
-        if (guess) {
-          const match = diamondStores.find(s => {
-            const name = s.storeName.toLowerCase();
-            return name.includes(guess) || guess.includes(name);
-          });
-          if (match) setDiamondStoreCode(match.siteCode);
+        const match = guess
+          ? diamondStores.find(s => {
+              const name = s.storeName.toLowerCase();
+              return name === guess || name.includes(guess) || guess.includes(name);
+            })
+          : undefined;
+        if (match) {
+          setDiamondStoreName(match.storeName);
+          setDiamondSiteCode(match.siteCode || '');
+          setDiamondArea(match.area || '');
+          setDiamondChannelId(match.channelId || '');
+          setDiamondBaEmail(match.assignedBaEmail || '');
+          setDiamondMatchedExisting(true);
+        } else {
+          setDiamondSiteCode('');
+          setDiamondArea('');
+          // Default the channel to one named "DIAMOND CORNER" if it exists.
+          const dc = diamondChannels.find(c => c.name.toUpperCase().includes('DIAMOND'));
+          setDiamondChannelId(dc?.id || '');
+          setDiamondBaEmail('');
+          setDiamondMatchedExisting(false);
         }
         setToast({ msg: `Extracted ${data.rows.length} line item${data.rows.length === 1 ? '' : 's'}`, type: 'success' });
       }
@@ -557,23 +614,28 @@ export default function UploadPage() {
 
   async function handleDiamondCommit() {
     if (!diamondExtract) return;
-    const store = diamondStores.find(s => s.siteCode === diamondStoreCode);
-    if (!store) {
-      setToast({ msg: 'Select the target store first', type: 'error' });
+    const storeName = diamondStoreName.trim();
+    if (!storeName) {
+      setToast({ msg: 'Enter a store name', type: 'error' });
       return;
     }
     if (!/^\d{2}-\d{4}$/.test(diamondMonth)) {
       setToast({ msg: 'Enter a valid month as MM-YYYY (e.g. 06-2026)', type: 'error' });
       return;
     }
+    const assignedBaName = diamondBas.find(b => b.email === diamondBaEmail)?.repName || '';
     setDiamondCommitting(true);
     try {
       const post = (force: boolean) => authFetch('/api/diamond/commit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          siteCode: store.siteCode,
-          storeName: store.storeName,
+          siteCode: diamondSiteCode.trim(),
+          storeName,
+          channelId: diamondChannelId,
+          area: diamondArea.trim(),
+          assignedBaEmail: diamondBaEmail,
+          assignedBaName,
           month: diamondMonth,
           dateFrom: diamondExtract.dateFrom,
           dateTo: diamondExtract.dateTo,
@@ -603,9 +665,10 @@ export default function UploadPage() {
         setToast({ msg: `Loaded ${data.rowCount} rows to ${data.storeName}${unmapped}`, type: 'success' });
         setDiamondFile(null);
         setDiamondExtract(null);
-        setDiamondStoreCode('');
+        resetDiamondStoreFields();
         setDiamondMonth('');
         if (diamondFileRef.current) diamondFileRef.current.value = '';
+        loadDiamondStores();   // a new store may have been created
         loadDiamondUploads();
       }
     } catch {
@@ -615,10 +678,19 @@ export default function UploadPage() {
     }
   }
 
+  function resetDiamondStoreFields() {
+    setDiamondStoreName('');
+    setDiamondSiteCode('');
+    setDiamondArea('');
+    setDiamondChannelId('');
+    setDiamondBaEmail('');
+    setDiamondMatchedExisting(false);
+  }
+
   function handleDiamondCancel() {
     setDiamondFile(null);
     setDiamondExtract(null);
-    setDiamondStoreCode('');
+    resetDiamondStoreFields();
     setDiamondMonth('');
     if (diamondFileRef.current) diamondFileRef.current.value = '';
   }
@@ -997,31 +1069,46 @@ export default function UploadPage() {
                 Detected store: <strong>{diamondExtract.storeName || '—'}</strong>
                 {diamondExtract.dept ? <> · Dept: <strong>{diamondExtract.dept}</strong></> : null}
                 {diamondExtract.dateFrom ? <> · Period: <strong>{diamondExtract.dateFrom} → {diamondExtract.dateTo}</strong></> : null}
+                <span style={{
+                  marginLeft: 8, padding: '1px 8px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 700,
+                  background: diamondMatchedExisting ? '#dcfce7' : '#fef3c7',
+                  color: diamondMatchedExisting ? '#166534' : '#92400e',
+                }}>
+                  {diamondMatchedExisting ? 'Matched existing store' : 'New store — will be created'}
+                </span>
               </div>
 
+              <p style={{ fontSize: '0.72rem', color: '#6b7280', marginBottom: '0.6rem' }}>
+                The PDF only provides the store name. Fill in the remaining fields below — the store is
+                created (or updated) in the master when you load. Site code can be any value you make up.
+              </p>
+
               <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-                <div style={{ flex: '1 1 260px' }}>
+                <div style={{ flex: '1 1 240px' }}>
                   <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>
-                    Load against store (site)
+                    Store name
                   </label>
-                  <select
-                    className="select"
-                    value={diamondStoreCode}
-                    onChange={e => setDiamondStoreCode(e.target.value)}
+                  <input
+                    className="input"
+                    value={diamondStoreName}
+                    onChange={e => setDiamondStoreName(e.target.value)}
+                    placeholder="DIAMOND CORNER WOODMEAD"
                     style={{ width: '100%', fontSize: '0.8rem' }}
-                  >
-                    <option value="">— Select store —</option>
-                    {diamondStores
-                      .slice()
-                      .sort((a, b) => a.storeName.localeCompare(b.storeName))
-                      .map(s => (
-                        <option key={s.siteCode || s.storeName} value={s.siteCode}>
-                          {s.storeName}{s.mainChannelName ? ` (${s.mainChannelName})` : ''}{s.siteCode ? ` — ${s.siteCode}` : ''}
-                        </option>
-                      ))}
-                  </select>
+                  />
                 </div>
-                <div style={{ flex: '0 1 160px' }}>
+                <div style={{ flex: '0 1 140px' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>
+                    Site code
+                  </label>
+                  <input
+                    className="input"
+                    value={diamondSiteCode}
+                    onChange={e => setDiamondSiteCode(e.target.value)}
+                    placeholder="e.g. DC001"
+                    style={{ width: '100%', fontSize: '0.8rem', fontFamily: 'monospace' }}
+                  />
+                </div>
+                <div style={{ flex: '0 1 140px' }}>
                   <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>
                     Month (MM-YYYY)
                   </label>
@@ -1030,6 +1117,57 @@ export default function UploadPage() {
                     value={diamondMonth}
                     onChange={e => setDiamondMonth(e.target.value)}
                     placeholder="06-2026"
+                    style={{ width: '100%', fontSize: '0.8rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                <div style={{ flex: '0 1 200px' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>
+                    Channel
+                  </label>
+                  <select
+                    className="select"
+                    value={diamondChannelId}
+                    onChange={e => setDiamondChannelId(e.target.value)}
+                    style={{ width: '100%', fontSize: '0.8rem' }}
+                  >
+                    <option value="">— Select channel —</option>
+                    {diamondChannels.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}{c.parentId ? ' (sub)' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ flex: '1 1 240px' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>
+                    Assigned BA
+                  </label>
+                  <select
+                    className="select"
+                    value={diamondBaEmail}
+                    onChange={e => setDiamondBaEmail(e.target.value)}
+                    style={{ width: '100%', fontSize: '0.8rem' }}
+                    title="Which BA gets credited for this store's sales. Leave on Auto to derive from Perigee visits."
+                  >
+                    <option value="">— Auto (from visits) —</option>
+                    {diamondBaEmail && !diamondBas.some(b => b.email === diamondBaEmail) && (
+                      <option value={diamondBaEmail}>{diamondBaEmail}</option>
+                    )}
+                    {diamondBas.map(b => (
+                      <option key={b.email} value={b.email}>{b.repName}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ flex: '0 1 180px' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: '#374151', marginBottom: 3 }}>
+                    Area
+                  </label>
+                  <input
+                    className="input"
+                    value={diamondArea}
+                    onChange={e => setDiamondArea(e.target.value)}
+                    placeholder="optional"
                     style={{ width: '100%', fontSize: '0.8rem' }}
                   />
                 </div>
