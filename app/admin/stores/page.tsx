@@ -15,6 +15,16 @@ interface StoreMaster {
   perigeeSiteCode?: string;
   assignedBaEmail?: string;
   assignedBaName?: string;
+  addedFrom?: ('data' | 'perigee')[];
+}
+
+/** "Data", "Perigee", or "Data/Perigee". Legacy stores (no field) show "Data". */
+function sourcesLabel(addedFrom?: ('data' | 'perigee')[]): string {
+  const order = ['data', 'perigee'] as const;
+  const labels: Record<'data' | 'perigee', string> = { data: 'Data', perigee: 'Perigee' };
+  if (!addedFrom || addedFrom.length === 0) return 'Data';
+  const present = order.filter(s => addedFrom.includes(s));
+  return present.length ? present.map(s => labels[s]).join('/') : 'Data';
 }
 
 interface Channel {
@@ -126,10 +136,11 @@ export default function StoresPage() {
   async function handleSave() {
     setSaving(true);
     try {
-      const payload = stores.map(({ siteCode, storeName, channelId, area, perigeeSiteCode, assignedBaEmail, assignedBaName }) => ({
+      const payload = stores.map(({ siteCode, storeName, channelId, area, perigeeSiteCode, assignedBaEmail, assignedBaName, addedFrom }) => ({
         siteCode: (siteCode || '').trim(), storeName, channelId, area: area || '',
         perigeeSiteCode: (perigeeSiteCode || '').trim(),
         assignedBaEmail: assignedBaEmail || '', assignedBaName: assignedBaName || '',
+        addedFrom: addedFrom || [],
       }));
       const res = await authFetch('/api/stores', {
         method: 'PUT',
@@ -204,6 +215,7 @@ export default function StoresPage() {
                   <th style={{ width: 110 }}>Site Code</th>
                   <th style={{ width: 130 }}>Perigee Site Code</th>
                   <th>Store Name</th>
+                  <th style={{ width: 110 }}>Added From</th>
                   <th style={{ width: 150 }}>Area</th>
                   <th style={{ width: 180 }}>Channel</th>
                   <th style={{ width: 200 }}>Assigned BA</th>
@@ -212,14 +224,14 @@ export default function StoresPage() {
               <tbody>
                 {loadingData ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', color: '#6b7280', padding: '2.5rem' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', color: '#6b7280', padding: '2.5rem' }}>
                       <span className="stores-spinner" aria-hidden />
                       <span style={{ marginLeft: '0.6rem', verticalAlign: 'middle' }}>Loading stores…</span>
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                       {stores.length === 0 ? 'No stores yet — upload a DISPO file to populate' : 'No matches'}
                     </td>
                   </tr>
@@ -246,6 +258,20 @@ export default function StoresPage() {
                         />
                       </td>
                       <td>{store.storeName}</td>
+                      <td>
+                        <span
+                          title="Where this store was ingested from: a data load (DISPO/Diamond) and/or Perigee visits."
+                          style={{
+                            display: 'inline-block', fontSize: '0.7rem', fontWeight: 600,
+                            padding: '0.15rem 0.5rem', borderRadius: 999,
+                            background: (store.addedFrom || []).includes('perigee') ? '#eef2ff' : '#f0fdf4',
+                            color: (store.addedFrom || []).includes('perigee') ? '#3730a3' : '#166534',
+                            border: `1px solid ${(store.addedFrom || []).includes('perigee') ? '#c7d2fe' : '#bbf7d0'}`,
+                          }}
+                        >
+                          {sourcesLabel(store.addedFrom)}
+                        </span>
+                      </td>
                       <td>
                         <input
                           className="input"

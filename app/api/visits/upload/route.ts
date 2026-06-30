@@ -1,9 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadVisitIndex, saveVisitIndex, saveVisitData, Visit } from '@/lib/visitData';
+import { loadStores, saveStores, upsertStoresFromRecords } from '@/lib/storeData';
 import { logFromUser } from '@/lib/activityLog';
 import { runAutoCalcForMonth } from '@/lib/autoCalc';
 import * as zlib from 'zlib';
+
+/**
+ * Add any stores seen in this visit batch to the store master, tagged "perigee".
+ * Existing stores (matched by code or name) just gain the tag; new ones are
+ * created so the store DB includes stores even for channels we never get data
+ * for. Failures are swallowed — never block a visit upload on store sync.
+ */
+async function syncStoresFromVisits(visits: Visit[]): Promise<void> {
+  try {
+    const stores = await loadStores();
+    const records = visits.map(v => ({ siteCode: v.storeCode, storeName: v.storeName }));
+    if (upsertStoresFromRecords(stores, records, 'perigee')) {
+      await saveStores(stores);
+    }
+  } catch (err) {
+    console.error('syncStoresFromVisits failed:', err);
+  }
+}
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -205,6 +224,9 @@ export async function POST(req: NextRequest) {
 
       logFromUser(user, 'upload_visits', `visits/${uploadId}`, `Uploaded ${visits.length} visit rows from ${fileName}`);
 
+      // Add/tag stores seen in these visits (source: perigee)
+      await syncStoresFromVisits(visits);
+
       // Auto-recalculate check-in + sales scores for affected months
       const months = new Set(visits.map(v => v.checkInDate?.substring(0, 7)).filter(Boolean));
       const autoCalcResults = [];
@@ -247,6 +269,9 @@ export async function POST(req: NextRequest) {
     await saveVisitIndex(index);
 
     logFromUser(user, 'upload_visits', `visits/${uploadId}`, `Uploaded ${parsed.visits.length} visit rows from ${fileName}`);
+
+    // Add/tag stores seen in these visits (source: perigee)
+    await syncStoresFromVisits(parsed.visits);
 
     // Auto-recalculate check-in + sales scores for affected months
     const months = new Set(parsed.visits.map(v => v.checkInDate?.substring(0, 7)).filter(Boolean));

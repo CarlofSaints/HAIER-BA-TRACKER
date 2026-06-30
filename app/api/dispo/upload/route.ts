@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadDispoData, saveDispoData, DispoUploadMeta } from '@/lib/dispoData';
-import { loadStores, saveStores } from '@/lib/storeData';
+import { loadStores, saveStores, upsertStoresFromRecords } from '@/lib/storeData';
 import { writeJson } from '@/lib/blob';
 import { logFromUser } from '@/lib/activityLog';
 import { runAutoCalcForMonth } from '@/lib/autoCalc';
@@ -266,10 +266,10 @@ export async function POST(req: NextRequest) {
       data.sales[monthKey] = {};
     }
 
-    // Load store master for new-store detection
+    // Load store master; collect the unique stores present in this file so we can
+    // upsert them (matched + tagged "data") after the row loop.
     const storeMaster = await loadStores();
-    const existingStoreNames = new Set(storeMaster.map(s => s.storeName));
-    const newStoreEntries: { siteCode: string; storeName: string }[] = [];
+    const fileStores = new Map<string, { siteCode: string; storeName: string }>();
 
     // Process data rows
     for (let i = dataStartIdx; i < rows.length; i++) {
@@ -285,11 +285,9 @@ export async function POST(req: NextRequest) {
       allProducts.add(articleDesc);
       rowCount++;
 
-      // Track new stores
-      if (!existingStoreNames.has(siteName)) {
-        existingStoreNames.add(siteName);
-        newStoreEntries.push({ siteCode, storeName: siteName });
-      }
+      // Collect unique stores in this file for the store-master upsert below
+      const nameKey = siteName.toLowerCase();
+      if (!fileStores.has(nameKey)) fileStores.set(nameKey, { siteCode, storeName: siteName });
 
       const rowSales: Record<string, number> = {};
 
@@ -347,13 +345,13 @@ export async function POST(req: NextRequest) {
     // Save raw data for rebuild-on-delete
     await writeJson(`dispo/raw/${uploadId}.json`, { rows: rawRows, monthMap });
 
-    // Update store master with new stores
-    if (newStoreEntries.length > 0) {
-      for (const entry of newStoreEntries) {
-        storeMaster.push({ siteCode: entry.siteCode, storeName: entry.storeName, channelId: '' });
-      }
+    // Upsert stores into the master (matched by code/name, tagged "data").
+    // New stores are appended, so anything past the original length is new.
+    const storeCountBefore = storeMaster.length;
+    if (upsertStoresFromRecords(storeMaster, [...fileStores.values()], 'data')) {
       await saveStores(storeMaster);
     }
+    const newStoreNames = storeMaster.slice(storeCountBefore).map(s => s.storeName);
 
     await saveDispoData(data);
 
@@ -382,7 +380,7 @@ export async function POST(req: NextRequest) {
       currentMonth: currentMonthKey,
       headerRow: headerIdx + 1,
       dataStartRow: dataStartIdx + 1,
-      newStoreNames: newStoreEntries.map(e => e.storeName),
+      newStoreNames,
       autoCalc: autoCalcResults,
     }, { headers: noCacheHeaders() });
   } catch (err) {

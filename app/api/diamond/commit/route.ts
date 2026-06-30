@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadDispoData, saveDispoData } from '@/lib/dispoData';
-import { loadStores, saveStores } from '@/lib/storeData';
+import { loadStores, saveStores, addStoreSource } from '@/lib/storeData';
 import {
   loadDiamondUploads, saveDiamondUploads, saveDiamondRaw, deleteDiamondRaw,
   DiamondRow, DiamondUploadMeta,
@@ -63,10 +63,11 @@ export async function POST(req: NextRequest) {
     let target = stores.find(s => s.storeName.toLowerCase() === storeName.toLowerCase());
     let storesChanged = false;
     if (!target) {
-      target = { siteCode, storeName, channelId, area, assignedBaEmail, assignedBaName };
+      target = { siteCode, storeName, channelId, area, assignedBaEmail, assignedBaName, addedFrom: ['data'] };
       stores.push(target);
       storesChanged = true;
     } else {
+      if (addStoreSource(target, 'data')) storesChanged = true;
       // Apply edits to the existing store (the form is prefilled from it, so
       // unchanged fields round-trip unchanged). Don't blank the site code if the
       // field was left empty.
