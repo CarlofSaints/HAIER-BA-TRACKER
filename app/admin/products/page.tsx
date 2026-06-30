@@ -19,6 +19,7 @@ export default function ProductsPage() {
   const { session, loading: authLoading, logout } = useAuth(['super_admin', 'admin']);
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [search, setSearch] = useState('');
+  const [diamondFilter, setDiamondFilter] = useState<'all' | 'has' | 'unlinked'>('all');
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -36,16 +37,33 @@ export default function ProductsPage() {
   }, [session, loadData]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return products;
-    const q = search.toLowerCase();
-    return products.filter(p =>
-      p.articleDesc.toLowerCase().includes(q) ||
-      (p.productCode || '').toLowerCase().includes(q) ||
-      (p.diamondCode || '').toLowerCase().includes(q) ||
-      p.category.toLowerCase().includes(q) ||
-      p.industry.toLowerCase().includes(q)
-    );
-  }, [products, search]);
+    const q = search.trim().toLowerCase();
+    return products.filter(p => {
+      // Diamond filter
+      const hasDiamond = !!(p.diamondCode && p.diamondCode.trim());
+      const hasMakro = !!(p.productCode && p.productCode.trim());
+      if (diamondFilter === 'has' && !hasDiamond) return false;
+      if (diamondFilter === 'unlinked' && !(hasDiamond && !hasMakro)) return false;
+      // Search filter
+      if (!q) return true;
+      return (
+        p.articleDesc.toLowerCase().includes(q) ||
+        (p.productCode || '').toLowerCase().includes(q) ||
+        (p.diamondCode || '').toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        p.industry.toLowerCase().includes(q)
+      );
+    });
+  }, [products, search, diamondFilter]);
+
+  const diamondCount = useMemo(
+    () => products.filter(p => p.diamondCode && p.diamondCode.trim()).length,
+    [products],
+  );
+  const unlinkedCount = useMemo(
+    () => products.filter(p => p.diamondCode?.trim() && !p.productCode?.trim()).length,
+    [products],
+  );
 
   function handleFieldChange(filteredIdx: number, field: 'productCode' | 'category' | 'industry' | 'status' | 'diamondCode', value: string) {
     const product = filtered[filteredIdx];
@@ -123,6 +141,17 @@ export default function ProductsPage() {
             onChange={e => setSearch(e.target.value)}
             style={{ minWidth: 200, maxWidth: 300 }}
           />
+          <select
+            className="select"
+            value={diamondFilter}
+            onChange={e => setDiamondFilter(e.target.value as 'all' | 'has' | 'unlinked')}
+            title="Filter by Diamond Corner mapping"
+            style={{ minWidth: 220 }}
+          >
+            <option value="all">All products</option>
+            <option value="has">Has Diamond code ({diamondCount})</option>
+            <option value="unlinked">Diamond-only — no Makro code ({unlinkedCount})</option>
+          </select>
           <button
             className="btn btn-primary"
             onClick={handleSync}
