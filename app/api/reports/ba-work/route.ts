@@ -38,10 +38,16 @@ function dispoMonthKey(mm: string, year: number): string {
  * Keys: visit storeName, visit storeCode, AND store master storeName (all lowercase).
  */
 function buildBaMap(visits: Visit[], stores: StoreMaster[]): Record<string, string> {
-  // Also build storeCode → storeName bridge from store master
+  // Also build storeCode → storeName bridge from store master. Register both the
+  // store's own siteCode and its Perigee Site Code override (if set) so a visit
+  // matches whichever code Perigee uses.
   const codeToName: Record<string, string> = {};
   for (const s of stores) {
-    if (s.siteCode) codeToName[s.siteCode.toLowerCase().trim()] = s.storeName.toLowerCase().trim();
+    if (!s.siteCode) continue;
+    const name = s.storeName.toLowerCase().trim();
+    codeToName[s.siteCode.toLowerCase().trim()] = name;
+    const pCode = s.perigeeSiteCode?.toLowerCase().trim();
+    if (pCode) codeToName[pCode] = name;
   }
 
   // Sort by date desc so we keep the most recent BA per store
@@ -73,8 +79,10 @@ function buildBaMap(visits: Visit[], stores: StoreMaster[]): Record<string, stri
     if (!s.assignedBaName) continue;
     const nameKey = (s.storeName || '').toLowerCase().trim();
     const codeKey = (s.siteCode || '').toLowerCase().trim();
+    const perigeeKey = (s.perigeeSiteCode || '').toLowerCase().trim();
     if (nameKey) map[nameKey] = s.assignedBaName;
     if (codeKey) map[codeKey] = s.assignedBaName;
+    if (perigeeKey) map[perigeeKey] = s.assignedBaName;
   }
   return map;
 }
@@ -85,7 +93,11 @@ function buildBaMap(visits: Visit[], stores: StoreMaster[]): Record<string, stri
 function buildDisplaySet(records: DisplayRecord[], stores: StoreMaster[]): Set<string> {
   const codeToName: Record<string, string> = {};
   for (const s of stores) {
-    if (s.siteCode) codeToName[s.siteCode.toLowerCase().trim()] = s.storeName.toLowerCase().trim();
+    if (!s.siteCode) continue;
+    const name = s.storeName.toLowerCase().trim();
+    codeToName[s.siteCode.toLowerCase().trim()] = name;
+    const pCode = s.perigeeSiteCode?.toLowerCase().trim();
+    if (pCode) codeToName[pCode] = name;
   }
 
   const set = new Set<string>();

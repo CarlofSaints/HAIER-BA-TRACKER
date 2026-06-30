@@ -320,13 +320,47 @@ modified `lib/productData.ts` (+`diamondCode`), `app/api/products/route.ts`,
 1. Add **`ANTHROPIC_API_KEY`** to the Vercel project env (OCR 500s without it).
 2. On **Stores**, add each Diamond Corner store (e.g. "DIAMOND CORNER WOODMEAD"),
    set channel = **DIAMOND CORNER** + an **Assigned BA** (so sales credit the
-   right rep). Commit refuses a store not in the master.
+   right rep). Commit refuses a store not in the master.  ← **SUPERSEDED by §12:
+   the store is now created from the PDF upload itself, no pre-add needed.**
 3. For the Monthly-Sales KPI to score, that store needs a **target** for the
    month (Targets upload) + BA attribution — otherwise data still shows in
    Sales/Stock pages but contributes 0 points.
 4. (Optional) On **Products**, fill **Diamond Corner Code** per product so PDF
    codes consolidate under the existing articleDesc instead of loading as new.
 5. Not pushed yet — `git push` to master auto-deploys.
+
+### 11. Password Reset / Forgot Password + Login Fix (DEPLOYED, Jun 29, 2026)
+
+Carl got locked out. Built per `PLAN.md` (now deleted — scratch). All committed:
+- **`app/api/admin-reset/route.ts`** — POST `{ secret:"haier-seed-2026", email, newPassword }` force-resets any user's password (bcrypt). The break-glass tool.
+- **Forgot-password flow** — `app/api/forgot-password` (generates token, 1h expiry, emails Resend link), `app/api/reset-password` (consumes token), `app/reset-password/page.tsx`, "Forgot My Password?" link on `/login`. `User` gained `resetToken`/`resetTokenExpiry`.
+
+**Commits:** `8cf6a92`, `eddaf32`, `c894ee2`. Carl is back in via admin-reset.
+
+### 12. Diamond Corner — store created/updated from the PDF upload (DEPLOYED, Jun 29, 2026)
+
+Replaces the need to pre-add a Diamond Corner store on the Stores page. Store
+creation is now built into the PDF upload flow (like DISPO auto-populates stores).
+
+- **`app/api/diamond/commit/route.ts`** — no longer 400s on an unknown store.
+  **Upserts** the store master from new body fields `channelId/area/assignedBaEmail/assignedBaName`
+  (+ existing `siteCode/storeName`): creates if new, updates editable fields if it
+  exists (site code only overwritten when non-empty), `saveStores()`, then loads
+  sales + re-runs sales auto-calc as before. Match is case-insensitive by store name.
+- **`app/upload/page.tsx`** — Diamond review panel replaced the "pick existing
+  store" dropdown with **editable fields**: Store name (prefilled from OCR), Site
+  code (make one up), Area, Channel dropdown (`/api/channels`, defaults to a
+  channel whose name contains "DIAMOND"), Assigned BA dropdown (`/api/bas`), Month.
+  A badge shows **"New store — will be created"** vs **"Matched existing store"**;
+  when the PDF name matches an existing store all fields prefill from it. After
+  load, re-fetches stores (one may have been created).
+- **Reverted** the manual "+ Add Store" button/modal on `app/admin/stores/page.tsx`
+  that was added earlier the same session (commit `9a8bd4e`) — Carl wanted this
+  done via the PDF upload "instead of" a manual button.
+
+Typecheck + `next build` pass. **Commit:** `6cf6391`, pushed to master (auto-deploys).
+Still need (unchanged): `ANTHROPIC_API_KEY` on Vercel for OCR; a **target** for the
+store's month for the Sales KPI to score.
 
 ---
 

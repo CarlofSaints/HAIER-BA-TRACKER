@@ -73,6 +73,8 @@ export async function GET(req: NextRequest) {
     for (const s of storeMaster) {
       if (s.siteCode && s.storeName) {
         codeToDispoName.set(s.siteCode.toLowerCase().trim(), s.storeName);
+        const pCode = s.perigeeSiteCode?.toLowerCase().trim();
+        if (pCode) codeToDispoName.set(pCode, s.storeName);
       }
     }
 

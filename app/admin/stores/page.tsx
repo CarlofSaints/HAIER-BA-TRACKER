@@ -12,6 +12,7 @@ interface StoreMaster {
   channelId: string;
   channelName?: string;
   area?: string;
+  perigeeSiteCode?: string;
   assignedBaEmail?: string;
   assignedBaName?: string;
 }
@@ -34,10 +35,12 @@ export default function StoresPage() {
   const [bas, setBas] = useState<BAOption[]>([]);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const loadData = useCallback(async () => {
+    setLoadingData(true);
     try {
       const [storesRes, channelsRes, basRes] = await Promise.all([
         authFetch('/api/stores'),
@@ -48,6 +51,7 @@ export default function StoresPage() {
       if (channelsRes.ok) setChannels(await channelsRes.json());
       if (basRes.ok) setBas(await basRes.json());
     } catch { /* ignore */ }
+    finally { setLoadingData(false); }
   }, []);
 
   useEffect(() => {
@@ -63,6 +67,26 @@ export default function StoresPage() {
       (s.area || '').toLowerCase().includes(q)
     );
   }, [stores, search]);
+
+  function handleSiteCodeChange(idx: number, siteCode: string) {
+    const store = filtered[idx];
+    const realIdx = stores.findIndex(s => s.siteCode === store.siteCode && s.storeName === store.storeName);
+    if (realIdx === -1) return;
+    const updated = [...stores];
+    updated[realIdx] = { ...updated[realIdx], siteCode };
+    setStores(updated);
+    setDirty(true);
+  }
+
+  function handlePerigeeCodeChange(idx: number, perigeeSiteCode: string) {
+    const store = filtered[idx];
+    const realIdx = stores.findIndex(s => s.siteCode === store.siteCode && s.storeName === store.storeName);
+    if (realIdx === -1) return;
+    const updated = [...stores];
+    updated[realIdx] = { ...updated[realIdx], perigeeSiteCode };
+    setStores(updated);
+    setDirty(true);
+  }
 
   function handleChannelChange(idx: number, channelId: string) {
     const store = filtered[idx];
@@ -102,8 +126,9 @@ export default function StoresPage() {
   async function handleSave() {
     setSaving(true);
     try {
-      const payload = stores.map(({ siteCode, storeName, channelId, area, assignedBaEmail, assignedBaName }) => ({
-        siteCode, storeName, channelId, area: area || '',
+      const payload = stores.map(({ siteCode, storeName, channelId, area, perigeeSiteCode, assignedBaEmail, assignedBaName }) => ({
+        siteCode: (siteCode || '').trim(), storeName, channelId, area: area || '',
+        perigeeSiteCode: (perigeeSiteCode || '').trim(),
         assignedBaEmail: assignedBaEmail || '', assignedBaName: assignedBaName || '',
       }));
       const res = await authFetch('/api/stores', {
@@ -176,7 +201,8 @@ export default function StoresPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: 100 }}>Site Code</th>
+                  <th style={{ width: 110 }}>Site Code</th>
+                  <th style={{ width: 130 }}>Perigee Site Code</th>
                   <th>Store Name</th>
                   <th style={{ width: 150 }}>Area</th>
                   <th style={{ width: 180 }}>Channel</th>
@@ -184,16 +210,41 @@ export default function StoresPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {loadingData ? (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                    <td colSpan={6} style={{ textAlign: 'center', color: '#6b7280', padding: '2.5rem' }}>
+                      <span className="stores-spinner" aria-hidden />
+                      <span style={{ marginLeft: '0.6rem', verticalAlign: 'middle' }}>Loading stores…</span>
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                       {stores.length === 0 ? 'No stores yet — upload a DISPO file to populate' : 'No matches'}
                     </td>
                   </tr>
                 ) : (
                   filtered.map((store, i) => (
-                    <tr key={`${store.siteCode}-${store.storeName}`} style={!store.channelId ? { background: '#fffbeb' } : undefined}>
-                      <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{store.siteCode || '—'}</td>
+                    <tr key={`${i}-${store.storeName}`} style={!store.channelId ? { background: '#fffbeb' } : undefined}>
+                      <td>
+                        <input
+                          className="input"
+                          value={store.siteCode || ''}
+                          onChange={e => handleSiteCodeChange(i, e.target.value)}
+                          placeholder="—"
+                          style={{ width: '100%', fontSize: '0.8rem', fontFamily: 'monospace' }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="input"
+                          value={store.perigeeSiteCode || ''}
+                          onChange={e => handlePerigeeCodeChange(i, e.target.value)}
+                          placeholder="—"
+                          title="Perigee's store code, if it differs from the Site Code. Perigee check-ins matching this code credit this store. Leave blank to match on Site Code only."
+                          style={{ width: '100%', fontSize: '0.8rem', fontFamily: 'monospace' }}
+                        />
+                      </td>
                       <td>{store.storeName}</td>
                       <td>
                         <input

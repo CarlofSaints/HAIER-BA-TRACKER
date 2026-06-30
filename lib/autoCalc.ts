@@ -75,9 +75,19 @@ export async function calcSalesScores(month: string): Promise<SalesResult[]> {
   ]);
 
   const salesThreshold = kpiControls.salesThresholdPct ?? 80;
-  const siteCodeToName: Record<string, string> = {};
+
+  // Resolve a Perigee visit storeCode → its matching store. A store matches on
+  // its own siteCode OR on an explicit Perigee Site Code override (for when
+  // Perigee identifies the store with a different code). Both keys resolve to
+  // the store's OWN siteCode (used for the target lookup) + DISPO store name.
+  const perigeeToStore = new Map<string, { storeName: string; ownCode: string }>();
   for (const s of stores) {
-    if (s.siteCode) siteCodeToName[s.siteCode.trim().toUpperCase()] = s.storeName;
+    if (!s.siteCode) continue;
+    const ownCode = s.siteCode.trim().toUpperCase();
+    const resolved = { storeName: s.storeName, ownCode };
+    perigeeToStore.set(ownCode, resolved);
+    const pCode = s.perigeeSiteCode?.trim().toUpperCase();
+    if (pCode) perigeeToStore.set(pCode, resolved);
   }
 
   // Explicit store→BA assignments (siteCode upper → assigned BA). When a store is
@@ -103,11 +113,14 @@ export async function calcSalesScores(month: string): Promise<SalesResult[]> {
       if (!baStores.has(email)) baStores.set(email, { repName: v.repName || v.email, stores: new Map() });
       const entry = baStores.get(email)!;
       if (v.storeCode) {
-        const code = v.storeCode.trim().toUpperCase();
-        const storeName = siteCodeToName[code];
+        const visitCode = v.storeCode.trim().toUpperCase();
+        const matched = perigeeToStore.get(visitCode);
         // Skip stores that are explicitly assigned to another BA — they're
-        // attributed below to the assigned BA, not the visiting one.
-        if (storeName && !assignedByCode.has(code)) entry.stores.set(code, storeName);
+        // attributed below to the assigned BA, not the visiting one. Key by the
+        // store's OWN siteCode so the target lookup below resolves correctly.
+        if (matched && !assignedByCode.has(matched.ownCode)) {
+          entry.stores.set(matched.ownCode, matched.storeName);
+        }
       }
       if (v.repName) entry.repName = v.repName;
     }

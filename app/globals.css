@@ -130,3 +130,18 @@ body[data-sidebar-closed="true"] main {
 .pagination button:hover { background: #f3f4f6; }
 .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 .pagination button.active { background: var(--haier-blue); color: white; border-color: var(--haier-blue); }
+
+/* Inline loading spinner (e.g. Stores table while data loads) */
+.stores-spinner {
+  display: inline-block;
+  vertical-align: middle;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--haier-border, #e5e7eb);
+  border-top-color: var(--haier-blue, #0054A6);
+  border-radius: 50%;
+  animation: stores-spin 0.7s linear infinite;
+}
+@keyframes stores-spin {
+  to { transform: rotate(360deg); }
+}
