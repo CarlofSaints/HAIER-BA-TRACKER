@@ -37,6 +37,14 @@ interface CronLogEntry {
   error?: string;
 }
 
+interface PageInfo {
+  pagesFetched?: number;
+  totalRows?: number;
+  reportedTotal?: number | null;
+  reportedLastPage?: number | null;
+  stoppedReason?: string;
+}
+
 interface TestResult {
   ok?: boolean;
   error?: string;
@@ -47,6 +55,19 @@ interface TestResult {
   rawTopLevelKeys?: string[];
   meta?: Record<string, unknown>;
   sentBody?: Record<string, unknown>;
+  pageInfo?: PageInfo;
+}
+
+interface ImportResult {
+  ok?: boolean;
+  error?: string;
+  detail?: string;
+  message?: string;
+  totalRows?: number;
+  importedRows?: number;
+  skippedDuplicates?: number;
+  pageInfo?: PageInfo;
+  scoresSeeded?: unknown;
 }
 
 const DEFAULT_BODY = JSON.stringify({
@@ -79,6 +100,7 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [schedule, setSchedule] = useState<PollSchedule>({ slots: [], timezone: 'Africa/Johannesburg' });
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -206,6 +228,7 @@ export default function SettingsPage() {
     } else {
       if (!confirm(`Import visits from ${parsed.startDate}? This will create a new upload batch.`)) return;
       setImporting(true);
+      setImportResult(null);
     }
 
     try {
@@ -220,7 +243,8 @@ export default function SettingsPage() {
         setTestResult(data);
         setToast({ msg: data.ok ? `Test OK — ${data.totalRows} visits returned` : (data.error || 'Test failed'), type: data.ok ? 'success' : 'error' });
       } else {
-        setToast({ msg: data.ok ? `Imported ${data.importedRows} visits` : (data.error || 'Import failed'), type: data.ok ? 'success' : 'error' });
+        setImportResult(data);
+        setToast({ msg: data.ok ? `Imported ${data.importedRows ?? 0} visits` : (data.error || 'Import failed'), type: data.ok ? 'success' : 'error' });
       }
     } catch {
       setToast({ msg: `${mode === 'test' ? 'Connection' : 'Import'} failed`, type: 'error' });
@@ -436,6 +460,12 @@ export default function SettingsPage() {
                 <>
                   <div style={{ fontWeight: 600, color: '#166534', marginBottom: 4 }}>
                     Connection successful — {testResult.totalRows} visits returned
+                    {testResult.pageInfo?.pagesFetched != null && (
+                      <span style={{ fontWeight: 400, color: '#6b7280' }}>
+                        {' '}across {testResult.pageInfo.pagesFetched} page{testResult.pageInfo.pagesFetched === 1 ? '' : 's'}
+                        {testResult.pageInfo.stoppedReason ? ` (${testResult.pageInfo.stoppedReason})` : ''}
+                      </span>
+                    )}
                   </div>
                   {testResult.responseKeys && testResult.responseKeys.length > 0 && (
                     <div style={{ color: '#374151', marginBottom: 4 }}>
@@ -475,6 +505,48 @@ export default function SettingsPage() {
                   {testResult.detail && (
                     <pre style={{ overflow: 'auto', maxHeight: 150, fontSize: '0.7rem', color: '#6b7280' }}>
                       {testResult.detail}
+                    </pre>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Import Results */}
+          {importResult && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem', background: importResult.ok ? '#f0fdf4' : '#fef2f2', borderRadius: 8, fontSize: '0.8rem', border: `1px solid ${importResult.ok ? '#bbf7d0' : '#fecaca'}` }}>
+              {importResult.ok ? (
+                <>
+                  <div style={{ fontWeight: 600, color: '#166534', marginBottom: 6 }}>
+                    {importResult.importedRows && importResult.importedRows > 0
+                      ? `Imported ${importResult.importedRows} new visit${importResult.importedRows === 1 ? '' : 's'}`
+                      : (importResult.message || 'No new visits imported')}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem 1rem', color: '#374151' }}>
+                    <span><strong>{importResult.importedRows ?? 0}</strong> imported</span>
+                    <span><strong>{importResult.skippedDuplicates ?? 0}</strong> skipped (already had)</span>
+                    <span><strong>{importResult.totalRows ?? 0}</strong> fetched from Perigee</span>
+                    {importResult.pageInfo?.pagesFetched != null && (
+                      <span><strong>{importResult.pageInfo.pagesFetched}</strong> page{importResult.pageInfo.pagesFetched === 1 ? '' : 's'}</span>
+                    )}
+                    {importResult.pageInfo?.reportedTotal != null && (
+                      <span>Perigee reported <strong>{importResult.pageInfo.reportedTotal}</strong> total</span>
+                    )}
+                  </div>
+                  {importResult.pageInfo?.stoppedReason && (
+                    <div style={{ marginTop: 4, color: '#6b7280', fontSize: '0.72rem' }}>
+                      Paging stopped: {importResult.pageInfo.stoppedReason}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={{ fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>
+                    {importResult.error || 'Import failed'}
+                  </div>
+                  {importResult.detail && (
+                    <pre style={{ overflow: 'auto', maxHeight: 150, fontSize: '0.7rem', color: '#6b7280' }}>
+                      {importResult.detail}
                     </pre>
                   )}
                 </>
