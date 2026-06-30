@@ -112,17 +112,34 @@ export async function POST(req: NextRequest) {
     data.sales[month][storeName] = {};
     data.stock[storeName] = {};
 
+    // Load the Products master up front and re-resolve each row's product
+    // mapping from its (possibly user-edited) Diamond code here on the server,
+    // rather than trusting the client's `mapped`/`articleDesc` — so edits made
+    // in the preview are authoritative.
+    const products = await loadProducts();
+    const byArticle = new Map<string, ProductMaster>();
+    const byDiamond = new Map<string, ProductMaster>();
+    for (const p of products) {
+      byArticle.set(p.articleDesc.toLowerCase().trim(), p);
+      if (p.diamondCode?.trim()) byDiamond.set(p.diamondCode.trim().toUpperCase(), p);
+    }
+    const resolveArticle = (r: DiamondRow): { code: string; articleDesc: string; mapped: boolean } => {
+      const code = (r.code || '').trim();
+      const mappedProduct = code ? byDiamond.get(code.toUpperCase()) : undefined;
+      return { code, mapped: !!mappedProduct, articleDesc: (mappedProduct?.articleDesc || r.description || '').trim() };
+    };
+
     const unmappedCodes: string[] = [];
     let totalValue = 0;
     let loadedRows = 0;
 
     for (const r of rows) {
-      const articleDesc = (r.articleDesc || r.description || '').trim();
+      const { code, articleDesc, mapped } = resolveArticle(r);
       if (!articleDesc) continue;
       const qty = Number(r.qty) || 0;
       const soh = Number(r.soh) || 0;
       const value = Number(r.value) || 0;
-      if (!r.mapped && r.code) unmappedCodes.push(r.code);
+      if (!mapped && code) unmappedCodes.push(code);
       totalValue += value;
       loadedRows++;
 
@@ -149,18 +166,11 @@ export async function POST(req: NextRequest) {
     //  - else create a new product seeded with the Diamond code; the Makro
     //    Product Code etc. stay blank for the admin to fill if it later shows up
     //    in DISPO/Makro data.
-    const products = await loadProducts();
-    const byArticle = new Map<string, ProductMaster>();
-    const byDiamond = new Map<string, ProductMaster>();
-    for (const p of products) {
-      byArticle.set(p.articleDesc.toLowerCase().trim(), p);
-      if (p.diamondCode?.trim()) byDiamond.set(p.diamondCode.trim().toUpperCase(), p);
-    }
+    // (products / byArticle / byDiamond were built above and are reused here.)
     let productsChanged = false;
     const newProductNames: string[] = [];
     for (const r of rows) {
-      const code = (r.code || '').trim();
-      const articleDesc = (r.articleDesc || r.description || '').trim();
+      const { code, articleDesc } = resolveArticle(r);
       if (!articleDesc) continue;
       // Already known by its Diamond code — nothing to add.
       if (code && byDiamond.has(code.toUpperCase())) continue;

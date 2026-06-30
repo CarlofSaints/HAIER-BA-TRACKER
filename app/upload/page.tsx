@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
@@ -139,9 +139,11 @@ export default function UploadPage() {
   const [diamondStores, setDiamondStores] = useState<DiamondStore[]>([]);
   const [diamondChannels, setDiamondChannels] = useState<ChannelOpt[]>([]);
   const [diamondBas, setDiamondBas] = useState<BaOpt[]>([]);
+  const [diamondProducts, setDiamondProducts] = useState<{ diamondCode?: string; articleDesc: string }[]>([]);
   const [diamondFile, setDiamondFile] = useState<File | null>(null);
   const [diamondExtracting, setDiamondExtracting] = useState(false);
   const [diamondCommitting, setDiamondCommitting] = useState(false);
+  const [diamondDeletingId, setDiamondDeletingId] = useState<string | null>(null);
   const [diamondDragOver, setDiamondDragOver] = useState(false);
   const [diamondExtract, setDiamondExtract] = useState<DiamondExtract | null>(null);
   // Editable store fields (the PDF only supplies the store name; the rest is
@@ -251,6 +253,13 @@ export default function UploadPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const loadDiamondProducts = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/products');
+      if (res.ok) setDiamondProducts(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     if (session) {
       loadUploads();
@@ -263,8 +272,9 @@ export default function UploadPage() {
       loadDiamondChannels();
       loadDiamondBas();
       loadDiamondUploads();
+      loadDiamondProducts();
     }
-  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads, loadRedFlagUploads, loadDiamondStores, loadDiamondChannels, loadDiamondBas, loadDiamondUploads]);
+  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads, loadRedFlagUploads, loadDiamondStores, loadDiamondChannels, loadDiamondBas, loadDiamondUploads, loadDiamondProducts]);
 
   async function handleFile(file: File) {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
@@ -695,19 +705,68 @@ export default function UploadPage() {
     if (diamondFileRef.current) diamondFileRef.current.value = '';
   }
 
+  // Diamond Corner code -> articleDesc, used to re-resolve a row's product
+  // mapping live as the user corrects the OCR'd code/description.
+  const diamondCodeMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of diamondProducts) {
+      if (p.diamondCode && p.diamondCode.trim()) m.set(p.diamondCode.trim().toUpperCase(), p.articleDesc);
+    }
+    return m;
+  }, [diamondProducts]);
+
+  function resolveDiamondRow(row: DiamondRow): DiamondRow {
+    const code = (row.code || '').trim().toUpperCase();
+    const mappedArticle = code ? diamondCodeMap.get(code) : undefined;
+    return {
+      ...row,
+      mapped: !!mappedArticle,
+      articleDesc: mappedArticle || (row.description || '').trim(),
+    };
+  }
+
+  // Edit an OCR'd row in the preview before loading (fix mis-reads of code,
+  // description or the numbers). Code/description edits re-resolve the mapping.
+  function handleDiamondRowChange(idx: number, field: 'code' | 'description' | 'qty' | 'soh' | 'value', value: string) {
+    if (!diamondExtract) return;
+    const rows = diamondExtract.rows.map((r, i) => {
+      if (i !== idx) return r;
+      let next: DiamondRow;
+      if (field === 'qty' || field === 'soh' || field === 'value') {
+        const num = Number(value);
+        next = { ...r, [field]: value.trim() === '' || !Number.isFinite(num) ? 0 : num };
+      } else {
+        next = { ...r, [field]: value };
+        next = resolveDiamondRow(next);
+      }
+      return next;
+    });
+    setDiamondExtract({ ...diamondExtract, rows });
+  }
+
+  function handleDiamondRowDelete(idx: number) {
+    if (!diamondExtract) return;
+    setDiamondExtract({ ...diamondExtract, rows: diamondExtract.rows.filter((_, i) => i !== idx) });
+  }
+
   async function handleDiamondDelete(id: string) {
+    if (diamondDeletingId) return; // a delete is already in progress
     if (!confirm('Delete this Diamond Corner upload? Its sales & stock will be removed from the store and sales scores recalculated.')) return;
+    setDiamondDeletingId(id);
+    setToast({ msg: 'Deleting Diamond Corner upload & recalculating scores…', type: 'success' });
     try {
       const res = await authFetch(`/api/diamond/delete/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setToast({ msg: 'Diamond Corner upload deleted', type: 'success' });
-        loadDiamondUploads();
+        await loadDiamondUploads();
       } else {
         const result = await res.json().catch(() => ({}));
         setToast({ msg: result.error || 'Delete failed', type: 'error' });
       }
     } catch {
       setToast({ msg: 'Delete failed', type: 'error' });
+    } finally {
+      setDiamondDeletingId(null);
     }
   }
 
@@ -1173,37 +1232,88 @@ export default function UploadPage() {
                 </div>
               </div>
 
-              {/* Preview table */}
+              {/* Preview table — all OCR'd fields are editable so the user can
+                  correct any mis-reads to match the PDF before loading. */}
+              <p style={{ fontSize: '0.72rem', color: '#6b7280', marginBottom: '0.4rem' }}>
+                Check the OCR results below and correct any values to match the PDF. Editing a Code or
+                Description updates which product the row maps to.
+              </p>
               <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', maxHeight: 320 }}>
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Code</th>
+                      <th style={{ width: 110 }}>Code</th>
                       <th>Description</th>
-                      <th style={{ textAlign: 'right' }}>Qty</th>
-                      <th style={{ textAlign: 'right' }}>SOH</th>
-                      <th style={{ textAlign: 'right' }}>Value</th>
+                      <th style={{ width: 70, textAlign: 'right' }}>Qty</th>
+                      <th style={{ width: 70, textAlign: 'right' }}>SOH</th>
+                      <th style={{ width: 100, textAlign: 'right' }}>Value</th>
                       <th>Maps to product</th>
+                      <th style={{ width: 36 }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {diamondExtract.rows.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontSize: '0.75rem', fontFamily: 'monospace' }}>{r.code}</td>
-                        <td style={{ fontSize: '0.78rem' }}>{r.description}</td>
-                        <td style={{ textAlign: 'right' }}>{r.qty}</td>
-                        <td style={{ textAlign: 'right' }}>{r.soh}</td>
-                        <td style={{ textAlign: 'right' }}>{r.value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td>
+                          <input
+                            className="input"
+                            value={r.code}
+                            onChange={e => handleDiamondRowChange(i, 'code', e.target.value)}
+                            style={{ width: '100%', fontSize: '0.75rem', fontFamily: 'monospace' }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="input"
+                            value={r.description}
+                            onChange={e => handleDiamondRowChange(i, 'description', e.target.value)}
+                            style={{ width: '100%', fontSize: '0.78rem' }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="input" type="number" step="any"
+                            value={r.qty}
+                            onChange={e => handleDiamondRowChange(i, 'qty', e.target.value)}
+                            style={{ width: '100%', fontSize: '0.78rem', textAlign: 'right' }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="input" type="number" step="any"
+                            value={r.soh}
+                            onChange={e => handleDiamondRowChange(i, 'soh', e.target.value)}
+                            style={{ width: '100%', fontSize: '0.78rem', textAlign: 'right' }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="input" type="number" step="any"
+                            value={r.value}
+                            onChange={e => handleDiamondRowChange(i, 'value', e.target.value)}
+                            style={{ width: '100%', fontSize: '0.78rem', textAlign: 'right' }}
+                          />
+                        </td>
                         <td style={{ fontSize: '0.75rem' }}>
                           {r.mapped ? (
                             <span style={{ color: '#065f46' }} title="Mapped via Diamond Corner code on the Products page">
                               ✓ {r.articleDesc}
                             </span>
                           ) : (
-                            <span style={{ color: '#92400e' }} title="No Diamond Corner code mapping — will load under its PDF description">
+                            <span style={{ color: '#92400e' }} title="No Diamond Corner code mapping — will load (and be added to Products) under its PDF description">
                               ⚠ new: {r.articleDesc}
                             </span>
                           )}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleDiamondRowDelete(i)}
+                            title="Remove this row"
+                            style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: 0 }}
+                          >
+                            ×
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1252,10 +1362,12 @@ export default function UploadPage() {
                     </div>
                     <button
                       className="btn btn-danger"
-                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', marginLeft: '1rem' }}
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', marginLeft: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
                       onClick={() => handleDiamondDelete(u.id)}
+                      disabled={diamondDeletingId !== null}
                     >
-                      Delete
+                      {diamondDeletingId === u.id && <Spinner size={12} color="#fff" />}
+                      {diamondDeletingId === u.id ? 'Deleting…' : 'Delete'}
                     </button>
                   </div>
                 ))}
