@@ -659,10 +659,10 @@ export default function UploadPage() {
       if (!res.ok || !data.ok) {
         setToast({ msg: data.error || 'Load failed', type: 'error' });
       } else {
-        const unmapped = data.unmappedCodes?.length
-          ? ` — ${data.unmappedCodes.length} code(s) not mapped to a product (loaded under their PDF description)`
+        const added = data.newProducts?.length
+          ? ` — ${data.newProducts.length} new product(s) added to Products (Diamond code populated)`
           : '';
-        setToast({ msg: `Loaded ${data.rowCount} rows to ${data.storeName}${unmapped}`, type: 'success' });
+        setToast({ msg: `Loaded ${data.rowCount} rows to ${data.storeName}${added}`, type: 'success' });
         setDiamondFile(null);
         setDiamondExtract(null);
         resetDiamondStoreFields();

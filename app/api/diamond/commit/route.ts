@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadDispoData, saveDispoData } from '@/lib/dispoData';
 import { loadStores, saveStores, addStoreSource } from '@/lib/storeData';
+import { loadProducts, saveProducts, ProductMaster } from '@/lib/productData';
 import {
   loadDiamondUploads, saveDiamondUploads, saveDiamondRaw, deleteDiamondRaw,
   DiamondRow, DiamondUploadMeta,
@@ -140,6 +141,53 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Reconcile the Products master so Diamond Corner products that aren't on the
+    // Products page get added there, with their Diamond Corner code populated:
+    //  - row already mapped by diamondCode -> product exists, leave it.
+    //  - else a product with the same articleDesc exists -> backfill diamondCode
+    //    if it's missing (so future uploads map by code).
+    //  - else create a new product seeded with the Diamond code; the Makro
+    //    Product Code etc. stay blank for the admin to fill if it later shows up
+    //    in DISPO/Makro data.
+    const products = await loadProducts();
+    const byArticle = new Map<string, ProductMaster>();
+    const byDiamond = new Map<string, ProductMaster>();
+    for (const p of products) {
+      byArticle.set(p.articleDesc.toLowerCase().trim(), p);
+      if (p.diamondCode?.trim()) byDiamond.set(p.diamondCode.trim().toUpperCase(), p);
+    }
+    let productsChanged = false;
+    const newProductNames: string[] = [];
+    for (const r of rows) {
+      const code = (r.code || '').trim();
+      const articleDesc = (r.articleDesc || r.description || '').trim();
+      if (!articleDesc) continue;
+      // Already known by its Diamond code — nothing to add.
+      if (code && byDiamond.has(code.toUpperCase())) continue;
+      const existing = byArticle.get(articleDesc.toLowerCase().trim());
+      if (existing) {
+        if (code && !existing.diamondCode?.trim()) {
+          existing.diamondCode = code;
+          byDiamond.set(code.toUpperCase(), existing);
+          productsChanged = true;
+        }
+        continue;
+      }
+      const np: ProductMaster = {
+        articleDesc, productCode: '', category: '', industry: '', status: '',
+        diamondCode: code,
+      };
+      products.push(np);
+      byArticle.set(articleDesc.toLowerCase().trim(), np);
+      if (code) byDiamond.set(code.toUpperCase(), np);
+      newProductNames.push(articleDesc);
+      productsChanged = true;
+    }
+    if (productsChanged) {
+      products.sort((a, b) => a.articleDesc.localeCompare(b.articleDesc));
+      await saveProducts(products);
+    }
+
     // Remove any prior Diamond upload for this same store+month (and its raw),
     // then record the new one. (`uploads`/`existingForSlot` loaded above.)
     for (const old of existingForSlot) await deleteDiamondRaw(old.id);
@@ -175,8 +223,11 @@ export async function POST(req: NextRequest) {
       console.error('Diamond commit auto-calc failed:', err);
     }
 
+    const newProductNote = newProductNames.length
+      ? ` ${newProductNames.length} new product(s) added to Products (Diamond code populated).`
+      : '';
     logFromUser(user, 'upload_diamond', `diamond/${id}`,
-      `Loaded ${loadedRows} Diamond Corner rows for ${storeName} (${month}). Sales scores auto-recalculated.`);
+      `Loaded ${loadedRows} Diamond Corner rows for ${storeName} (${month}). Sales scores auto-recalculated.${newProductNote}`);
 
     return NextResponse.json({
       ok: true,
@@ -186,6 +237,7 @@ export async function POST(req: NextRequest) {
       rowCount: loadedRows,
       totalValue,
       unmappedCodes: meta.unmappedCodes,
+      newProducts: newProductNames,
       autoCalc,
     }, { headers: noCacheHeaders() });
   } catch (err) {
