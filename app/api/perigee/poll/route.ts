@@ -4,6 +4,7 @@ import { readJson, writeJson } from '@/lib/blob';
 import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData, visitDedupeKey } from '@/lib/visitData';
 import { seedScoresFromVisits } from '@/lib/seedScores';
 import { fetchAllPerigeeVisits, PerigeeFetchError } from '@/lib/perigeeFetch';
+import { loadExcludedReps, excludedEmailSet, filterExcluded } from '@/lib/excludedReps';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -215,9 +216,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const mappedVisits: Visit[] = rawVisits
-      .map(mapPerigeeVisit)
-      .filter(v => v.storeName || v.repName);
+    const excluded = excludedEmailSet(await loadExcludedReps());
+    const mappedVisits: Visit[] = filterExcluded(
+      rawVisits.map(mapPerigeeVisit).filter(v => v.storeName || v.repName),
+      excluded,
+    );
 
     // Deduplicate within this batch (Perigee returns same GUID 2+ times)
     const batchSeen = new Set<string>();

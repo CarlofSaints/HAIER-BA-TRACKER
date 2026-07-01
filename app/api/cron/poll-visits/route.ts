@@ -6,6 +6,7 @@ import { requireRole } from '@/lib/auth';
 import { logActivity } from '@/lib/activityLog';
 import { runAutoCalcForMonth } from '@/lib/autoCalc';
 import { fetchAllPerigeeVisits, PerigeeFetchError } from '@/lib/perigeeFetch';
+import { loadExcludedReps, excludedEmailSet, filterExcluded } from '@/lib/excludedReps';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -237,8 +238,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: true, action: 'polled', imported: 0 });
     }
 
-    // Map and deduplicate
-    const mappedVisits: Visit[] = rawVisits.map(mapPerigeeVisit).filter(v => v.storeName || v.repName);
+    // Map, drop excluded reps (test BAs), and deduplicate
+    const excluded = excludedEmailSet(await loadExcludedReps());
+    const mappedVisits: Visit[] = filterExcluded(
+      rawVisits.map(mapPerigeeVisit).filter(v => v.storeName || v.repName),
+      excluded,
+    );
 
     // Deduplicate within this batch (Perigee returns same GUID 2+ times)
     const batchSeen = new Set<string>();

@@ -5,7 +5,7 @@ export type ActivityAction =
   | 'upload_visits' | 'upload_dispo' | 'upload_training' | 'upload_targets' | 'upload_display' | 'upload_red_flags' | 'upload_diamond'
   | 'delete_visits' | 'delete_dispo' | 'delete_training' | 'delete_targets' | 'delete_display' | 'delete_red_flags' | 'delete_diamond'
   | 'cron_import'
-  | 'user_create' | 'user_edit' | 'user_delete' | 'user_purge'
+  | 'user_create' | 'user_edit' | 'user_delete' | 'user_purge' | 'rep_exclude'
   | 'scores_save'
   | 'reminder_create' | 'reminder_edit' | 'reminder_delete' | 'reminder_sent'
   | 'user_login' | 'load_form_data';

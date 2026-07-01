@@ -109,6 +109,10 @@ export default function SettingsPage() {
   const [cronLogs, setCronLogs] = useState<CronLogEntry[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [testingCron, setTestingCron] = useState(false);
+  const [excludedReps, setExcludedReps] = useState<{ email: string; repName?: string }[]>([]);
+  const [newExclEmail, setNewExclEmail] = useState('');
+  const [newExclName, setNewExclName] = useState('');
+  const [excluding, setExcluding] = useState(false);
 
   useEffect(() => {
     if (!session) return;
@@ -129,7 +133,55 @@ export default function SettingsPage() {
       .then(data => { if (data.lateCheckinTime) setScoringThresholds(data); })
       .catch(() => {});
     loadCronLogs();
+    loadExcludedReps();
   }, [session]);
+
+  function loadExcludedReps() {
+    authFetch('/api/excluded-reps')
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setExcludedReps(data); })
+      .catch(() => {});
+  }
+
+  async function addExclusion() {
+    const email = newExclEmail.trim().toLowerCase();
+    if (!email) { setToast({ msg: 'Enter the rep’s email', type: 'error' }); return; }
+    if (!confirm(`Exclude ${newExclName || email} and remove ALL their existing visits/scores from the data? They will also be skipped on every future Perigee import. This cannot be undone.`)) return;
+    setExcluding(true);
+    try {
+      const res = await authFetch('/api/excluded-reps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, repName: newExclName.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const r = data.removed || {};
+        setToast({ msg: `Excluded ${newExclName || email} — removed ${r.visitsRemoved ?? 0} visits, ${r.scoresRemoved ?? 0} scores, ${r.trainingRemoved ?? 0} training.`, type: 'success' });
+        setNewExclEmail(''); setNewExclName('');
+        loadExcludedReps();
+      } else {
+        setToast({ msg: data.error || 'Failed to exclude', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Failed to exclude', type: 'error' });
+    } finally {
+      setExcluding(false);
+    }
+  }
+
+  async function removeExclusion(email: string) {
+    if (!confirm(`Un-exclude ${email}? Their visits will return on the next Perigee import.`)) return;
+    try {
+      const res = await authFetch('/api/excluded-reps', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (res.ok) { setToast({ msg: 'Removed from exclusions', type: 'success' }); loadExcludedReps(); }
+      else setToast({ msg: 'Failed', type: 'error' });
+    } catch { setToast({ msg: 'Failed', type: 'error' }); }
+  }
 
   function loadCronLogs() {
     setLoadingLogs(true);
@@ -372,6 +424,44 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Excluded Reps (test BAs) */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 620, marginTop: '1.5rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
+            Excluded Reps (test BAs)
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+            Reps listed here are skipped on every Perigee import and their existing visits/scores are
+            removed — use this for test accounts that should never appear in the data.
+          </p>
+
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '1rem' }}>
+            <div style={{ flex: '1 1 220px' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Rep email (from Perigee)</label>
+              <input className="input" type="email" placeholder="test@example.com" value={newExclEmail} onChange={e => setNewExclEmail(e.target.value)} style={{ width: '100%' }} />
+            </div>
+            <div style={{ flex: '1 1 160px' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Name (optional)</label>
+              <input className="input" placeholder="Test BA" value={newExclName} onChange={e => setNewExclName(e.target.value)} style={{ width: '100%' }} />
+            </div>
+            <button className="btn btn-danger" onClick={addExclusion} disabled={excluding}>
+              {excluding ? 'Removing…' : 'Exclude & remove data'}
+            </button>
+          </div>
+
+          {excludedReps.length === 0 ? (
+            <div style={{ color: '#9ca3af', fontSize: '0.8rem' }}>No excluded reps.</div>
+          ) : (
+            <div style={{ border: '1px solid #f3f4f6', borderRadius: 8, overflow: 'hidden' }}>
+              {excludedReps.map(r => (
+                <div key={r.email} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0.75rem', borderBottom: '1px solid #f3f4f6', fontSize: '0.82rem' }}>
+                  <span><strong>{r.repName || r.email}</strong>{r.repName ? <span style={{ color: '#9ca3af' }}> · {r.email}</span> : null}</span>
+                  <button className="btn" style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }} onClick={() => removeExclusion(r.email)}>Un-exclude</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Scoring Thresholds */}
