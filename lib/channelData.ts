@@ -1,10 +1,26 @@
 import { readJson, writeJson } from './blob';
 
+/** Which pipeline supplies a (sub-)channel's sales/stock data. */
+export type ChannelDataSource = 'sams' | 'dispo' | 'excel';
+
 export interface Channel {
   id: string;
   name: string;
   /** If set, this channel is a sub-channel of the parent */
   parentId?: string;
+  /** Data source for this (sub-)channel's sales/stock. Meaningful at the
+   *  sub-channel level (stores are assigned to sub-channels). Defaults to
+   *  'dispo' for channels created before this field existed. */
+  dataSource?: ChannelDataSource;
+}
+
+/** The data source for a given channel id (defaults to 'dispo'). */
+export function channelDataSource(
+  channels: Channel[],
+  channelId: string | undefined,
+): ChannelDataSource {
+  if (!channelId) return 'dispo';
+  return channels.find(c => c.id === channelId)?.dataSource ?? 'dispo';
 }
 
 const BLOB_KEY = 'admin/channels.json';

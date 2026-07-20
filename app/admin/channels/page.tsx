@@ -10,7 +10,15 @@ interface Channel {
   id: string;
   name: string;
   parentId?: string;
+  dataSource?: 'sams' | 'dispo' | 'excel';
 }
+
+const dsLabel = (ds?: string) => (ds === 'sams' ? 'SAMS' : ds === 'excel' ? 'EXCEL' : 'DISPO');
+const dsBadge = (ds?: string) => ({
+  fontSize: '0.6rem', fontWeight: 600 as const, padding: '0.1rem 0.4rem', borderRadius: 4, marginLeft: '0.4rem',
+  background: ds === 'sams' ? '#ede9fe' : ds === 'excel' ? '#fef3c7' : '#dcfce7',
+  color: ds === 'sams' ? '#6d28d9' : ds === 'excel' ? '#92400e' : '#166534',
+});
 
 export default function ChannelsPage() {
   const { session, loading: authLoading, logout } = useAuth(['super_admin']);
@@ -21,6 +29,7 @@ export default function ChannelsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editParentId, setEditParentId] = useState('');
+  const [editDataSource, setEditDataSource] = useState('dispo');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const loadChannels = useCallback(async () => {
@@ -87,6 +96,7 @@ export default function ChannelsPage() {
     setEditingId(ch.id);
     setEditName(ch.name);
     setEditParentId(ch.parentId || '');
+    setEditDataSource(ch.dataSource || 'dispo');
   }
 
   async function handleSaveEdit() {
@@ -96,7 +106,13 @@ export default function ChannelsPage() {
       const res = await authFetch('/api/channels', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editingId, name: editName.trim(), parentId: editParentId || null }),
+        body: JSON.stringify({
+          id: editingId,
+          name: editName.trim(),
+          parentId: editParentId || null,
+          // Data source only applies to sub-channels; clear it when Made Main.
+          dataSource: editParentId ? editDataSource : null,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -140,6 +156,7 @@ export default function ChannelsPage() {
         </h1>
         <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           Manage main channels and sub-channels. Stores are assigned to sub-channels (or directly to main channels if no sub-channel exists).
+          Each sub-channel has a <strong>data source</strong> (DISPO / SAMS / Other Excel) — edit a sub-channel to set where its sales &amp; stock come from.
         </p>
 
         {/* Add channel */}
@@ -208,13 +225,25 @@ export default function ChannelsPage() {
                   {/* Sub-channel rows */}
                   {subs.map(sub => (
                     editingId === sub.id ? (
-                      <div key={sub.id} style={{ ...rowStyle(true), gap: '0.5rem' }}>
-                        <input className="input" value={editName} onChange={e => setEditName(e.target.value)} style={{ flex: 1, fontSize: '0.85rem' }} />
-                        <select className="input" value={editParentId} onChange={e => setEditParentId(e.target.value)} style={{ width: 150, fontSize: '0.8rem' }}>
+                      <div key={sub.id} style={{ ...rowStyle(true), gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <input className="input" value={editName} onChange={e => setEditName(e.target.value)} style={{ flex: 1, minWidth: 120, fontSize: '0.85rem' }} />
+                        <select className="input" value={editParentId} onChange={e => setEditParentId(e.target.value)} style={{ width: 140, fontSize: '0.8rem' }}>
                           <option value="">Make Main</option>
                           {mainChannels.filter(c => c.id !== sub.id).map(c => (
                             <option key={c.id} value={c.id}>Sub of {c.name}</option>
                           ))}
+                        </select>
+                        <select
+                          className="input"
+                          value={editDataSource}
+                          onChange={e => setEditDataSource(e.target.value)}
+                          disabled={!editParentId}
+                          title="Which pipeline supplies this sub-channel's sales/stock data"
+                          style={{ width: 130, fontSize: '0.8rem' }}
+                        >
+                          <option value="dispo">Data: DISPO</option>
+                          <option value="sams">Data: SAMS</option>
+                          <option value="excel">Data: Other Excel</option>
                         </select>
                         <button className="btn btn-primary" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={handleSaveEdit} disabled={saving}>Save</button>
                         <button className="btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={() => setEditingId(null)}>Cancel</button>
@@ -225,6 +254,7 @@ export default function ChannelsPage() {
                           <span style={{ color: '#6b7280', fontSize: '0.75rem', marginRight: '0.35rem' }}>└</span>
                           <span style={{ fontWeight: 500, color: '#4b5563', fontSize: '0.85rem' }}>{sub.name}</span>
                           <span style={badgeStyle(false)}>SUB</span>
+                          <span style={dsBadge(sub.dataSource)}>{dsLabel(sub.dataSource)}</span>
                           <div style={{ color: '#9ca3af', fontSize: '0.7rem', paddingLeft: '1rem' }}>ID: {sub.id}</div>
                         </div>
                         <div style={{ display: 'flex', gap: '0.35rem' }}>

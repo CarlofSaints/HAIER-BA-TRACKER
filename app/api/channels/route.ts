@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
-import { loadChannels, saveChannels } from '@/lib/channelData';
+import { loadChannels, saveChannels, ChannelDataSource } from '@/lib/channelData';
+
+const DATA_SOURCES: ChannelDataSource[] = ['sams', 'dispo', 'excel'];
+function isDataSource(v: unknown): v is ChannelDataSource {
+  return typeof v === 'string' && (DATA_SOURCES as string[]).includes(v);
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +21,7 @@ export async function POST(req: NextRequest) {
   const user = await requireRole(req, ['super_admin']);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { name, parentId } = await req.json();
+  const { name, parentId, dataSource } = await req.json();
   if (!name || typeof name !== 'string' || !name.trim()) {
     return NextResponse.json({ error: 'Name is required' }, { status: 400 });
   }
@@ -32,8 +37,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Parent channel not found' }, { status: 400 });
   }
 
-  const entry: { id: string; name: string; parentId?: string } = { id, name: name.trim().toUpperCase() };
+  const entry: { id: string; name: string; parentId?: string; dataSource?: ChannelDataSource } = {
+    id, name: name.trim().toUpperCase(),
+  };
   if (parentId) entry.parentId = parentId;
+  if (isDataSource(dataSource)) entry.dataSource = dataSource;
   channels.push(entry);
   await saveChannels(channels);
 
@@ -44,7 +52,7 @@ export async function PATCH(req: NextRequest) {
   const user = await requireRole(req, ['super_admin']);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id, name, parentId } = await req.json();
+  const { id, name, parentId, dataSource } = await req.json();
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
   const channels = await loadChannels();
@@ -71,6 +79,18 @@ export async function PATCH(req: NextRequest) {
     channels[idx].parentId = parentId;
   } else if (parentId === null || parentId === '') {
     delete channels[idx].parentId;
+  }
+
+  // Data source (SAMS / DISPO / Other Excel). '' or null clears it (back to the
+  // 'dispo' default); an invalid value is rejected.
+  if (dataSource !== undefined) {
+    if (dataSource === null || dataSource === '') {
+      delete channels[idx].dataSource;
+    } else if (isDataSource(dataSource)) {
+      channels[idx].dataSource = dataSource;
+    } else {
+      return NextResponse.json({ error: 'Invalid dataSource' }, { status: 400 });
+    }
   }
 
   await saveChannels(channels);
