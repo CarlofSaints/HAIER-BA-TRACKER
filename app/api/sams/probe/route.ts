@@ -4,6 +4,7 @@ import {
   getSamsColumns,
   getClientStores,
   getClientProducts,
+  getClientProductLinks,
   isSqlProxyConfigured,
 } from '@/lib/sqlProxy';
 
@@ -59,14 +60,15 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const [samsColumns, stores, products] = await Promise.all([
+  const [samsColumns, stores, products, productLinks] = await Promise.all([
     probe(() => getSamsColumns()),
     probe(() => getClientStores()),
     probe(() => getClientProducts()),
+    probe(() => getClientProductLinks()),
   ]);
 
   return NextResponse.json(
-    { client: 'HAIER ELECTRONICS', samsColumns, stores, products },
+    { client: 'HAIER ELECTRONICS', samsColumns, stores, products, productLinks },
     { headers: noCacheHeaders() },
   );
 }

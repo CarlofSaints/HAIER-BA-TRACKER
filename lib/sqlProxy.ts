@@ -113,3 +113,9 @@ export function getClientStores(client: string = HAIER_CLIENT) {
 export function getClientProducts(client: string = HAIER_CLIENT) {
   return sqlQuery<Record<string, unknown>>('client_products', { client });
 }
+
+// Product links bridge retailer article codes (SAMS.ARTICLE_ID) → the Haier
+// Client Product ID that keys the product dimension.
+export function getClientProductLinks(client: string = HAIER_CLIENT) {
+  return sqlQuery<Record<string, unknown>>('client_product_links', { client });
+}
