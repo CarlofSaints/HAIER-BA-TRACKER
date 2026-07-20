@@ -12,8 +12,20 @@
    Both are the SAME values the ARIA Score Card Portal uses.
    ────────────────────────────────────────────────────────────── */
 
-const PROXY_URL = process.env.SQL_PROXY_URL || '';
-const PROXY_KEY = process.env.SQL_PROXY_API_KEY || '';
+/**
+ * Normalize the configured proxy base URL: tolerate a bare domain (add https://)
+ * and strip any trailing slash, so `${PROXY_URL}/query` is always a valid
+ * absolute URL regardless of how the env var was entered.
+ */
+function normalizeBase(raw: string): string {
+  let u = (raw || '').trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+  return u.replace(/\/+$/, '');
+}
+
+const PROXY_URL = normalizeBase(process.env.SQL_PROXY_URL || '');
+const PROXY_KEY = (process.env.SQL_PROXY_API_KEY || '').trim();
 
 export const HAIER_CLIENT = 'HAIER ELECTRONICS';
 
