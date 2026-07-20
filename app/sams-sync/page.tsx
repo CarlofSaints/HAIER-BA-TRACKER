@@ -170,7 +170,7 @@ export default function SamsSyncPage() {
             Pull the latest sales &amp; stock data from SQL Server (SAMS) via the Railway proxy.
             Right now this writes a <strong>separate comparison dataset</strong> — DISPO data and all
             scores are left untouched. Review it on the{' '}
-            <a href="/sales?source=sams" style={{ color: HAIER_BLUE, fontWeight: 600 }}>Sales &amp; Stock (SAMS)</a>{' '}
+            <a href="/sales-sams" style={{ color: HAIER_BLUE, fontWeight: 600 }}>Sales &amp; Stock (SAMS)</a>{' '}
             page, and once it looks right we flip the switch to make SAMS live everywhere.
           </p>
         </div>

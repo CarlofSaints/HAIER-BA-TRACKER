@@ -62,21 +62,23 @@ export default function SalesPage() {
   // useSearchParams must be under a Suspense boundary in the App Router.
   return (
     <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>}>
-      <SalesPageInner />
+      <SalesStockView />
     </Suspense>
   );
 }
 
-function SalesPageInner() {
+/**
+ * Shared Sales & Stock view. Rendered by /sales (DISPO) and, with forceSams,
+ * by /sales-sams (the SAMS comparison route) — same component so the two views
+ * render identically. `forceSams` wins; otherwise ?source=sams is honoured too
+ * (kept for old bookmarks). A separate route is used rather than a query flag
+ * because flipping ?source on the same /sales route doesn't reliably remount /
+ * refetch under App Router client navigation.
+ */
+export function SalesStockView({ forceSams = false }: { forceSams?: boolean }) {
   const { session, loading: authLoading, logout } = useAuth();
-  // Data source: default DISPO (live); ?source=sams renders the SAMS comparison
-  // dataset (sams/data.json), read-only, for validating SAMS vs DISPO before
-  // cutover. useSearchParams() reads the real query on both server and client
-  // and reacts to navigation — a window-based useState initializer is WRONG
-  // here: it runs on the server with no window, and hydration keeps that value,
-  // so ?source=sams never took effect.
   const searchParams = useSearchParams();
-  const isSams = searchParams.get('source') === 'sams';
+  const isSams = forceSams || searchParams.get('source') === 'sams';
   const [data, setData] = useState<DispoSalesData | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('store');
