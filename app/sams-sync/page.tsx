@@ -83,6 +83,8 @@ export default function SamsSyncPage() {
   const [configured, setConfigured] = useState(true);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncingLabel, setSyncingLabel] = useState<string | null>(null);
+  const [channels, setChannels] = useState<{ id: string; name: string; parentId?: string; dataSource?: string }[]>([]);
   const [showLog, setShowLog] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -104,7 +106,11 @@ export default function SamsSyncPage() {
   useEffect(() => {
     if (!session) return;
     loadStatus();
+    authFetch('/api/channels').then(r => (r.ok ? r.json() : [])).then(setChannels).catch(() => {});
   }, [session, loadStatus]);
+
+  // Sub-channels whose data source is SAMS — one sync button each.
+  const samsSubs = channels.filter(c => c.parentId && c.dataSource === 'sams');
 
   async function loadLog() {
     try {
@@ -122,17 +128,22 @@ export default function SamsSyncPage() {
     if (next) loadLog();
   }
 
-  async function handleSync() {
+  async function handleSync(channelIds?: string[], label?: string) {
     setSyncing(true);
+    setSyncingLabel(label ?? 'all');
     try {
-      const res = await authFetch('/api/sams/sync', { method: 'POST' });
+      const res = await authFetch('/api/sams/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(channelIds && channelIds.length ? { channelIds } : {}),
+      });
       const d = await res.json();
       if (!res.ok) throw new Error(d.detail || d.error || 'Sync failed');
       if (d.meta) setMeta(d.meta);
       const c = d.meta?.counts;
       setToast({
         msg: c
-          ? `Synced — ${fmtNum(c.salesRows)} sales cells, ${fmtNum(c.stores)} stores, ${fmtNum(c.products)} products across ${c.months} months.`
+          ? `Synced${label && label !== 'all' ? ` ${label}` : ''} — ${fmtNum(c.stores)} stores, ${fmtNum(c.salesRows)} sales cells, ${fmtNum(c.products)} products, ${c.months} months.`
           : 'SAMS sync complete.',
         type: 'success',
       });
@@ -141,6 +152,7 @@ export default function SamsSyncPage() {
       setToast({ msg: e instanceof Error ? e.message : 'Sync failed', type: 'error' });
     } finally {
       setSyncing(false);
+      setSyncingLabel(null);
     }
   }
 
@@ -236,35 +248,53 @@ export default function SamsSyncPage() {
               </div>
             ) : null}
 
-            {/* Sync button */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', margin: '0.5rem 0 1rem' }}>
+            {/* Sync buttons — one per SAMS-marked sub-channel + Sync all */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', margin: '0.5rem 0' }}>
+              {samsSubs.map(sub => {
+                const active = syncing && syncingLabel === sub.name;
+                return (
+                  <button
+                    key={sub.id}
+                    onClick={() => handleSync([sub.id], sub.name)}
+                    disabled={syncing || !configured}
+                    style={{
+                      background: syncing || !configured ? '#9ca3af' : HAIER_BLUE,
+                      color: '#fff', border: 'none', borderRadius: 8,
+                      padding: '0.6rem 1.2rem', fontSize: '0.88rem', fontWeight: 600,
+                      cursor: syncing || !configured ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {active ? `Syncing ${sub.name}…` : `Sync ${sub.name}`}
+                  </button>
+                );
+              })}
               <button
-                onClick={handleSync}
+                onClick={() => handleSync(undefined, 'all')}
                 disabled={syncing || !configured}
                 style={{
-                  background: syncing || !configured ? '#9ca3af' : HAIER_BLUE,
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 8,
-                  padding: '0.6rem 1.4rem',
-                  fontSize: '0.9rem',
-                  fontWeight: 600,
+                  background: 'none', color: HAIER_BLUE,
+                  border: `1px solid ${HAIER_BLUE}`, borderRadius: 8,
+                  padding: '0.6rem 1.2rem', fontSize: '0.88rem', fontWeight: 600,
                   cursor: syncing || !configured ? 'not-allowed' : 'pointer',
+                  opacity: syncing || !configured ? 0.6 : 1,
                 }}
               >
-                {syncing ? 'Syncing…' : 'Sync from SAMS'}
+                {syncing && syncingLabel === 'all' ? 'Syncing all…' : (samsSubs.length ? 'Sync all SAMS' : 'Sync from SAMS')}
               </button>
               {meta.lastSyncDurationMs !== undefined && (
-                <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>
-                  last run: {fmtMs(meta.lastSyncDurationMs)}
-                </span>
-              )}
-              {syncing && (
-                <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>
-                  pulling the full fact set — this can take a while…
-                </span>
+                <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>last run: {fmtMs(meta.lastSyncDurationMs)}</span>
               )}
             </div>
+            {samsSubs.length === 0 && (
+              <div style={{ fontSize: '0.75rem', color: '#9ca3af', margin: '0 0 0.5rem' }}>
+                No sub-channels are marked SAMS yet — set one on the Sales Channels page to get a dedicated button.
+              </div>
+            )}
+            {syncing && (
+              <div style={{ fontSize: '0.78rem', color: '#9ca3af', margin: '0 0 1rem' }}>
+                Pulling the full SAMS fact set — this can take a while. (The SP returns all channels regardless of which button you press; the button scopes the merge + score recalc.)
+              </div>
+            )}
 
             {meta.lastError && (
               <div style={{

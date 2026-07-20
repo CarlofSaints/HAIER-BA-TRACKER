@@ -145,6 +145,7 @@ function str(v: unknown): string {
 export async function runSamsSync(
   source: SyncSource,
   client: string = HAIER_CLIENT,
+  opts: { channelIds?: string[] } = {},
 ): Promise<SamsSyncMeta> {
   const syncStart = Date.now();
   const timings: Record<string, QueryTiming> = {};
@@ -167,7 +168,15 @@ export async function runSamsSync(
   // 2. Control files.
   const stores = await loadStores();
   const channels = await loadChannels();
-  const samsChannelIds = new Set(channels.filter(c => c.dataSource === 'sams').map(c => c.id));
+  // SAMS-marked channels, optionally narrowed to a specific set (per-channel
+  // sync — e.g. "Sync GAME only"). NOTE: the SAMS SP returns ALL channels for
+  // the client regardless, so this scopes the merge + score recalc, not the SQL
+  // pull itself (that needs a channel param on the SP).
+  let samsChannelIds = new Set(channels.filter(c => c.dataSource === 'sams').map(c => c.id));
+  if (opts.channelIds && opts.channelIds.length) {
+    const requested = new Set(opts.channelIds);
+    samsChannelIds = new Set([...samsChannelIds].filter(id => requested.has(id)));
+  }
 
   // Store lookup: stripped code / full code / perigee code → store master entry.
   const storeByCode = new Map<string, StoreMaster>();

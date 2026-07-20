@@ -23,7 +23,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const meta = await runSamsSync('manual');
+    const body = await req.json().catch(() => ({}));
+    const channelIds = Array.isArray(body?.channelIds)
+      ? body.channelIds.map((c: unknown) => String(c)).filter(Boolean)
+      : undefined;
+    const meta = await runSamsSync('manual', undefined, { channelIds });
     logFromUser(
       user,
       'sync_sams',
