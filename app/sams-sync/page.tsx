@@ -18,14 +18,19 @@ interface SyncCounts {
   salesRows: number;
   sohRows: number;
   months: number;
+  unresolvedStores?: number;
+  matchedNonSamsChannel?: number;
+  unresolvedArticles?: number;
 }
 interface SyncMeta {
   lastSync?: string;
   lastSyncSource?: string;
+  lastSyncTarget?: string;
   lastAutoSync?: string;
   lastSyncDurationMs?: number;
   lastSyncQueryTimings?: Record<string, QueryTiming>;
   counts?: SyncCounts;
+  unresolvedSiteSample?: string[];
   lastError?: string;
 }
 interface LogEntry {
@@ -167,11 +172,13 @@ export default function SamsSyncPage() {
         <div style={{ marginBottom: '0.35rem' }}>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827' }}>Data Sync (SAMS)</h1>
           <p style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 4 }}>
-            Pull the latest sales &amp; stock data from SQL Server (SAMS) via the Railway proxy.
-            Right now this writes a <strong>separate comparison dataset</strong> — DISPO data and all
-            scores are left untouched. Review it on the{' '}
+            Pull the latest sales &amp; stock from SQL (SAMS) via the Railway proxy. This{' '}
+            <strong>merges the SAMS-marked sub-channels</strong> into the live dataset (DISPO/Excel
+            channels untouched) and re-runs sales scores. A full snapshot is also written to the{' '}
             <a href="/sales-sams" style={{ color: HAIER_BLUE, fontWeight: 600 }}>Sales &amp; Stock (SAMS)</a>{' '}
-            page, and once it looks right we flip the switch to make SAMS live everywhere.
+            page. Set a sub-channel&apos;s data source to <strong>SAMS</strong> on the Sales Channels
+            page first — only those load. Stores match by stripped <code>SITE_ID</code> → store{' '}
+            <code>siteCode</code>.
           </p>
         </div>
 
@@ -205,6 +212,29 @@ export default function SamsSyncPage() {
               <StatCard label="SOH snapshots" value={fmtNum(meta.counts?.sohRows)} tint="#fff7ed" />
               <StatCard label="Months" value={fmtNum(meta.counts?.months)} tint="#eff6ff" />
             </div>
+
+            {/* Coverage — unmatched sites / channels not marked SAMS / unmapped articles */}
+            {meta.counts && (meta.counts.unresolvedStores || meta.counts.matchedNonSamsChannel || meta.counts.unresolvedArticles) ? (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '0.75rem 1rem', margin: '0 0 1rem', fontSize: '0.8rem', color: '#92400e' }}>
+                <strong>Coverage</strong>
+                <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.1rem' }}>
+                  {meta.counts.unresolvedStores ? (
+                    <li>{meta.counts.unresolvedStores} SAMS site(s) had <strong>no store-master match</strong> — skipped. Add them on Stores (siteCode = stripped SITE_ID) to include them.</li>
+                  ) : null}
+                  {meta.counts.matchedNonSamsChannel ? (
+                    <li>{meta.counts.matchedNonSamsChannel} site(s) matched but their <strong>channel isn&apos;t marked SAMS</strong> — not merged live. Mark the sub-channel SAMS to include them.</li>
+                  ) : null}
+                  {meta.counts.unresolvedArticles ? (
+                    <li>{meta.counts.unresolvedArticles} article code(s) had no product-link match — kept as raw code.</li>
+                  ) : null}
+                </ul>
+                {meta.unresolvedSiteSample && meta.unresolvedSiteSample.length > 0 && (
+                  <div style={{ marginTop: 6, fontFamily: 'monospace', fontSize: '0.72rem' }}>
+                    Unmatched e.g.: {meta.unresolvedSiteSample.join(', ')}
+                  </div>
+                )}
+              </div>
+            ) : null}
 
             {/* Sync button */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', margin: '0.5rem 0 1rem' }}>
