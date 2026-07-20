@@ -86,10 +86,12 @@ const LOG_KEY = 'dispo/sync-log.json';
 // SAMS returns a Rand VALUE column. Haier reports sales value NETT of 15% VAT;
 // lib/dispoData.calcSalesValue() strips VAT by dividing the stored price by 1.15.
 // We store a per-article price calibrated so calcSalesValue reproduces the
-// intended nett Rand. Flip this once Mark confirms whether SAMS VALUE is
-// VAT-inclusive (true → we mirror DISPO's incl-VAT price) or already ex-VAT.
-// TODO(Mark): confirm VAT basis of SAMS.VALUE.
-const SAMS_VALUE_IS_VAT_INCLUSIVE = true;
+// intended nett Rand.
+// Confirmed by Mark (20 Jul 2026): SAMS VALUE is EX-VAT (nett) already. So we
+// gross the derived unit value up by 1.15 into inclSP; calcSalesValue's ÷1.15
+// then returns the true nett value. (Set true only if SAMS ever returns
+// VAT-inclusive values.)
+const SAMS_VALUE_IS_VAT_INCLUSIVE = false;
 
 /** "2026-05-24" | Date → "MM-YYYY" (matches DISPO month keys). null if unparseable. */
 function monthKeyFromDate(raw: unknown): string | null {
