@@ -81,6 +81,8 @@ export default function SamsSyncPage() {
   const [showLog, setShowLog] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [probeJson, setProbeJson] = useState<string | null>(null);
 
   const loadStatus = useCallback(() => {
     authFetch('/api/sams/sync')
@@ -133,6 +135,20 @@ export default function SamsSyncPage() {
       setToast({ msg: e instanceof Error ? e.message : 'Sync failed', type: 'error' });
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function runProbe() {
+    setProbing(true);
+    setProbeJson(null);
+    try {
+      const r = await authFetch('/api/sams/probe');
+      const d = await r.json();
+      setProbeJson(JSON.stringify(d, null, 2));
+    } catch (e) {
+      setProbeJson('Error: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setProbing(false);
     }
   }
 
@@ -224,6 +240,40 @@ export default function SamsSyncPage() {
                 Last run reported an error: {meta.lastError}
               </div>
             )}
+
+            {/* Probe — temporary diagnostic (read-only; no data written) */}
+            <div style={{ background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 12, padding: '1rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <button
+                  onClick={runProbe}
+                  disabled={probing || !configured}
+                  style={{
+                    background: probing || !configured ? '#9ca3af' : '#334155',
+                    color: '#fff', border: 'none', borderRadius: 8,
+                    padding: '0.5rem 1rem', fontSize: '0.82rem', fontWeight: 600,
+                    cursor: probing || !configured ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {probing ? 'Probing…' : 'Run probe (diagnostic)'}
+                </button>
+                <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                  Read-only — SAMS columns + store/product dimension shapes. Nothing is written.
+                </span>
+                {probeJson && (
+                  <button
+                    onClick={() => navigator.clipboard.writeText(probeJson)}
+                    style={{ background: 'none', border: '1px solid #cbd5e1', borderRadius: 6, padding: '0.35rem 0.7rem', fontSize: '0.75rem', cursor: 'pointer', color: '#334155' }}
+                  >
+                    Copy JSON
+                  </button>
+                )}
+              </div>
+              {probeJson && (
+                <pre style={{ marginTop: '0.75rem', background: '#0f172a', color: '#e2e8f0', padding: '0.85rem', borderRadius: 8, fontSize: '0.72rem', overflowX: 'auto', maxHeight: 380, whiteSpace: 'pre' }}>
+                  {probeJson}
+                </pre>
+              )}
+            </div>
 
             {/* Query timings */}
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '1.25rem' }}>
