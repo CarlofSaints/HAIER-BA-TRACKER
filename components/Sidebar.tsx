@@ -36,6 +36,7 @@ const ACCOUNT_ITEM: NavItem = { label: 'Account', href: '/account', icon: '👤'
 
 const CONTROL_ITEMS: NavItem[] = [
   { label: 'Data Upload', href: '/upload', icon: '📤', roles: ['super_admin', 'admin'] },
+  { label: 'Data Sync (SAMS)', href: '/sams-sync', icon: '🔄', roles: ['super_admin', 'admin'] },
   { label: 'Visit Diagnostics', href: '/visit-diagnostics', icon: '🔎', roles: ['super_admin', 'admin'] },
   { label: 'Reminders', href: '/reminders', icon: '🔔', roles: ['super_admin', 'admin'] },
   { label: 'Sales Channels', href: '/admin/channels', icon: '📡', roles: ['super_admin'] },
