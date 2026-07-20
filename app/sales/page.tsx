@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
@@ -58,18 +59,24 @@ function formatPct(val: number | null): string {
 }
 
 export default function SalesPage() {
+  // useSearchParams must be under a Suspense boundary in the App Router.
+  return (
+    <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>Loading...</div>}>
+      <SalesPageInner />
+    </Suspense>
+  );
+}
+
+function SalesPageInner() {
   const { session, loading: authLoading, logout } = useAuth();
   // Data source: default DISPO (live); ?source=sams renders the SAMS comparison
-  // dataset from the separate sams/data.json blob (read-only, for validating
-  // SAMS against DISPO before cutover). Read synchronously so the first fetch
-  // already targets the right endpoint.
-  const [source] = useState<'dispo' | 'sams'>(() => {
-    if (typeof window !== 'undefined') {
-      if (new URLSearchParams(window.location.search).get('source') === 'sams') return 'sams';
-    }
-    return 'dispo';
-  });
-  const isSams = source === 'sams';
+  // dataset (sams/data.json), read-only, for validating SAMS vs DISPO before
+  // cutover. useSearchParams() reads the real query on both server and client
+  // and reacts to navigation — a window-based useState initializer is WRONG
+  // here: it runs on the server with no window, and hydration keeps that value,
+  // so ?source=sams never took effect.
+  const searchParams = useSearchParams();
+  const isSams = searchParams.get('source') === 'sams';
   const [data, setData] = useState<DispoSalesData | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('store');
