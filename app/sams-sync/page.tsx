@@ -168,7 +168,10 @@ export default function SamsSyncPage() {
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827' }}>Data Sync (SAMS)</h1>
           <p style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 4 }}>
             Pull the latest sales &amp; stock data from SQL Server (SAMS) via the Railway proxy.
-            This replaces the DISPO Excel upload as Haier&apos;s data source.
+            Right now this writes a <strong>separate comparison dataset</strong> — DISPO data and all
+            scores are left untouched. Review it on the{' '}
+            <a href="/sales?source=sams" style={{ color: HAIER_BLUE, fontWeight: 600 }}>Sales &amp; Stock (SAMS)</a>{' '}
+            page, and once it looks right we flip the switch to make SAMS live everywhere.
           </p>
         </div>
 

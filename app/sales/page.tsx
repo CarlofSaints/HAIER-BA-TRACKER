@@ -59,6 +59,17 @@ function formatPct(val: number | null): string {
 
 export default function SalesPage() {
   const { session, loading: authLoading, logout } = useAuth();
+  // Data source: default DISPO (live); ?source=sams renders the SAMS comparison
+  // dataset from the separate sams/data.json blob (read-only, for validating
+  // SAMS against DISPO before cutover). Read synchronously so the first fetch
+  // already targets the right endpoint.
+  const [source] = useState<'dispo' | 'sams'>(() => {
+    if (typeof window !== 'undefined') {
+      if (new URLSearchParams(window.location.search).get('source') === 'sams') return 'sams';
+    }
+    return 'dispo';
+  });
+  const isSams = source === 'sams';
   const [data, setData] = useState<DispoSalesData | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('store');
@@ -97,7 +108,7 @@ export default function SalesPage() {
     setLoadingData(true);
     try {
       const [dispoRes, storesRes, channelsRes, visitsRes, targetsRes] = await Promise.all([
-        authFetch('/api/dispo'),
+        authFetch(isSams ? '/api/sams/data' : '/api/dispo'),
         authFetch('/api/stores'),
         authFetch('/api/channels'),
         authFetch('/api/visits'),
@@ -110,7 +121,7 @@ export default function SalesPage() {
       if (targetsRes.ok) setTargetData(await targetsRes.json());
     } catch { /* ignore */ }
     setLoadingData(false);
-  }, []);
+  }, [isSams]);
 
   useEffect(() => {
     if (session) loadData();
@@ -848,11 +859,24 @@ export default function SalesPage() {
       <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
       <main style={{ flex: 1, padding: '2rem', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
-          Sales & Stock
+          Sales & Stock{isSams && <span style={{ color: '#7c3aed', fontWeight: 700 }}> — SAMS (comparison)</span>}
         </h1>
-        <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-          DISPO sales, stock on hand, and stock on order data
+        <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: isSams ? '0.75rem' : '1.25rem' }}>
+          {isSams
+            ? 'SAMS sales & stock (SoH), pulled from SQL — read-only comparison dataset'
+            : 'DISPO sales, stock on hand, and stock on order data'}
         </p>
+        {isSams && (
+          <div style={{
+            background: '#f5f3ff', border: '1px solid #ddd6fe', color: '#5b21b6',
+            borderRadius: 8, padding: '0.6rem 0.85rem', marginBottom: '1.25rem', fontSize: '0.8rem',
+          }}>
+            <strong>Comparison view.</strong> This reads the separate <code>sams/data.json</code> dataset
+            populated by Data Sync (SAMS). DISPO data and all scores are untouched. Compare against the{' '}
+            <a href="/sales" style={{ color: '#6d28d9', fontWeight: 600 }}>live DISPO Sales &amp; Stock</a> page.
+            SoO is not in SAMS; target-variance columns may be blank where SAMS store names differ from DISPO.
+          </div>
+        )}
 
         {/* Controls */}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem', alignItems: 'flex-end' }}>

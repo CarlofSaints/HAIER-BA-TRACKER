@@ -42,6 +42,20 @@ export async function saveDispoData(data: DispoSalesData): Promise<void> {
   await writeJson(BLOB_KEY, data);
 }
 
+// ── SAMS comparison dataset ──────────────────────────────────────────────────
+// The SAMS sync writes here (a SEPARATE blob) while we validate it side-by-side
+// against the live DISPO data. Same shape as DISPO, so the Sales & Stock page
+// renders it unchanged. On cutover this is retired and SAMS writes BLOB_KEY.
+const SAMS_BLOB_KEY = 'sams/data.json';
+
+export async function loadSamsData(): Promise<DispoSalesData> {
+  return readJson<DispoSalesData>(SAMS_BLOB_KEY, EMPTY_DATA);
+}
+
+export async function saveSamsData(data: DispoSalesData): Promise<void> {
+  await writeJson(SAMS_BLOB_KEY, data);
+}
+
 /**
  * Calculate sales value for given units using price logic:
  * If promSP > 0, use promSP; otherwise use inclSP.

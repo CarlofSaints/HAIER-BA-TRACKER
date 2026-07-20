@@ -8,8 +8,8 @@ import {
   HAIER_CLIENT,
 } from './sqlProxy';
 import {
-  loadDispoData,
   saveDispoData,
+  saveSamsData,
   DispoSalesData,
   DispoUploadMeta,
 } from './dispoData';
@@ -55,9 +55,12 @@ export interface SamsSyncCounts {
   unresolvedArticles?: number; // ARTICLE_IDs with no product-link match (kept as raw code)
 }
 
+export type SyncTarget = 'sams' | 'dispo';
+
 export interface SamsSyncMeta {
   lastSync?: string;
   lastSyncSource?: SyncSource;
+  lastSyncTarget?: SyncTarget; // 'sams' = comparison blob, 'dispo' = live cutover
   lastAutoSync?: string;
   lastSyncDurationMs?: number;
   lastSyncQueryTimings?: Record<string, QueryTiming>;
@@ -68,6 +71,7 @@ export interface SamsSyncMeta {
 export interface SamsSyncLogEntry {
   at: string;
   source: SyncSource;
+  target?: SyncTarget;
   durationMs: number;
   ok: boolean;
   counts?: SamsSyncCounts;
@@ -144,6 +148,7 @@ function str(v: unknown): string {
 export async function runSamsSync(
   source: SyncSource,
   client: string = HAIER_CLIENT,
+  target: SyncTarget = 'sams',
 ): Promise<SamsSyncMeta> {
   const syncStart = Date.now();
   const timings: Record<string, QueryTiming> = {};
@@ -164,7 +169,7 @@ export async function runSamsSync(
   if (!timings.haier_sams.ok) {
     // The core pull failed — record the failed run and surface it, but DON'T
     // wipe the existing DISPO/SAMS data (no writes past this point).
-    await finalizeMeta(source, syncStart, timings, undefined, timings.haier_sams.error);
+    await finalizeMeta(source, syncStart, timings, undefined, timings.haier_sams.error, target);
     throw new Error(`SAMS pull failed: ${timings.haier_sams.error}`);
   }
 
@@ -278,14 +283,7 @@ export async function runSamsSync(
     }
   }
 
-  // 4. Persist. Upsert stores (tagged "data", same as the DISPO upload path).
-  const stores = await loadStores();
-  if (upsertStoresFromRecords(stores, [...fileStores.values()], 'data')) {
-    await saveStores(stores);
-  }
-
-  // Log this sync as a pseudo-upload so the uploads history + delete tooling
-  // still show a provenance entry.
+  // 4. Provenance entry (kept in whichever dataset we write).
   const uploadId = Date.now().toString(36) + '-sams';
   const uploadMeta: DispoUploadMeta & { source?: string } = {
     id: uploadId,
@@ -300,8 +298,6 @@ export async function runSamsSync(
   };
   data.uploads.push(uploadMeta);
 
-  await saveDispoData(data);
-
   const counts: SamsSyncCounts = {
     stores: fileStores.size,
     products: allArticles.size,
@@ -312,17 +308,31 @@ export async function runSamsSync(
     unresolvedArticles: unresolvedArticleIds.size,
   };
 
-  // 5. Re-run sales auto-calc for every affected month (MM-YYYY → YYYY-MM).
-  for (const mm of monthsSeen) {
-    const [mmPart, yyyyPart] = mm.split('-');
-    try {
-      await runAutoCalcForMonth(`${yyyyPart}-${mmPart}`, ['sales']);
-    } catch (err) {
-      console.error(`SAMS sync: auto-calc failed for ${mm}:`, err);
+  // 5. Persist — two modes:
+  //    'sams'  (comparison, DEFAULT) — write ONLY the separate sams/data.json.
+  //            The live DISPO blob, the store master, and all scores are left
+  //            completely untouched, so we can eyeball SAMS vs DISPO safely.
+  //    'dispo' (cutover) — write the live DISPO blob, upsert stores, and re-run
+  //            sales auto-calc. This is the go-live behaviour, enabled later.
+  if (target === 'dispo') {
+    const stores = await loadStores();
+    if (upsertStoresFromRecords(stores, [...fileStores.values()], 'data')) {
+      await saveStores(stores);
     }
+    await saveDispoData(data);
+    for (const mm of monthsSeen) {
+      const [mmPart, yyyyPart] = mm.split('-');
+      try {
+        await runAutoCalcForMonth(`${yyyyPart}-${mmPart}`, ['sales']);
+      } catch (err) {
+        console.error(`SAMS sync: auto-calc failed for ${mm}:`, err);
+      }
+    }
+  } else {
+    await saveSamsData(data);
   }
 
-  return finalizeMeta(source, syncStart, timings, counts);
+  return finalizeMeta(source, syncStart, timings, counts, undefined, target);
 }
 
 /** Write sync-meta.json + prepend to the rolling sync-log.json (last 50). */
@@ -332,6 +342,7 @@ async function finalizeMeta(
   timings: Record<string, QueryTiming>,
   counts?: SamsSyncCounts,
   error?: string,
+  target: SyncTarget = 'sams',
 ): Promise<SamsSyncMeta> {
   const now = new Date();
   const durationMs = Date.now() - syncStart;
@@ -339,6 +350,7 @@ async function finalizeMeta(
   const meta = await readJson<SamsSyncMeta>(META_KEY, {});
   meta.lastSync = now.toISOString();
   meta.lastSyncSource = source;
+  meta.lastSyncTarget = target;
   if (source === 'cron') meta.lastAutoSync = now.toISOString();
   meta.lastSyncDurationMs = durationMs;
   meta.lastSyncQueryTimings = timings;
@@ -350,6 +362,7 @@ async function finalizeMeta(
   log.unshift({
     at: now.toISOString(),
     source,
+    target,
     durationMs,
     ok: !error,
     counts,
