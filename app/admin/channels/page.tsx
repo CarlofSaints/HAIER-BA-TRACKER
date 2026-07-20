@@ -92,6 +92,38 @@ export default function ChannelsPage() {
     }
   }
 
+  async function handleClearData(subId: string, subName: string) {
+    if (!confirm(
+      `Clear ALL sales & stock data for stores in sub-channel "${subName}"?\n\n` +
+      `This removes those stores' sales/stock from the shared dataset and re-runs ` +
+      `sales scores. Use it when switching this sub-channel to a different data ` +
+      `source (e.g. Makro from DISPO → SAMS). To restore, re-load from the source.`,
+    )) return;
+    setSaving(true);
+    try {
+      const res = await authFetch('/api/sales/clear-subchannel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subChannelId: subId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setToast({
+          msg: data.storesCleared
+            ? `Cleared ${data.storesCleared} store(s), ${data.cellsRemoved} cells, ${data.months.length} month(s)`
+            : (data.note || 'Nothing to clear'),
+          type: 'success',
+        });
+      } else {
+        setToast({ msg: data.error || 'Clear failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Clear failed', type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function startEdit(ch: Channel) {
     setEditingId(ch.id);
     setEditName(ch.name);
@@ -259,6 +291,7 @@ export default function ChannelsPage() {
                         </div>
                         <div style={{ display: 'flex', gap: '0.35rem' }}>
                           <button className="btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={() => startEdit(sub)}>Edit</button>
+                          <button className="btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', color: '#b45309', borderColor: '#fcd34d' }} onClick={() => handleClearData(sub.id, sub.name)} title="Clear this sub-channel's sales & stock data from the shared dataset">Clear data</button>
                           <button className="btn btn-danger" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={() => handleDelete(sub.id, sub.name, false)}>Delete</button>
                         </div>
                       </div>
