@@ -83,6 +83,7 @@ export default function SamsSyncPage() {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [probing, setProbing] = useState(false);
   const [probeJson, setProbeJson] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const loadStatus = useCallback(() => {
     authFetch('/api/sams/sync')
@@ -261,10 +262,24 @@ export default function SamsSyncPage() {
                 </span>
                 {probeJson && (
                   <button
-                    onClick={() => navigator.clipboard.writeText(probeJson)}
-                    style={{ background: 'none', border: '1px solid #cbd5e1', borderRadius: 6, padding: '0.35rem 0.7rem', fontSize: '0.75rem', cursor: 'pointer', color: '#334155' }}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(probeJson);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 1800);
+                      } catch {
+                        setToast({ msg: 'Copy failed — select the text manually.', type: 'error' });
+                      }
+                    }}
+                    style={{
+                      background: copied ? '#16a34a' : 'none',
+                      border: `1px solid ${copied ? '#16a34a' : '#cbd5e1'}`,
+                      borderRadius: 6, padding: '0.35rem 0.7rem', fontSize: '0.75rem',
+                      cursor: 'pointer', color: copied ? '#fff' : '#334155',
+                      transition: 'background 0.15s, color 0.15s',
+                    }}
                   >
-                    Copy JSON
+                    {copied ? '✓ Copied!' : 'Copy JSON'}
                   </button>
                 )}
               </div>

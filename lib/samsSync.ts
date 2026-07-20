@@ -3,6 +3,7 @@ import {
   getSamsData,
   getClientStores,
   getClientProducts,
+  getClientProductLinks,
   SamsFactRow,
   HAIER_CLIENT,
 } from './sqlProxy';
@@ -13,7 +14,6 @@ import {
   DispoUploadMeta,
 } from './dispoData';
 import { loadStores, saveStores, upsertStoresFromRecords } from './storeData';
-import { loadProducts } from './productData';
 import { runAutoCalcForMonth } from './autoCalc';
 
 /*
@@ -28,6 +28,12 @@ import { runAutoCalcForMonth } from './autoCalc';
              stock[storeName][articleDesc] = { soh, soo }
              prices[articleDesc] = { inclSP, promSP }
              ytd[storeName][articleDesc] = units (current calendar year)
+
+  Resolution (all confirmed against live data via /api/sams/probe):
+    store   : SAMS.SITE_ID    === client_stores.SiteID           → "Site Name"
+    product : SAMS.ARTICLE_ID === client_product_links["Channel Article"]
+              → "Product ID"  === client_products["Client Product ID"]
+              → "Product Description"
 */
 
 export type SyncSource = 'manual' | 'cron';
@@ -45,6 +51,8 @@ export interface SamsSyncCounts {
   salesRows: number; // store×article×month cells written
   sohRows: number; // store×article stock snapshots
   months: number;
+  unresolvedStores?: number; // SITE_IDs with no client_stores match (kept as raw code)
+  unresolvedArticles?: number; // ARTICLE_IDs with no product-link match (kept as raw code)
 }
 
 export interface SamsSyncMeta {
@@ -76,7 +84,7 @@ const LOG_KEY = 'dispo/sync-log.json';
 // We store a per-article price calibrated so calcSalesValue reproduces the
 // intended nett Rand. Flip this once Mark confirms whether SAMS VALUE is
 // VAT-inclusive (true → we mirror DISPO's incl-VAT price) or already ex-VAT.
-// TODO(probe): confirm VAT basis of SAMS.VALUE.
+// TODO(Mark): confirm VAT basis of SAMS.VALUE.
 const SAMS_VALUE_IS_VAT_INCLUSIVE = true;
 
 /** "2026-05-24" | Date → "MM-YYYY" (matches DISPO month keys). null if unparseable. */
@@ -94,7 +102,7 @@ function yearFromDate(raw: unknown): number | null {
   return isNaN(d.getTime()) ? null : d.getUTCFullYear();
 }
 
-/** SITE_ID like "GAME-G016" → channel token "GAME". */
+/** SITE_ID like "GAME-G016" → channel token "GAME" (fallback if the dimension misses). */
 export function channelFromSiteId(siteId: string): string {
   const dash = siteId.indexOf('-');
   return dash > 0 ? siteId.slice(0, dash) : '';
@@ -125,6 +133,10 @@ async function timed<T>(
   }
 }
 
+function str(v: unknown): string {
+  return v === null || v === undefined ? '' : String(v).trim();
+}
+
 /**
  * Pull SAMS (+ dimensions) and rebuild the DISPO model from it.
  * `source` records what triggered the run (manual button / cron).
@@ -136,11 +148,14 @@ export async function runSamsSync(
   const syncStart = Date.now();
   const timings: Record<string, QueryTiming> = {};
 
-  // 1. Pull. SAMS facts are required; dimensions are best-effort (used for
-  //    counts today, and code→name enrichment once their columns are probed).
+  // 1. Pull. SAMS facts are required; the three dimensions are best-effort — if
+  //    one fails we fall back to raw codes rather than aborting the sync.
   const facts = await timed<SamsFactRow>('haier_sams', timings, () => getSamsData(client));
   const storeDim = await timed<Record<string, unknown>>('client_stores', timings, () =>
     getClientStores(client),
+  );
+  const linkDim = await timed<Record<string, unknown>>('client_product_links', timings, () =>
+    getClientProductLinks(client),
   );
   const productDim = await timed<Record<string, unknown>>('client_products', timings, () =>
     getClientProducts(client),
@@ -153,28 +168,42 @@ export async function runSamsSync(
     throw new Error(`SAMS pull failed: ${timings.haier_sams.error}`);
   }
 
-  // 2. Resolution maps from Haier's OWN masters (known shapes). SITE_ID resolves
-  //    to a friendly storeName via store master siteCode; ARTICLE_ID to
-  //    articleDesc via product master productCode. Unmatched codes fall through
-  //    as their own key (and, for stores, get upserted as new).
-  //    TODO(probe): if SAMS codes DON'T match the masters, switch resolution to
-  //    the client_stores / client_products dimensions (storeDim/productDim).
-  const stores = await loadStores();
-  const products = await loadProducts();
-
-  const storeNameByCode = new Map<string, string>();
-  for (const s of stores) {
-    if (s.siteCode) storeNameByCode.set(s.siteCode.toLowerCase().trim(), s.storeName);
+  // 2. Build resolution maps from the SQL dimensions.
+  //    store: SiteID → Site Name
+  const storeNameById = new Map<string, string>();
+  for (const s of storeDim) {
+    const id = str(s['SiteID']);
+    if (id) storeNameById.set(id, str(s['Site Name']) || id);
   }
-  const articleByCode = new Map<string, string>();
-  for (const p of products) {
-    if (p.productCode) articleByCode.set(p.productCode.toLowerCase().trim(), p.articleDesc);
+  //    product: "Channel Article" → "Product ID" → "Product Description"
+  const productIdByChannelArticle = new Map<string, string>();
+  for (const l of linkDim) {
+    const ca = str(l['Channel Article']);
+    const pid = str(l['Product ID']);
+    if (ca && pid) productIdByChannelArticle.set(ca, pid);
+  }
+  const descByProductId = new Map<string, string>();
+  for (const p of productDim) {
+    const pid = str(p['Client Product ID']);
+    if (pid) descByProductId.set(pid, str(p['Product Description']) || pid);
   }
 
-  const resolveStore = (siteId: string) =>
-    storeNameByCode.get(siteId.toLowerCase().trim()) || siteId;
-  const resolveArticle = (articleId: string) =>
-    articleByCode.get(articleId.toLowerCase().trim()) || articleId;
+  const unresolvedStoreIds = new Set<string>();
+  const unresolvedArticleIds = new Set<string>();
+
+  const resolveStore = (siteId: string): string => {
+    const n = storeNameById.get(siteId);
+    if (n) return n;
+    unresolvedStoreIds.add(siteId);
+    return siteId; // fall back to the raw code so nothing is silently dropped
+  };
+  const resolveArticle = (articleId: string): string => {
+    const pid = productIdByChannelArticle.get(articleId);
+    const desc = pid ? descByProductId.get(pid) : undefined;
+    if (desc) return desc;
+    unresolvedArticleIds.add(articleId);
+    return articleId;
+  };
 
   // 3. Aggregate facts → DISPO model.
   const data: DispoSalesData = {
@@ -186,20 +215,22 @@ export async function runSamsSync(
   };
 
   const thisYear = new Date().getUTCFullYear();
-  // Track the latest-dated row per (store, article) so SOH + price reflect the
-  // most recent snapshot, mirroring DISPO's "latest" semantics.
+  // Latest-dated row per (store, article) → SOH + price reflect the most recent
+  // snapshot, mirroring DISPO's "latest" semantics.
   const latestKey = new Map<string, number>(); // `${store}|${article}` → epoch ms
   const fileStores = new Map<string, { siteCode: string; storeName: string }>();
+  const allArticles = new Set<string>();
   const monthsSeen = new Set<string>();
   let salesRows = 0;
 
   for (const row of facts) {
-    const siteId = String(row.SITE_ID ?? '').trim();
-    const articleId = String(row.ARTICLE_ID ?? '').trim();
+    const siteId = str(row.SITE_ID);
+    const articleId = str(row.ARTICLE_ID);
     if (!siteId || !articleId) continue;
 
     const store = resolveStore(siteId);
     const article = resolveArticle(articleId);
+    allArticles.add(article);
     const units = Number(row.UNITS) || 0;
     const value = Number(row.VALUE) || 0;
     const soh = Number(row.SOH) || 0;
@@ -248,7 +279,7 @@ export async function runSamsSync(
   }
 
   // 4. Persist. Upsert stores (tagged "data", same as the DISPO upload path).
-  const storeCountBefore = stores.length;
+  const stores = await loadStores();
   if (upsertStoresFromRecords(stores, [...fileStores.values()], 'data')) {
     await saveStores(stores);
   }
@@ -263,7 +294,7 @@ export async function runSamsSync(
     uploadedBy: source === 'cron' ? 'cron' : 'manual sync',
     rowCount: facts.length,
     months: [...monthsSeen],
-    products: Object.keys(data.prices).length,
+    products: allArticles.size,
     stores: fileStores.size,
     source: 'sams',
   };
@@ -273,10 +304,12 @@ export async function runSamsSync(
 
   const counts: SamsSyncCounts = {
     stores: fileStores.size,
-    products: Object.keys(data.prices).length,
+    products: allArticles.size,
     salesRows,
     sohRows: latestKey.size,
     months: monthsSeen.size,
+    unresolvedStores: unresolvedStoreIds.size,
+    unresolvedArticles: unresolvedArticleIds.size,
   };
 
   // 5. Re-run sales auto-calc for every affected month (MM-YYYY → YYYY-MM).
@@ -289,12 +322,10 @@ export async function runSamsSync(
     }
   }
 
-  void storeDim;
-  void productDim;
   return finalizeMeta(source, syncStart, timings, counts);
 }
 
-/** Write sync-meta.json + append to the rolling sync-log.json (last 50). */
+/** Write sync-meta.json + prepend to the rolling sync-log.json (last 50). */
 async function finalizeMeta(
   source: SyncSource,
   syncStart: number,
