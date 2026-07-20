@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'MASTER_SITE');
-  const buf: Buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   return new NextResponse(buf, {
