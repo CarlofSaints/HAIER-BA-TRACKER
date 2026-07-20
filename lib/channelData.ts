@@ -50,6 +50,53 @@ export function resolveMainChannel(channels: Channel[], channelId: string): Chan
   return ch;
 }
 
+function slugify(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+/**
+ * Ensure a main channel (+ optional sub-channel) exists, matched by name
+ * (case-insensitive); creates any missing, mutating `channels`. Returns the id a
+ * store should be assigned to (sub id when subName given, else main id) plus the
+ * display names of any channels created. Used by the Site Control File upload.
+ */
+export function ensureChannelPath(
+  channels: Channel[],
+  mainName: string,
+  subName?: string,
+): { channelId: string; created: string[] } {
+  const created: string[] = [];
+  const mn = (mainName || '').trim();
+  if (!mn) return { channelId: '', created };
+
+  const takenIds = new Set(channels.map(c => c.id));
+  const uniqueId = (base: string): string => {
+    let id = base || 'channel';
+    let n = 2;
+    while (takenIds.has(id)) id = `${base}-${n++}`;
+    takenIds.add(id);
+    return id;
+  };
+
+  let main = channels.find(c => !c.parentId && c.name.toUpperCase() === mn.toUpperCase());
+  if (!main) {
+    main = { id: uniqueId(slugify(mn)), name: mn.toUpperCase() };
+    channels.push(main);
+    created.push(main.name);
+  }
+
+  const sn = (subName || '').trim();
+  if (!sn) return { channelId: main.id, created };
+
+  let sub = channels.find(c => c.parentId === main!.id && c.name.toUpperCase() === sn.toUpperCase());
+  if (!sub) {
+    sub = { id: uniqueId(slugify(`${mn}-${sn}`)), name: sn.toUpperCase(), parentId: main.id };
+    channels.push(sub);
+    created.push(`${main.name} › ${sub.name}`);
+  }
+  return { channelId: sub.id, created };
+}
+
 export async function loadChannels(): Promise<Channel[]> {
   return readJson<Channel[]>(BLOB_KEY, DEFAULT_CHANNELS);
 }

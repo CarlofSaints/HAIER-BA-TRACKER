@@ -5,6 +5,10 @@ export interface StoreMaster {
   storeName: string;
   channelId: string;
   area?: string;
+  // From the Site Control File upload (iRam MASTER_SITE format).
+  province?: string;
+  townCity?: string;
+  status?: string; // ACTIVE / CLOSED / …
   // Optional override for how Perigee identifies this store. Perigee visits are
   // matched to a store by visit.storeCode === siteCode; when Perigee uses a
   // different code than the store's own siteCode (e.g. Diamond Corner, whose PDF

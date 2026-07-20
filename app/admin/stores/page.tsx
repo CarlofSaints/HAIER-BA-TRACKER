@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
@@ -47,6 +47,8 @@ export default function StoresPage() {
   const [saving, setSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [dirty, setDirty] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const loadData = useCallback(async () => {
@@ -67,6 +69,50 @@ export default function StoresPage() {
   useEffect(() => {
     if (session) loadData();
   }, [session, loadData]);
+
+  async function handleUploadSiteFile(file: File) {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await authFetch('/api/stores/upload', { method: 'POST', body: fd });
+      const d = await res.json();
+      if (res.ok) {
+        setToast({
+          msg: `Loaded ${d.rows} rows — ${d.created} new, ${d.updated} updated`
+            + (d.channelsCreated?.length ? `, ${d.channelsCreated.length} channel(s) created` : '')
+            + (d.skipped ? `, ${d.skipped} skipped` : ''),
+          type: 'success',
+        });
+        await loadData();
+      } else {
+        setToast({ msg: d.detail || d.error || 'Upload failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Upload failed', type: 'error' });
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
+  async function handleExport() {
+    try {
+      const res = await authFetch('/api/stores/export');
+      if (!res.ok) { setToast({ msg: 'Export failed', type: 'error' }); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `HaierSiteControlFile_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setToast({ msg: 'Export failed', type: 'error' });
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!search.trim()) return stores;
@@ -175,7 +221,9 @@ export default function StoresPage() {
           Stores
         </h1>
         <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1rem' }}>
-          Manage store-to-channel assignments. Stores are auto-populated from DISPO uploads.
+          Manage store-to-channel assignments. Populate in bulk with <strong>Upload Site Control File</strong>
+          (MASTER_SITE format — Site Num, Store Name, Channel, Sub_Channel, Province, Town/City, Status),
+          or export the current list to edit and re-import. Stores also auto-populate from DISPO uploads.
         </p>
 
         {unassignedCount > 0 && (
@@ -201,6 +249,25 @@ export default function StoresPage() {
             {saving ? 'Saving...' : 'Save All'}
           </button>
           {dirty && <span style={{ fontSize: '0.75rem', color: '#dc2626' }}>Unsaved changes</span>}
+          <button
+            className="btn"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            title="Upload a Site Control File (MASTER_SITE format) — upserts stores by Site Num, auto-creates channels"
+            style={{ fontSize: '0.85rem' }}
+          >
+            {uploading ? 'Uploading…' : 'Upload Site Control File'}
+          </button>
+          <button className="btn" onClick={handleExport} title="Download the current stores as a Site Control File" style={{ fontSize: '0.85rem' }}>
+            Export sites
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xlsm,.xls"
+            style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadSiteFile(f); }}
+          />
           <span style={{ fontSize: '0.75rem', color: '#6b7280', marginLeft: 'auto' }}>
             {filtered.length} of {stores.length} stores
           </span>
