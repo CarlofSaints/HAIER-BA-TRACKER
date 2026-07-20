@@ -26,6 +26,7 @@ export default function ChannelsPage() {
   const [newName, setNewName] = useState('');
   const [newParentId, setNewParentId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [clearingId, setClearingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editParentId, setEditParentId] = useState('');
@@ -99,7 +100,7 @@ export default function ChannelsPage() {
       `sales scores. Use it when switching this sub-channel to a different data ` +
       `source (e.g. Makro from DISPO → SAMS). To restore, re-load from the source.`,
     )) return;
-    setSaving(true);
+    setClearingId(subId);
     try {
       const res = await authFetch('/api/sales/clear-subchannel', {
         method: 'POST',
@@ -120,7 +121,7 @@ export default function ChannelsPage() {
     } catch {
       setToast({ msg: 'Clear failed', type: 'error' });
     } finally {
-      setSaving(false);
+      setClearingId(null);
     }
   }
 
@@ -291,7 +292,7 @@ export default function ChannelsPage() {
                         </div>
                         <div style={{ display: 'flex', gap: '0.35rem' }}>
                           <button className="btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={() => startEdit(sub)}>Edit</button>
-                          <button className="btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', color: '#b45309', borderColor: '#fcd34d' }} onClick={() => handleClearData(sub.id, sub.name)} title="Clear this sub-channel's sales & stock data from the shared dataset">Clear data</button>
+                          <button className="btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', color: '#b45309', borderColor: '#fcd34d', opacity: clearingId === sub.id ? 0.7 : 1 }} onClick={() => handleClearData(sub.id, sub.name)} disabled={clearingId === sub.id} title="Clear this sub-channel's sales & stock data from the shared dataset">{clearingId === sub.id ? 'Clearing…' : 'Clear data'}</button>
                           <button className="btn btn-danger" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={() => handleDelete(sub.id, sub.name, false)}>Delete</button>
                         </div>
                       </div>
