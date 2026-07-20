@@ -31,6 +31,7 @@ interface SyncMeta {
   lastSyncQueryTimings?: Record<string, QueryTiming>;
   counts?: SyncCounts;
   unresolvedSiteSample?: string[];
+  matchedNonSamsSample?: { siteId: string; storeName: string; channel: string }[];
   lastError?: string;
 }
 interface LogEntry {
@@ -234,7 +235,18 @@ export default function SamsSyncPage() {
                     <li>{meta.counts.unresolvedStores} SAMS site(s) had <strong>no store-master match</strong> — skipped. Add them on Stores (siteCode = stripped SITE_ID) to include them.</li>
                   ) : null}
                   {meta.counts.matchedNonSamsChannel ? (
-                    <li>{meta.counts.matchedNonSamsChannel} site(s) matched but their <strong>channel isn&apos;t marked SAMS</strong> — not merged live. Mark the sub-channel SAMS to include them.</li>
+                    <li>
+                      {meta.counts.matchedNonSamsChannel} site(s) matched but their <strong>channel isn&apos;t marked SAMS</strong> — not merged live. Mark the sub-channel SAMS to include them (or leave as-is if that channel shouldn&apos;t come from SAMS).
+                      {meta.matchedNonSamsSample && meta.matchedNonSamsSample.length > 0 && (
+                        <div style={{ marginTop: 4, fontSize: '0.72rem', color: '#78350f' }}>
+                          {meta.matchedNonSamsSample.map(s => (
+                            <div key={s.siteId} style={{ fontFamily: 'monospace' }}>
+                              {s.siteId} · {s.storeName} · <strong>{s.channel}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </li>
                   ) : null}
                   {meta.counts.unresolvedArticles ? (
                     <li>{meta.counts.unresolvedArticles} article code(s) had no product-link match — kept as raw code.</li>

@@ -66,6 +66,7 @@ export interface SamsSyncMeta {
   lastSyncQueryTimings?: Record<string, QueryTiming>;
   counts?: SamsSyncCounts;
   unresolvedSiteSample?: string[]; // a few unmatched SITE_IDs, to help reconcile
+  matchedNonSamsSample?: { siteId: string; storeName: string; channel: string }[];
   lastError?: string;
 }
 
@@ -177,6 +178,7 @@ export async function runSamsSync(
     const requested = new Set(opts.channelIds);
     samsChannelIds = new Set([...samsChannelIds].filter(id => requested.has(id)));
   }
+  const channelNameById = new Map(channels.map(c => [c.id, c.name]));
 
   // Store lookup: stripped code / full code / perigee code → store master entry.
   const storeByCode = new Map<string, StoreMaster>();
@@ -218,7 +220,7 @@ export async function runSamsSync(
   const monthsSeen = new Set<string>();
   const liveStoreNames = new Set<string>(); // matched AND channel marked SAMS
   const unmatchedSites = new Set<string>();
-  const matchedNonSams = new Set<string>();
+  const matchedNonSams = new Map<string, { storeName: string; channel: string }>();
   let salesRows = 0;
 
   for (const row of facts) {
@@ -234,7 +236,12 @@ export async function runSamsSync(
     const storeName = store.storeName;
     const isSamsChannel = samsChannelIds.has(store.channelId);
     if (isSamsChannel) liveStoreNames.add(storeName);
-    else matchedNonSams.add(siteId);
+    else if (!matchedNonSams.has(siteId)) {
+      matchedNonSams.set(siteId, {
+        storeName,
+        channel: channelNameById.get(store.channelId) || store.channelId || '(unassigned)',
+      });
+    }
 
     const article = resolveArticle(articleId);
     allArticles.add(article);
@@ -350,7 +357,14 @@ export async function runSamsSync(
     unresolvedArticles: unresolvedArticleIds.size,
   };
 
-  return finalizeMeta(source, syncStart, timings, counts, undefined, target, [...unmatchedSites].slice(0, 25));
+  const matchedNonSamsSample = [...matchedNonSams.entries()]
+    .slice(0, 25)
+    .map(([siteId, v]) => ({ siteId, ...v }));
+
+  return finalizeMeta(
+    source, syncStart, timings, counts, undefined, target,
+    [...unmatchedSites].slice(0, 25), matchedNonSamsSample,
+  );
 }
 
 /** Write sync-meta.json + prepend to the rolling sync-log.json (last 50). */
@@ -362,6 +376,7 @@ async function finalizeMeta(
   error?: string,
   target: SyncTarget = 'dispo',
   unresolvedSiteSample?: string[],
+  matchedNonSamsSample?: { siteId: string; storeName: string; channel: string }[],
 ): Promise<SamsSyncMeta> {
   const now = new Date();
   const durationMs = Date.now() - syncStart;
@@ -375,6 +390,7 @@ async function finalizeMeta(
   meta.lastSyncQueryTimings = timings;
   if (counts) meta.counts = counts;
   meta.unresolvedSiteSample = unresolvedSiteSample;
+  meta.matchedNonSamsSample = matchedNonSamsSample;
   meta.lastError = error;
   await writeJson(META_KEY, meta);
 
