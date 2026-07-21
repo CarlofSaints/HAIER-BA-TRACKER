@@ -110,8 +110,9 @@ export default function SamsSyncPage() {
     authFetch('/api/channels').then(r => (r.ok ? r.json() : [])).then(setChannels).catch(() => {});
   }, [session, loadStatus]);
 
-  // Sub-channels whose data source is SAMS — one sync button each.
-  const samsSubs = channels.filter(c => c.parentId && c.dataSource === 'sams');
+  // Channels whose data source is SAMS (sub-channels, or a main channel with no
+  // sub-channels) — one sync button each.
+  const samsChannels = channels.filter(c => c.dataSource === 'sams');
 
   async function loadLog() {
     try {
@@ -186,12 +187,11 @@ export default function SamsSyncPage() {
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827' }}>Data Sync (SAMS)</h1>
           <p style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 4 }}>
             Pull the latest sales &amp; stock from SQL (SAMS) via the Railway proxy. This{' '}
-            <strong>merges the SAMS-marked sub-channels</strong> into the live dataset (DISPO/Excel
-            channels untouched) and re-runs sales scores. A full snapshot is also written to the{' '}
-            <a href="/sales-sams" style={{ color: HAIER_BLUE, fontWeight: 600 }}>Sales &amp; Stock (SAMS)</a>{' '}
-            page. Set a sub-channel&apos;s data source to <strong>SAMS</strong> on the Sales Channels
-            page first — only those load. Stores match by stripped <code>SITE_ID</code> → store{' '}
-            <code>siteCode</code>.
+            <strong>merges the SAMS-marked channels</strong> into the live{' '}
+            <a href="/sales" style={{ color: HAIER_BLUE, fontWeight: 600 }}>Sales &amp; Stock</a>{' '}
+            dataset (DISPO/Excel channels untouched) and re-runs sales scores. Set a channel&apos;s
+            data source to <strong>SAMS</strong> on the Sales Channels page first — only those load.
+            Stores match by stripped <code>SITE_ID</code> → store <code>siteCode</code>.
           </p>
         </div>
 
@@ -262,7 +262,7 @@ export default function SamsSyncPage() {
 
             {/* Sync buttons — one per SAMS-marked sub-channel + Sync all */}
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', margin: '0.5rem 0' }}>
-              {samsSubs.map(sub => {
+              {samsChannels.map(sub => {
                 const active = syncing && syncingLabel === sub.name;
                 return (
                   <button
@@ -291,15 +291,15 @@ export default function SamsSyncPage() {
                   opacity: syncing || !configured ? 0.6 : 1,
                 }}
               >
-                {syncing && syncingLabel === 'all' ? 'Syncing all…' : (samsSubs.length ? 'Sync all SAMS' : 'Sync from SAMS')}
+                {syncing && syncingLabel === 'all' ? 'Syncing all…' : (samsChannels.length ? 'Sync all SAMS' : 'Sync from SAMS')}
               </button>
               {meta.lastSyncDurationMs !== undefined && (
                 <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>last run: {fmtMs(meta.lastSyncDurationMs)}</span>
               )}
             </div>
-            {samsSubs.length === 0 && (
+            {samsChannels.length === 0 && (
               <div style={{ fontSize: '0.75rem', color: '#9ca3af', margin: '0 0 0.5rem' }}>
-                No sub-channels are marked SAMS yet — set one on the Sales Channels page to get a dedicated button.
+                No channels are marked SAMS yet — set one on the Sales Channels page to get a dedicated button.
               </div>
             )}
             {syncing && (

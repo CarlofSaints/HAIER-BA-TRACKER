@@ -9,7 +9,6 @@ import {
 import {
   loadDispoData,
   saveDispoData,
-  saveSamsData,
   DispoSalesData,
   DispoUploadMeta,
 } from './dispoData';
@@ -22,10 +21,9 @@ import { runAutoCalcForMonth } from './autoCalc';
 
   SAMS supplies the lowest-grain facts (SITE_ID × ARTICLE_ID × DATE). We resolve
   names/channels from the CONTROL FILES (store master + channels), NOT the SQL
-  dimension — so Carl controls naming. Only sub-channels marked dataSource='sams'
+  dimension — so Carl controls naming. Only channels marked dataSource='sams'
   are written to the LIVE shared dataset (dispo/data.json); DISPO/Excel channels
-  are left untouched. A full SAMS snapshot is also written to sams/data.json for
-  the Sales & Stock (SAMS) comparison page.
+  are left untouched.
 
   Store match: strip the channel prefix off SITE_ID ("GAME-G016" → "G016") and
   match the store master siteCode (then full SITE_ID, then perigeeSiteCode).
@@ -141,8 +139,8 @@ function str(v: unknown): string {
 }
 
 /**
- * Pull SAMS, resolve via control files, write a full snapshot to sams/data.json
- * (comparison), and MERGE the SAMS-marked sub-channels into the live dataset.
+ * Pull SAMS, resolve via control files, and MERGE the SAMS-marked channels into
+ * the live shared dataset (dispo/data.json). DISPO/Excel channels are untouched.
  */
 export async function runSamsSync(
   source: SyncSource,
@@ -299,16 +297,12 @@ export async function runSamsSync(
     source: 'sams',
   };
 
-  // 4. Staging snapshot for the comparison page (all matched SAMS stores).
-  data.uploads.push({ ...uploadMeta });
-  await saveSamsData(data);
-
-  // 5. Merge SAMS-marked channels into the LIVE dataset.
+  // 4. Merge SAMS-marked channels into the LIVE dataset.
   const live = await loadDispoData();
   if (!live.ytd) live.ytd = {};
   const affectedMonths = new Set<string>();
 
-  // 5a. Remove existing data for every store in a SAMS-marked channel (clean
+  // 4a. Remove existing data for every store in a SAMS-marked channel (clean
   //     re-sync — drops stores SAMS no longer reports).
   const samsMasterStoreNames = new Set(
     stores.filter(s => samsChannelIds.has(s.channelId)).map(s => s.storeName),
@@ -321,7 +315,7 @@ export async function runSamsSync(
     delete live.ytd[name];
   }
 
-  // 5b. Write the fresh SAMS data for the marked-channel stores.
+  // 4b. Write the fresh SAMS data for the marked-channel stores.
   for (const [month, byStore] of Object.entries(data.sales)) {
     for (const name of liveStoreNames) {
       if (byStore[name]) {
@@ -339,7 +333,7 @@ export async function runSamsSync(
   live.uploads.push({ ...uploadMeta });
   await saveDispoData(live);
 
-  // 6. Re-run sales auto-calc for every affected month.
+  // 5. Re-run sales auto-calc for every affected month.
   for (const mm of affectedMonths) {
     const [mmPart, yyyyPart] = mm.split('-');
     try {

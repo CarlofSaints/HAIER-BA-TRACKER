@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
@@ -69,17 +68,11 @@ export default function SalesPage() {
 }
 
 /**
- * Shared Sales & Stock view. Rendered by /sales (DISPO) and, with forceSams,
- * by /sales-sams (the SAMS comparison route) — same component so the two views
- * render identically. `forceSams` wins; otherwise ?source=sams is honoured too
- * (kept for old bookmarks). A separate route is used rather than a query flag
- * because flipping ?source on the same /sales route doesn't reliably remount /
- * refetch under App Router client navigation.
+ * Sales & Stock view (the live shared dataset). SAMS-marked channels are merged
+ * into this same dataset by the SAMS sync, so this one page shows every source.
  */
-export function SalesStockView({ forceSams = false }: { forceSams?: boolean }) {
+export function SalesStockView() {
   const { session, loading: authLoading, logout } = useAuth();
-  const searchParams = useSearchParams();
-  const isSams = forceSams || searchParams.get('source') === 'sams';
   const [data, setData] = useState<DispoSalesData | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('store');
@@ -118,7 +111,7 @@ export function SalesStockView({ forceSams = false }: { forceSams?: boolean }) {
     setLoadingData(true);
     try {
       const [dispoRes, storesRes, channelsRes, visitsRes, targetsRes] = await Promise.all([
-        authFetch(isSams ? '/api/sams/data' : '/api/dispo'),
+        authFetch('/api/dispo'),
         authFetch('/api/stores'),
         authFetch('/api/channels'),
         authFetch('/api/visits'),
@@ -131,7 +124,7 @@ export function SalesStockView({ forceSams = false }: { forceSams?: boolean }) {
       if (targetsRes.ok) setTargetData(await targetsRes.json());
     } catch { /* ignore */ }
     setLoadingData(false);
-  }, [isSams]);
+  }, []);
 
   useEffect(() => {
     if (session) loadData();
@@ -871,27 +864,14 @@ export function SalesStockView({ forceSams = false }: { forceSams?: boolean }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
           <div>
             <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
-              Sales & Stock{isSams && <span style={{ color: '#7c3aed', fontWeight: 700 }}> — SAMS (comparison)</span>}
+              Sales & Stock
             </h1>
-            <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: isSams ? '0.75rem' : '1.25rem' }}>
-              {isSams
-                ? 'SAMS sales & stock (SoH), pulled from SQL — read-only comparison dataset'
-                : 'DISPO sales, stock on hand, and stock on order data'}
+            <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+              Sales, stock on hand, and stock on order — across all data sources (DISPO, SAMS, Excel).
             </p>
           </div>
           <SamsFreshnessCard />
         </div>
-        {isSams && (
-          <div style={{
-            background: '#f5f3ff', border: '1px solid #ddd6fe', color: '#5b21b6',
-            borderRadius: 8, padding: '0.6rem 0.85rem', marginBottom: '1.25rem', fontSize: '0.8rem',
-          }}>
-            <strong>Comparison view.</strong> This reads the separate <code>sams/data.json</code> dataset
-            populated by Data Sync (SAMS). DISPO data and all scores are untouched. Compare against the{' '}
-            <a href="/sales" style={{ color: '#6d28d9', fontWeight: 600 }}>live DISPO Sales &amp; Stock</a> page.
-            SoO is not in SAMS; target-variance columns may be blank where SAMS store names differ from DISPO.
-          </div>
-        )}
 
         {/* Controls */}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem', alignItems: 'flex-end' }}>

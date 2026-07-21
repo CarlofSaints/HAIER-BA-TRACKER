@@ -143,8 +143,10 @@ export default function ChannelsPage() {
           id: editingId,
           name: editName.trim(),
           parentId: editParentId || null,
-          // Data source only applies to sub-channels; clear it when Made Main.
-          dataSource: editParentId ? editDataSource : null,
+          // Data source applies to whichever channel stores are assigned to —
+          // a sub-channel, or a main channel with no sub-channels (e.g. GAME,
+          // WALMART, Diamond Corner).
+          dataSource: editDataSource,
         }),
       });
       const data = await res.json();
@@ -189,7 +191,8 @@ export default function ChannelsPage() {
         </h1>
         <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           Manage main channels and sub-channels. Stores are assigned to sub-channels (or directly to main channels if no sub-channel exists).
-          Each sub-channel has a <strong>data source</strong> (DISPO / SAMS / Other Excel) — edit a sub-channel to set where its sales &amp; stock come from.
+          Each channel has a <strong>data source</strong> (DISPO / SAMS / Other Excel) — edit a channel to set where its sales &amp; stock come from.
+          Set it on the sub-channel where stores live, or on a main channel that has no sub-channels (e.g. GAME, WALMART, Diamond Corner).
         </p>
 
         {/* Add channel */}
@@ -231,8 +234,19 @@ export default function ChannelsPage() {
                 <div key={main.id}>
                   {/* Main channel row */}
                   {editingId === main.id ? (
-                    <div style={{ ...rowStyle(false), gap: '0.5rem' }}>
-                      <input className="input" value={editName} onChange={e => setEditName(e.target.value)} style={{ flex: 1, fontSize: '0.85rem' }} />
+                    <div style={{ ...rowStyle(false), gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <input className="input" value={editName} onChange={e => setEditName(e.target.value)} style={{ flex: 1, minWidth: 120, fontSize: '0.85rem' }} />
+                      <select
+                        className="input"
+                        value={editDataSource}
+                        onChange={e => setEditDataSource(e.target.value)}
+                        title="Which pipeline supplies this channel's sales/stock data (used when stores are assigned directly to this main channel, i.e. it has no sub-channels)"
+                        style={{ width: 130, fontSize: '0.8rem' }}
+                      >
+                        <option value="dispo">Data: DISPO</option>
+                        <option value="sams">Data: SAMS</option>
+                        <option value="excel">Data: Other Excel</option>
+                      </select>
                       <button className="btn btn-primary" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={handleSaveEdit} disabled={saving}>Save</button>
                       <button className="btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={() => setEditingId(null)}>Cancel</button>
                     </div>
@@ -241,6 +255,7 @@ export default function ChannelsPage() {
                       <div>
                         <span style={{ fontWeight: 600, color: '#374151', fontSize: '0.9rem' }}>{main.name}</span>
                         <span style={badgeStyle(true)}>MAIN</span>
+                        {subs.length === 0 && <span style={dsBadge(main.dataSource)}>{dsLabel(main.dataSource)}</span>}
                         {subs.length > 0 && (
                           <span style={{ color: '#9ca3af', fontSize: '0.7rem', marginLeft: '0.5rem' }}>
                             {subs.length} sub-channel{subs.length > 1 ? 's' : ''}
@@ -270,8 +285,7 @@ export default function ChannelsPage() {
                           className="input"
                           value={editDataSource}
                           onChange={e => setEditDataSource(e.target.value)}
-                          disabled={!editParentId}
-                          title="Which pipeline supplies this sub-channel's sales/stock data"
+                          title="Which pipeline supplies this channel's sales/stock data"
                           style={{ width: 130, fontSize: '0.8rem' }}
                         >
                           <option value="dispo">Data: DISPO</option>
