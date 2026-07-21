@@ -66,6 +66,7 @@ export interface SamsSyncMeta {
   counts?: SamsSyncCounts;
   unresolvedSiteSample?: string[]; // a few unmatched SITE_IDs, to help reconcile
   matchedNonSamsSample?: { siteId: string; storeName: string; channel: string }[];
+  skippedEmptySamsChannels?: string[]; // marked SAMS but SAMS returned nothing → NOT wiped
   lastError?: string;
 }
 
@@ -304,8 +305,24 @@ export async function runSamsSync(
 
   // 4a. Remove existing data for every store in a SAMS-marked channel (clean
   //     re-sync — drops stores SAMS no longer reports).
+  //
+  //     SAFETY GUARD: only clear channels that actually received SAMS data this
+  //     run. If a channel is marked SAMS but SAMS returned NO matched store for
+  //     it, that's almost always a misconfiguration (e.g. Diamond Corner or
+  //     Walmart — whose data comes from PDF/DISPO, not SAMS SQL — marked SAMS by
+  //     mistake). Clearing it would silently wipe that channel's data with
+  //     nothing to put back, so we SKIP it and report it instead. Stale data is
+  //     safer than wiped data.
+  const channelsWithData = new Set(
+    stores.filter(s => liveStoreNames.has(s.storeName)).map(s => s.channelId),
+  );
+  const skippedEmptySamsChannels = [...samsChannelIds]
+    .filter(id => !channelsWithData.has(id))
+    .map(id => channelNameById.get(id) || id);
   const samsMasterStoreNames = new Set(
-    stores.filter(s => samsChannelIds.has(s.channelId)).map(s => s.storeName),
+    stores
+      .filter(s => samsChannelIds.has(s.channelId) && channelsWithData.has(s.channelId))
+      .map(s => s.storeName),
   );
   for (const name of samsMasterStoreNames) {
     for (const [month, byStore] of Object.entries(live.sales)) {
@@ -363,6 +380,7 @@ export async function runSamsSync(
   return finalizeMeta(
     source, syncStart, timings, counts, undefined, target,
     [...unmatchedSites].slice(0, 25), matchedNonSamsSample, latestDataDate,
+    skippedEmptySamsChannels,
   );
 }
 
@@ -377,6 +395,7 @@ async function finalizeMeta(
   unresolvedSiteSample?: string[],
   matchedNonSamsSample?: { siteId: string; storeName: string; channel: string }[],
   latestDataDate?: string,
+  skippedEmptySamsChannels?: string[],
 ): Promise<SamsSyncMeta> {
   const now = new Date();
   const durationMs = Date.now() - syncStart;
@@ -392,6 +411,7 @@ async function finalizeMeta(
   if (counts) meta.counts = counts;
   meta.unresolvedSiteSample = unresolvedSiteSample;
   meta.matchedNonSamsSample = matchedNonSamsSample;
+  meta.skippedEmptySamsChannels = skippedEmptySamsChannels;
   meta.lastError = error;
   await writeJson(META_KEY, meta);
 

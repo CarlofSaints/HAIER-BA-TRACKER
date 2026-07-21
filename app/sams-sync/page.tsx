@@ -32,6 +32,7 @@ interface SyncMeta {
   counts?: SyncCounts;
   unresolvedSiteSample?: string[];
   matchedNonSamsSample?: { siteId: string; storeName: string; channel: string }[];
+  skippedEmptySamsChannels?: string[];
   lastError?: string;
 }
 interface LogEntry {
@@ -225,6 +226,18 @@ export default function SamsSyncPage() {
               <StatCard label="SOH snapshots" value={fmtNum(meta.counts?.sohRows)} tint="#fff7ed" />
               <StatCard label="Months" value={fmtNum(meta.counts?.months)} tint="#eff6ff" />
             </div>
+
+            {/* Safety guard — a channel marked SAMS that SAMS returned nothing for
+                was NOT wiped (likely a mis-set data source, e.g. Diamond Corner). */}
+            {meta.skippedEmptySamsChannels && meta.skippedEmptySamsChannels.length > 0 && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '0.75rem 1rem', margin: '0 0 1rem', fontSize: '0.82rem', color: '#991b1b' }}>
+                <strong>Skipped (data preserved):</strong> {meta.skippedEmptySamsChannels.join(', ')} — marked
+                as SAMS but SAMS SQL returned no data for {meta.skippedEmptySamsChannels.length > 1 ? 'them' : 'it'}.
+                Their existing sales/stock were left untouched (not wiped). If a channel&apos;s data comes from a
+                PDF/Excel upload (e.g. Diamond Corner) or DISPO (e.g. Walmart), set its data source to{' '}
+                <strong>Other Excel</strong> or <strong>DISPO</strong> on the Sales Channels page — not SAMS.
+              </div>
+            )}
 
             {/* Coverage — unmatched sites / channels not marked SAMS / unmapped articles */}
             {meta.counts && (meta.counts.unresolvedStores || meta.counts.matchedNonSamsChannel || meta.counts.unresolvedArticles) ? (
