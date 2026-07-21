@@ -50,15 +50,30 @@ export async function POST(req: NextRequest) {
 
     const stores = await loadStores();
     const channels = await loadChannels();
+    const channelName = (id: string) => channels.find(c => c.id === id)?.name || id;
 
-    // Index stores by siteCode for upsert.
-    const byCode = new Map<string, StoreMaster>();
-    for (const s of stores) if (s.siteCode) byCode.set(s.siteCode.toLowerCase().trim(), s);
+    // Match key is (siteCode + channel), NOT siteCode alone: Perigee allows the
+    // same site code in different channels, so a code that already exists in
+    // another channel is a DIFFERENT store, not an update. `byCodeChannel` upserts
+    // exact same-channel stores; `byCode` finds same-code stores in other channels
+    // so we can create a separate store + warn instead of silently reassigning.
+    const byCodeChannel = new Map<string, StoreMaster>();
+    const byCode = new Map<string, StoreMaster[]>();
+    for (const s of stores) {
+      if (!s.siteCode) continue;
+      const code = s.siteCode.toLowerCase().trim();
+      byCodeChannel.set(`${code}|${s.channelId}`, s);
+      const arr = byCode.get(code);
+      if (arr) arr.push(s); else byCode.set(code, [s]);
+    }
 
     let created = 0;
     let updated = 0;
     let skipped = 0;
     const channelsCreated = new Set<string>();
+    // Rows whose code already exists in a DIFFERENT channel — created as separate
+    // stores (Perigee allows this), reported so the user can spot an accidental clash.
+    const duplicateCodes: { siteCode: string; storeName: string; channel: string; alsoIn: string[] }[] = [];
 
     for (const raw of rows) {
       const r = norm(raw);
@@ -72,13 +87,27 @@ export async function POST(req: NextRequest) {
       const { channelId, created: newCh } = ensureChannelPath(channels, mainName, subName);
       newCh.forEach(n => channelsCreated.add(n));
 
-      const key = siteCode.toLowerCase();
-      let store = byCode.get(key);
+      const code = siteCode.toLowerCase();
+      let store = byCodeChannel.get(`${code}|${channelId}`);
       if (!store) {
+        // No store with this code in THIS channel. If the code exists in other
+        // channel(s), this is a legitimate cross-channel duplicate — create a
+        // separate store here and flag it; never overwrite the other store.
+        const otherChannels = (byCode.get(code) || []).filter(s => s.channelId !== channelId);
         store = { siteCode, storeName: storeName || siteCode, channelId, addedFrom: ['data'] };
         stores.push(store);
-        byCode.set(key, store);
+        byCodeChannel.set(`${code}|${channelId}`, store);
+        const arr = byCode.get(code);
+        if (arr) arr.push(store); else byCode.set(code, [store]);
         created++;
+        if (otherChannels.length) {
+          duplicateCodes.push({
+            siteCode,
+            storeName: store.storeName,
+            channel: channelName(channelId),
+            alsoIn: [...new Set(otherChannels.map(s => channelName(s.channelId)))],
+          });
+        }
       } else {
         updated++;
       }
@@ -97,7 +126,7 @@ export async function POST(req: NextRequest) {
 
     logFromUser(
       user, 'sync_sams', 'stores/site-control-file',
-      `Site Control File upload — ${created} created, ${updated} updated, ${channelsCreated.size} channel(s) created (${file.name}).`,
+      `Site Control File upload — ${created} created, ${updated} updated, ${channelsCreated.size} channel(s) created${duplicateCodes.length ? `, ${duplicateCodes.length} cross-channel duplicate code(s)` : ''} (${file.name}).`,
     );
 
     return NextResponse.json({
@@ -109,6 +138,7 @@ export async function POST(req: NextRequest) {
       updated,
       skipped,
       channelsCreated: [...channelsCreated],
+      duplicateCodes,
     }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Site Control File upload error:', err);

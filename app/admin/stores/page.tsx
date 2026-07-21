@@ -52,6 +52,7 @@ export default function StoresPage() {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [dupCodes, setDupCodes] = useState<{ siteCode: string; storeName: string; channel: string; alsoIn: string[] }[]>([]);
 
   const loadData = useCallback(async () => {
     setLoadingData(true);
@@ -83,9 +84,11 @@ export default function StoresPage() {
         setToast({
           msg: `Loaded ${d.rows} rows — ${d.created} new, ${d.updated} updated`
             + (d.channelsCreated?.length ? `, ${d.channelsCreated.length} channel(s) created` : '')
-            + (d.skipped ? `, ${d.skipped} skipped` : ''),
+            + (d.skipped ? `, ${d.skipped} skipped` : '')
+            + (d.duplicateCodes?.length ? `, ${d.duplicateCodes.length} cross-channel duplicate code(s)` : ''),
           type: 'success',
         });
+        setDupCodes(Array.isArray(d.duplicateCodes) ? d.duplicateCodes : []);
         await loadData();
       } else {
         setToast({ msg: d.detail || d.error || 'Upload failed', type: 'error' });
@@ -231,6 +234,26 @@ export default function StoresPage() {
         {unassignedCount > 0 && (
           <div style={{ padding: '0.6rem 1rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: '0.8rem', color: '#92400e', marginBottom: '1rem' }}>
             {unassignedCount} store{unassignedCount > 1 ? 's' : ''} without a channel assignment
+          </div>
+        )}
+
+        {dupCodes.length > 0 && (
+          <div style={{ padding: '0.75rem 1rem', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: '0.8rem', color: '#1e40af', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+              <div>
+                <strong>{dupCodes.length} site code(s) already existed in another channel</strong> — created as
+                separate stores (Perigee allows the same code across channels; nothing was overwritten). Check
+                these weren&apos;t accidental clashes:
+                <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.1rem' }}>
+                  {dupCodes.slice(0, 30).map((d, i) => (
+                    <li key={i} style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                      {d.siteCode} · {d.storeName} → <strong>{d.channel}</strong> (also in: {d.alsoIn.join(', ')})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button className="btn" style={{ padding: '0.2rem 0.55rem', fontSize: '0.72rem', flexShrink: 0 }} onClick={() => setDupCodes([])}>Dismiss</button>
+            </div>
           </div>
         )}
 
