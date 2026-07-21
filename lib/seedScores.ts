@@ -1,4 +1,4 @@
-import { loadVisitIndex, loadVisitData, Visit } from './visitData';
+import { loadAllVisits, Visit } from './visitData';
 import { loadScores, saveScores, BAScore } from './scoreData';
 import { loadScoringConfig } from './scoringConfig';
 import { countTrainingsForMonth } from './trainingData';
@@ -24,12 +24,7 @@ export async function seedScoresFromVisits(
   const { minTrainingsPerMonth } = await loadKPIControls();
 
   // Load all visits
-  const index = await loadVisitIndex();
-  const allVisits: Visit[] = [];
-  for (const meta of index) {
-    const visits = await loadVisitData(meta.id);
-    allVisits.push(...visits);
-  }
+  const allVisits: Visit[] = await loadAllVisits();
 
   if (allVisits.length === 0) {
     return { months: 0, bas: 0 };

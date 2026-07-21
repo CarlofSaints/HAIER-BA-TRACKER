@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
-import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
+import { loadAllVisits } from '@/lib/visitData';
 import { loadTrainingIndex, loadTrainingData } from '@/lib/trainingData';
 import { loadScores } from '@/lib/scoreData';
 
@@ -48,15 +48,11 @@ export async function GET(req: NextRequest) {
     }
 
     // Visits
-    const visitIndex = await loadVisitIndex();
-    for (const meta of visitIndex) {
-      const visits = await loadVisitData(meta.id);
-      for (const v of visits) {
-        if (!v.email) continue;
-        upsert(v.email, v.repName, v.checkInDate, v.storeName || undefined);
-        const entry = baMap.get(v.email.toLowerCase())!;
-        entry.visitCount++;
-      }
+    for (const v of await loadAllVisits()) {
+      if (!v.email) continue;
+      upsert(v.email, v.repName, v.checkInDate, v.storeName || undefined);
+      const entry = baMap.get(v.email.toLowerCase())!;
+      entry.visitCount++;
     }
 
     // Training

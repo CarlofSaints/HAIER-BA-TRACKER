@@ -3,7 +3,7 @@ import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadTargetData, getStoreTarget } from '@/lib/targetData';
 import { loadDispoData, calcSalesValue } from '@/lib/dispoData';
 import { loadStores } from '@/lib/storeData';
-import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
+import { loadAllVisits } from '@/lib/visitData';
 import { loadKPIControls } from '@/lib/kpiControls';
 
 export const dynamic = 'force-dynamic';
@@ -32,11 +32,11 @@ export async function POST(req: NextRequest) {
     const dispoMonth = toDispoMonth(month); // MM-YYYY
 
     // Load all data in parallel
-    const [targetData, dispoData, stores, visitIndex, kpiControls] = await Promise.all([
+    const [targetData, dispoData, stores, allVisits, kpiControls] = await Promise.all([
       loadTargetData(),
       loadDispoData(),
       loadStores(),
-      loadVisitIndex(),
+      loadAllVisits(),
       loadKPIControls(),
     ]);
 
@@ -51,9 +51,8 @@ export async function POST(req: NextRequest) {
     // Load all visits and group by BA email → set of stores visited in this month
     // Track both siteCode and storeName for each store
     const baStores = new Map<string, { repName: string; stores: Map<string, string> }>();
-    for (const upload of visitIndex) {
-      const visits = await loadVisitData(upload.id);
-      for (const v of visits) {
+    {
+      for (const v of allVisits) {
         if (!v.checkInDate || !v.email) continue;
         // checkInDate is YYYY-MM-DD; month is YYYY-MM
         if (!v.checkInDate.startsWith(month)) continue;

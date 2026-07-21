@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAnyUser, noCacheHeaders } from '@/lib/auth';
 import { loadScores, calcTotal, calcGrandTotal, BAScore } from '@/lib/scoreData';
-import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
+import { loadAllVisits } from '@/lib/visitData';
 import { loadDispoData } from '@/lib/dispoData';
 import { loadStores } from '@/lib/storeData';
 
@@ -61,9 +61,9 @@ export async function GET(req: NextRequest) {
     const monthCount = Math.min(Number(url.searchParams.get('months')) || 6, 24);
     const months = getLastNMonths(monthCount);
 
-    // Load visit index, DISPO data, and store master in parallel
-    const [visitIndex, dispoData, storeMaster] = await Promise.all([
-      loadVisitIndex(),
+    // Load all visits, DISPO data, and store master in parallel
+    const [allVisits, dispoData, storeMaster] = await Promise.all([
+      loadAllVisits(),
       loadDispoData(),
       loadStores(),
     ]);
@@ -89,9 +89,8 @@ export async function GET(req: NextRequest) {
     // Build email → storeName and email → storeCode maps from visit data
     const storeMap = new Map<string, string>();
     const storeCodeMap = new Map<string, string>();
-    for (const meta of visitIndex) {
-      const visits = await loadVisitData(meta.id);
-      for (const v of visits) {
+    {
+      for (const v of allVisits) {
         if (v.email) {
           const emailKey = v.email.toLowerCase();
           if (v.storeName) storeMap.set(emailKey, v.storeName);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
-import { loadVisitIndex, saveVisitIndex, saveVisitData, Visit } from '@/lib/visitData';
+import { addVisits, Visit } from '@/lib/visitData';
 import { loadStores, saveStores, upsertStoresFromRecords } from '@/lib/storeData';
 import { logFromUser } from '@/lib/activityLog';
 import { runAutoCalcForMonth } from '@/lib/autoCalc';
@@ -210,17 +210,13 @@ export async function POST(req: NextRequest) {
       }));
 
       const uploadId = crypto.randomUUID();
-      await saveVisitData(uploadId, visits);
-
-      const index = await loadVisitIndex();
-      index.unshift({
+      await addVisits({
         id: uploadId,
         fileName,
         uploadedAt: new Date().toISOString(),
         uploadedBy: `${user.name} ${user.surname}`,
         rowCount: visits.length,
-      });
-      await saveVisitIndex(index);
+      }, visits);
 
       logFromUser(user, 'upload_visits', `visits/${uploadId}`, `Uploaded ${visits.length} visit rows from ${fileName}`);
 
@@ -256,17 +252,13 @@ export async function POST(req: NextRequest) {
     }
 
     const uploadId = crypto.randomUUID();
-    await saveVisitData(uploadId, parsed.visits);
-
-    const index = await loadVisitIndex();
-    index.unshift({
+    await addVisits({
       id: uploadId,
       fileName,
       uploadedAt: new Date().toISOString(),
       uploadedBy: `${user.name} ${user.surname}`,
       rowCount: parsed.visits.length,
-    });
-    await saveVisitIndex(index);
+    }, parsed.visits);
 
     logFromUser(user, 'upload_visits', `visits/${uploadId}`, `Uploaded ${parsed.visits.length} visit rows from ${fileName}`);
 

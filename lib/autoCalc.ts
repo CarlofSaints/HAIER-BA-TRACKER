@@ -6,7 +6,7 @@
  * `runAutoCalcForMonth()` runs all calcs, merges into existing scores, and saves.
  */
 
-import { loadVisitIndex, loadVisitData } from './visitData';
+import { loadAllVisits } from './visitData';
 import { loadScoringConfig } from './scoringConfig';
 import { loadTargetData, getStoreTarget } from './targetData';
 import { loadDispoData, calcSalesValue } from './dispoData';
@@ -26,12 +26,7 @@ interface CheckInResult {
 
 export async function calcCheckInScores(month: string): Promise<CheckInResult[]> {
   const { lateCheckinTime, earlyCheckoutTime } = await loadScoringConfig();
-  const index = await loadVisitIndex();
-  const allVisits = [];
-  for (const meta of index) {
-    const visits = await loadVisitData(meta.id);
-    allVisits.push(...visits);
-  }
+  const allVisits = await loadAllVisits();
 
   const monthVisits = allVisits.filter(v => v.checkInDate?.substring(0, 7) === month);
   const baMap = new Map<string, { repName: string; total: number; onTime: number; earlyOut: number }>();
@@ -70,8 +65,8 @@ function toDispoMonth(yyyyMm: string): string {
 
 export async function calcSalesScores(month: string): Promise<SalesResult[]> {
   const dispoMonth = toDispoMonth(month);
-  const [targetData, dispoData, stores, visitIndex, kpiControls] = await Promise.all([
-    loadTargetData(), loadDispoData(), loadStores(), loadVisitIndex(), loadKPIControls(),
+  const [targetData, dispoData, stores, allVisits, kpiControls] = await Promise.all([
+    loadTargetData(), loadDispoData(), loadStores(), loadAllVisits(), loadKPIControls(),
   ]);
 
   const salesThreshold = kpiControls.salesThresholdPct ?? 80;
@@ -105,9 +100,8 @@ export async function calcSalesScores(month: string): Promise<SalesResult[]> {
   }
 
   const baStores = new Map<string, { repName: string; stores: Map<string, string> }>();
-  for (const upload of visitIndex) {
-    const visits = await loadVisitData(upload.id);
-    for (const v of visits) {
+  {
+    for (const v of allVisits) {
       if (!v.checkInDate || !v.email || !v.checkInDate.startsWith(month)) continue;
       const email = v.email.toLowerCase();
       if (!baStores.has(email)) baStores.set(email, { repName: v.repName || v.email, stores: new Map() });

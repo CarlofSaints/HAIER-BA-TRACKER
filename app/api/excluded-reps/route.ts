@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadExcludedReps, saveExcludedReps, ExcludedRep } from '@/lib/excludedReps';
 import { loadScores, saveScores } from '@/lib/scoreData';
-import { loadVisitIndex, loadVisitData, saveVisitData } from '@/lib/visitData';
+import { removeVisitsWhere } from '@/lib/visitData';
 import { loadTrainingIndex, loadTrainingData, saveTrainingData } from '@/lib/trainingData';
 import { logFromUser } from '@/lib/activityLog';
 
@@ -33,12 +33,7 @@ export async function POST(req: NextRequest) {
 
   const summary = { visitsRemoved: 0, scoresRemoved: 0, trainingRemoved: 0 };
 
-  const visitIndex = await loadVisitIndex();
-  for (const meta of visitIndex) {
-    const visits = await loadVisitData(meta.id);
-    const after = visits.filter(v => (v.email || '').toLowerCase() !== key);
-    if (after.length < visits.length) { await saveVisitData(meta.id, after); summary.visitsRemoved += visits.length - after.length; }
-  }
+  summary.visitsRemoved += await removeVisitsWhere(v => (v.email || '').toLowerCase() === key);
 
   const now = new Date();
   for (let i = 0; i < 24; i++) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { readJson, writeJson } from '@/lib/blob';
-import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData, visitDedupeKey } from '@/lib/visitData';
+import { Visit, loadAllVisits, addVisits, visitDedupeKey } from '@/lib/visitData';
 import { seedScoresFromVisits } from '@/lib/seedScores';
 import { fetchAllPerigeeVisits, PerigeeFetchError } from '@/lib/perigeeFetch';
 import { loadExcludedReps, excludedEmailSet, filterExcluded } from '@/lib/excludedReps';
@@ -233,14 +233,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Deduplication: build set of existing keys across all uploads (visitId + composite)
-    const index = await loadVisitIndex();
     const existingKeys = new Set<string>();
-    for (const meta of index) {
-      const existingVisits = await loadVisitData(meta.id);
-      for (const ev of existingVisits) {
-        existingKeys.add(visitDedupeKey(ev));
-      }
-    }
+    for (const ev of await loadAllVisits()) existingKeys.add(visitDedupeKey(ev));
 
     // Filter out duplicates against previously saved data
     const newVisits = visits.filter(v => !existingKeys.has(visitDedupeKey(v)));
@@ -257,18 +251,15 @@ export async function POST(req: NextRequest) {
       }, { headers: noCacheHeaders() });
     }
 
-    // Save the new visits
+    // Upsert the new visits into the month shards
     const uploadId = crypto.randomUUID();
-    await saveVisitData(uploadId, newVisits);
-
-    index.unshift({
+    await addVisits({
       id: uploadId,
       fileName: `perigee-api-${perigeeBody.startDate}.json`,
       uploadedAt: new Date().toISOString(),
       uploadedBy: `${user.name} ${user.surname} (API)`,
       rowCount: newVisits.length,
-    });
-    await saveVisitIndex(index);
+    }, newVisits);
 
     // Auto-seed scores after import
     const seedResult = await seedScoresFromVisits(`${user.name} ${user.surname} (auto-seed)`);

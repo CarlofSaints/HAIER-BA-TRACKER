@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readJson, writeJson } from '@/lib/blob';
-import { Visit, loadVisitIndex, saveVisitIndex, saveVisitData, loadVisitData, visitDedupeKey } from '@/lib/visitData';
+import { Visit, loadAllVisits, addVisits, visitDedupeKey } from '@/lib/visitData';
 import { seedScoresFromVisits } from '@/lib/seedScores';
 import { requireRole } from '@/lib/auth';
 import { logActivity } from '@/lib/activityLog';
@@ -256,14 +256,8 @@ export async function GET(req: NextRequest) {
     }
 
     // Build dedup set from all existing visits (by visitId AND composite key)
-    const index = await loadVisitIndex();
     const existingKeys = new Set<string>();
-    for (const meta of index) {
-      const existingVisits = await loadVisitData(meta.id);
-      for (const ev of existingVisits) {
-        existingKeys.add(visitDedupeKey(ev));
-      }
-    }
+    for (const ev of await loadAllVisits()) existingKeys.add(visitDedupeKey(ev));
 
     const newVisits = visits.filter(v => !existingKeys.has(visitDedupeKey(v)));
     const skipped = mappedVisits.length - newVisits.length;
@@ -276,17 +270,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: true, action: 'polled', imported: 0, skipped });
     }
 
-    // Save
+    // Upsert into the month shards
     const uploadId = crypto.randomUUID();
-    await saveVisitData(uploadId, newVisits);
-    index.unshift({
+    await addVisits({
       id: uploadId,
       fileName: `cron-${matchedSlot.type}-${startDate}.json`,
       uploadedAt: new Date().toISOString(),
       uploadedBy: `Cron (${matchedSlot.time} ${matchedSlot.type})`,
       rowCount: newVisits.length,
-    });
-    await saveVisitIndex(index);
+    }, newVisits);
 
     // Auto-seed scores
     await seedScoresFromVisits('Cron (auto-seed)');

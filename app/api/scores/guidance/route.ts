@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAnyUser, noCacheHeaders } from '@/lib/auth';
-import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
+import { loadAllVisits } from '@/lib/visitData';
 import { loadScoringConfig } from '@/lib/scoringConfig';
 import { loadTargetData, getStoreTarget } from '@/lib/targetData';
 import { loadDispoData, calcSalesValue } from '@/lib/dispoData';
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     // Load all data in parallel
     const [
       scoringConfig,
-      visitIndex,
+      allVisits,
       targetData,
       dispoData,
       stores,
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
       allScores,
     ] = await Promise.all([
       loadScoringConfig(),
-      loadVisitIndex(),
+      loadAllVisits(),
       loadTargetData(),
       loadDispoData(),
       loadStores(),
@@ -59,11 +59,6 @@ export async function GET(req: NextRequest) {
     const baScore = allScores.find(s => s.email.toLowerCase() === email);
 
     // ── Check-in stats ──
-    const allVisits = [];
-    for (const meta of visitIndex) {
-      const visits = await loadVisitData(meta.id);
-      allVisits.push(...visits);
-    }
     const monthVisits = allVisits.filter(
       v => v.checkInDate?.substring(0, 7) === month && (v.email || '').toLowerCase() === email
     );
