@@ -180,15 +180,27 @@ export async function runSamsSync(
   }
   const channelNameById = new Map(channels.map(c => [c.id, c.name]));
 
-  // Store lookup: stripped code / full code / perigee code → store master entry.
-  const storeByCode = new Map<string, StoreMaster>();
+  // Store lookup. SAMS facts must ONLY resolve to stores in SAMS-marked channels:
+  // a SAMS SITE_ID belongs to a SAMS channel, so it must never land on a store in
+  // a NON-SAMS channel (e.g. Diamond Corner / Walmart) that happens to share the
+  // same site code — Perigee allows the same code across channels. Matching across
+  // all channels is exactly how a SAMS sync could clobber Diamond Corner data.
+  //   samsStoreByCode   → the real resolution (SAMS-marked channels only)
+  //   nonSamsStoreByCode → ONLY for the "matched but not marked SAMS" coverage hint
+  const samsStoreByCode = new Map<string, StoreMaster>();
+  const nonSamsStoreByCode = new Map<string, StoreMaster>();
   for (const s of stores) {
-    if (s.siteCode) storeByCode.set(s.siteCode.toLowerCase().trim(), s);
-    if (s.perigeeSiteCode) storeByCode.set(s.perigeeSiteCode.toLowerCase().trim(), s);
+    const codes: string[] = [];
+    if (s.siteCode) codes.push(s.siteCode.toLowerCase().trim());
+    if (s.perigeeSiteCode) codes.push(s.perigeeSiteCode.toLowerCase().trim());
+    for (const c of codes) {
+      if (!c) continue;
+      if (samsChannelIds.has(s.channelId)) samsStoreByCode.set(c, s);
+      else if (!nonSamsStoreByCode.has(c)) nonSamsStoreByCode.set(c, s);
+    }
   }
-  const findStore = (siteId: string): StoreMaster | undefined =>
-    storeByCode.get(storeCodeFromSiteId(siteId).toLowerCase()) ||
-    storeByCode.get(siteId.toLowerCase().trim());
+  const lookup = (m: Map<string, StoreMaster>, siteId: string): StoreMaster | undefined =>
+    m.get(storeCodeFromSiteId(siteId).toLowerCase()) || m.get(siteId.toLowerCase().trim());
 
   // Product resolution (dimensions).
   const productIdByChannelArticle = new Map<string, string>();
@@ -229,20 +241,26 @@ export async function runSamsSync(
     const articleId = str(row.ARTICLE_ID);
     if (!siteId || !articleId) continue;
 
-    const store = findStore(siteId);
+    const store = lookup(samsStoreByCode, siteId);
     if (!store) {
-      unmatchedSites.add(siteId);
-      continue; // skip + report — never invent a store
+      // Not a SAMS-channel store. If the code matches a store in a NON-SAMS
+      // channel, report it as "matched but not marked SAMS" (a hint to mark it);
+      // otherwise it's genuinely unmatched. Either way we NEVER touch it.
+      const other = lookup(nonSamsStoreByCode, siteId);
+      if (other) {
+        if (!matchedNonSams.has(siteId)) {
+          matchedNonSams.set(siteId, {
+            storeName: other.storeName,
+            channel: channelNameById.get(other.channelId) || other.channelId || '(unassigned)',
+          });
+        }
+      } else {
+        unmatchedSites.add(siteId);
+      }
+      continue;
     }
     const storeName = store.storeName;
-    const isSamsChannel = samsChannelIds.has(store.channelId);
-    if (isSamsChannel) liveStoreNames.add(storeName);
-    else if (!matchedNonSams.has(siteId)) {
-      matchedNonSams.set(siteId, {
-        storeName,
-        channel: channelNameById.get(store.channelId) || store.channelId || '(unassigned)',
-      });
-    }
+    liveStoreNames.add(storeName);
 
     const article = resolveArticle(articleId);
     allArticles.add(article);
