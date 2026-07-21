@@ -24,6 +24,7 @@ interface StoreMasterEntry {
 interface Channel {
   id: string;
   name: string;
+  parentId?: string;
 }
 
 interface VisitRecord {
@@ -174,8 +175,12 @@ export function SalesStockView() {
 
   // DC stores set
   const dcStoreNames = useMemo(() => {
-    return new Set(storeMaster.filter(s => s.channelId === 'dc').map(s => s.storeName));
-  }, [storeMaster]);
+    // The DC main channel is 'dc'; include any sub-channels under it too, so
+    // Diamond Corner stores still show in the DC section when they're assigned to
+    // a sub-channel (e.g. one created by a site-file SUB_CHANNEL).
+    const dcIds = new Set<string>(['dc', ...channels.filter(c => c.parentId === 'dc').map(c => c.id)]);
+    return new Set(storeMaster.filter(s => dcIds.has(s.channelId)).map(s => s.storeName));
+  }, [storeMaster, channels]);
 
   // Channel lookup for stores
   const storeChannelMap = useMemo(() => {

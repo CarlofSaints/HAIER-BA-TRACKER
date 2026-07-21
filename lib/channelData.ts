@@ -94,6 +94,11 @@ export function ensureChannelPath(
   let sub = channels.find(c => c.parentId === main!.id && c.name.toUpperCase() === sn.toUpperCase());
   if (!sub) {
     sub = { id: uniqueId(slugify(`${mn}-${sn}`)), name: sn.toUpperCase(), parentId: main.id };
+    // Inherit the parent's data source. Stores move onto the sub once it exists,
+    // so a new sub defaulting to DISPO would silently drop a main that was set to
+    // SAMS/Excel/PDF off its source (e.g. loading a site file with a SUB_CHANNEL
+    // under a main marked Excel). Inheriting keeps the pipeline intact.
+    if (main.dataSource) sub.dataSource = main.dataSource;
     channels.push(sub);
     created.push(`${main.name} › ${sub.name}`);
   }
