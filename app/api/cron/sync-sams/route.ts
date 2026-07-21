@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/auth';
 import { runSamsSync } from '@/lib/samsSync';
 import { isSqlProxyConfigured } from '@/lib/sqlProxy';
 import { logActivity } from '@/lib/activityLog';
+import { loadSamsSchedule, shouldRunNow } from '@/lib/samsSchedule';
 
 // SAMS is the lowest-grain fact pull and can be large — give it the same headroom
 // as the manual sync route.
@@ -11,11 +12,13 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /**
- * Scheduled SAMS sync. Declared in vercel.json → Vercel calls this on a cron
- * (no in-app scheduler needed). Auth: Vercel sends `Authorization: Bearer
- * $CRON_SECRET`; a super_admin session is also accepted for a manual browser run
- * (append ?force=true to run outside the schedule). Syncs ALL channels whose
- * data source is marked SAMS (same as "Sync all SAMS" on the Data Sync page).
+ * Scheduled SAMS sync. Vercel calls this HOURLY (vercel.json). This route reads
+ * the user-set schedule (config/sams-schedule.json, edited on the Sync Schedule
+ * page) and only runs the sync when the current time matches an enabled hour +
+ * weekday — so the timing is changed from the UI with no redeploy. Auth: Vercel
+ * sends `Authorization: Bearer $CRON_SECRET`; a super_admin session is also
+ * accepted (append ?force=true to run immediately, ignoring the schedule).
+ * Syncs ALL channels whose data source is marked SAMS.
  */
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -24,6 +27,13 @@ export async function GET(req: NextRequest) {
   const isAdminAuth = !!(await requireRole(req, ['super_admin']));
   if (!isCronAuth && !isAdminAuth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Gate on the user's schedule unless explicitly forced (manual "run now").
+  const force = req.nextUrl.searchParams.get('force') === 'true';
+  const schedule = await loadSamsSchedule();
+  if (!force && !shouldRunNow(schedule, new Date())) {
+    return NextResponse.json({ ok: true, action: 'skipped', reason: 'Outside the scheduled window.' });
   }
 
   if (!isSqlProxyConfigured()) {
