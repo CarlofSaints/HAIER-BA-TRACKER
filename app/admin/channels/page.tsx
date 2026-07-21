@@ -292,6 +292,7 @@ export default function ChannelsPage() {
                           <option value="dispo">Data: DISPO</option>
                           <option value="sams">Data: SAMS</option>
                           <option value="excel">Data: Other Excel</option>
+                          <option value="pdf">Data: PDF (OCR)</option>
                         </select>
                         <button className="btn btn-primary" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={handleSaveEdit} disabled={saving}>Save</button>
                         <button className="btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={() => setEditingId(null)}>Cancel</button>
