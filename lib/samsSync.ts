@@ -62,6 +62,7 @@ export interface SamsSyncMeta {
   lastSyncSource?: SyncSource;
   lastSyncTarget?: SyncTarget;
   lastAutoSync?: string;
+  latestDataDate?: string; // ISO date of the most recent SAMS fact row (data recency)
   lastSyncDurationMs?: number;
   lastSyncQueryTimings?: Record<string, QueryTiming>;
   counts?: SamsSyncCounts;
@@ -222,6 +223,7 @@ export async function runSamsSync(
   const unmatchedSites = new Set<string>();
   const matchedNonSams = new Map<string, { storeName: string; channel: string }>();
   let salesRows = 0;
+  let maxDataTime = -Infinity; // latest fact DATE seen → data-recency indicator
 
   for (const row of facts) {
     const siteId = str(row.SITE_ID);
@@ -250,6 +252,7 @@ export async function runSamsSync(
     const soh = Number(row.SOH) || 0;
     const month = monthKeyFromDate(row.DATE);
     const rowTime = new Date(String(row.DATE)).getTime();
+    if (!isNaN(rowTime) && rowTime > maxDataTime) maxDataTime = rowTime;
 
     if (month && units !== 0) {
       monthsSeen.add(month);
@@ -361,9 +364,11 @@ export async function runSamsSync(
     .slice(0, 25)
     .map(([siteId, v]) => ({ siteId, ...v }));
 
+  const latestDataDate = isFinite(maxDataTime) ? new Date(maxDataTime).toISOString() : undefined;
+
   return finalizeMeta(
     source, syncStart, timings, counts, undefined, target,
-    [...unmatchedSites].slice(0, 25), matchedNonSamsSample,
+    [...unmatchedSites].slice(0, 25), matchedNonSamsSample, latestDataDate,
   );
 }
 
@@ -377,12 +382,14 @@ async function finalizeMeta(
   target: SyncTarget = 'dispo',
   unresolvedSiteSample?: string[],
   matchedNonSamsSample?: { siteId: string; storeName: string; channel: string }[],
+  latestDataDate?: string,
 ): Promise<SamsSyncMeta> {
   const now = new Date();
   const durationMs = Date.now() - syncStart;
 
   const meta = await readJson<SamsSyncMeta>(META_KEY, {});
   meta.lastSync = now.toISOString();
+  if (latestDataDate) meta.latestDataDate = latestDataDate; // preserve prior on error path
   meta.lastSyncSource = source;
   meta.lastSyncTarget = target;
   if (source === 'cron') meta.lastAutoSync = now.toISOString();

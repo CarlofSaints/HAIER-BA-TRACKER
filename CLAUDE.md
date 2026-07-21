@@ -362,5 +362,101 @@ Typecheck + `next build` pass. **Commit:** `6cf6391`, pushed to master (auto-dep
 Still need (unchanged): `ANTHROPIC_API_KEY` on Vercel for OCR; a **target** for the
 store's month for the Sales KPI to score.
 
+### 13. Vercel Build Fix — xlsx export Buffer type (DEPLOYED, Jul 20, 2026)
+
+A Vercel production deploy failed at `next build` type-checking:
+
+```
+./app/api/stores/export/route.ts:48:27
+Type error: Argument of type 'Buffer<ArrayBufferLike>' is not assignable
+to parameter of type 'BodyInit | null | undefined'.
+```
+
+**Root cause:** the Site Control File export (commit `7995711`) annotated the xlsx
+buffer as `const buf: Buffer = XLSX.write(...)`, and under Next 16 / strict TS a
+Node `Buffer` isn't accepted as a valid `NextResponse` body (`BodyInit`), so the
+build aborted. The working `ba-work` export never hit this because it leaves the
+`require('xlsx')` result untyped (`any`), which flows through fine.
+
+**Fix:** dropped the `: Buffer` annotation in `app/api/stores/export/route.ts`
+(line 45) so the value stays `any`, matching the `ba-work` pattern. Verified with a
+local `next build` (identical pipeline to Vercel). Vercel reported the fix commit's
+deployment `success`.
+
+**Commit:** `0211cbd` → squash-merged to master as `8542455` (PR #1). Auto-deployed.
+
+### 14. Assigned BA defaults from Perigee visits, overridable in UI (Jul 20, 2026, on branch)
+
+The Stores page **Assigned BA** dropdown now surfaces the visit-derived BA as its
+default instead of a bare "Auto" label, while staying live (not frozen) unless an
+admin explicitly overrides. Preserves the §9 anti-staleness property — an untouched
+Save does NOT snapshot/freeze the BA (which would re-introduce the ex-employee bug).
+
+**Behaviour:**
+- Unset (`assignedBaEmail` empty) = auto: sales/report keep deriving from visits
+  every time (unchanged scoring path). The dropdown's Auto option now reads
+  `— Auto: {name} (from visits) —` so admins see who a store currently credits.
+- Picking a specific BA writes an explicit override that wins everywhere; selecting
+  the Auto option again reverts to visit-derivation. Fully changeable both ways.
+
+**Modified files:**
+- **`app/api/stores/route.ts`** — new `deriveBaByStore()` scans all visits and
+  returns per-store `{ email, repName }` for the most recent matching visit (matched
+  by store name / siteCode / Perigee Site Code override — same rule as the BA Work
+  report's `buildBaMap`). Gated behind **`?derivedBa=1`** so the Sales and Upload
+  pages (which also GET `/api/stores`) don't pay for the visit scan. Adds
+  `derivedBaEmail`/`derivedBaName` to each enriched store. `maxDuration = 60`.
+- **`app/admin/stores/page.tsx`** — `StoreMaster` gains `derivedBaEmail`/
+  `derivedBaName`; loads `/api/stores?derivedBa=1`; Auto option label shows the
+  derived name. No change to the Save payload (empty still = auto).
+
+**Key design decision:** the derived BA is *displayed*, not stored — the stored value
+stays empty for auto so downstream consumers keep deriving live. Only an explicit
+pick persists. This is the deliberate alternative to snapshotting on save.
+
+**Diamond Corner note (from this session's discussion):** rather than made-up site
+codes + an explicit Assigned BA, setting a Diamond Corner store's **site code = the
+real Perigee store code** (in the PDF upload panel) makes Perigee check-ins match the
+store automatically, so sales credit the visiting BA with no override needed. Still
+requires the BA to check in that month + a target for the month to score.
+
+**Commit:** `7a4d21b` on branch `claude/are-you-there-kztyaz` (restarted off master
+`8542455` since PR #1 was already merged). Build + typecheck pass. Not yet merged.
+
+**PR:** #14 work + §13 notes opened as **PR #2** (`claude/are-you-there-kztyaz` →
+master), left for Carl to review/merge (not auto-merged — it's a feature change).
+
+### 15. SAMS Data Freshness Card — Dashboard + Sales & Stock (Jul 21, 2026, on branch)
+
+A small top-right card on `/dashboard` and `/sales` surfaces how up to date the SAMS
+data is, so users can see the data's recency at a glance.
+
+**Card content:** `SAMS DATA` label + `Up to {latestDataDate}` (latest date present in
+the SAMS facts) + `Synced {lastSync}` subtitle. A colored dot signals staleness:
+green ≤7 days, amber ≤21, red older.
+
+**Modified/new files:**
+- **`lib/samsSync.ts`** — `SamsSyncMeta` gains `latestDataDate?`. During the fact
+  loop, tracks the max valid `row.DATE` (`maxDataTime`) and persists it via
+  `finalizeMeta` (only on the success path — the error path preserves the prior
+  value). Populated on the NEXT sync; existing meta has no value until then.
+- **`app/api/sams/freshness/route.ts`** (new) — lightweight **`requireAnyUser`**
+  endpoint returning `{ latestDataDate, lastSync }`. Separate from the admin-only
+  `/api/sams/sync` GET so clients (dashboard/sales are client-accessible) can see the
+  card without exposing sync internals.
+- **`components/SamsFreshnessCard.tsx`** (new) — shared client component; fetches
+  freshness, formats dates `en-GB` (`18 Jul 2026`), renders **nothing** until data
+  exists (no empty card on fresh deploys).
+- **`app/dashboard/page.tsx`** + **`app/sales/page.tsx`** — header wrapped in a
+  `justify-content: space-between` flex row with the card top-right. Sales page shares
+  the card across `/sales` (DISPO) and `/sales-sams` (it's always SAMS freshness).
+
+**Known limit:** `latestDataDate` is day-accurate but only fills in after the next
+SAMS sync runs. Could backfill immediately from SAMS staging data, but that's
+month-bucketed (coarser). Left as on-sync capture for exact-day accuracy.
+
+**Commit:** `94e237f` on branch `claude/are-you-there-kztyaz`. Build + typecheck pass.
+Rides on PR #2. Not yet merged.
+
 ---
 

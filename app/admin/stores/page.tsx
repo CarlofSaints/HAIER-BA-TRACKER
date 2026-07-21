@@ -15,6 +15,8 @@ interface StoreMaster {
   perigeeSiteCode?: string;
   assignedBaEmail?: string;
   assignedBaName?: string;
+  derivedBaEmail?: string;
+  derivedBaName?: string;
   addedFrom?: ('data' | 'perigee')[];
 }
 
@@ -55,7 +57,7 @@ export default function StoresPage() {
     setLoadingData(true);
     try {
       const [storesRes, channelsRes, basRes] = await Promise.all([
-        authFetch('/api/stores'),
+        authFetch('/api/stores?derivedBa=1'),
         authFetch('/api/channels'),
         authFetch('/api/bas'),
       ]);
@@ -367,9 +369,13 @@ export default function StoresPage() {
                           value={store.assignedBaEmail || ''}
                           onChange={e => handleBaChange(i, e.target.value)}
                           style={{ width: '100%', fontSize: '0.8rem' }}
-                          title="Override which BA gets credited for this store's sales. Leave on Auto to derive from Perigee visits."
+                          title="Defaults to the BA from Perigee visits (stays live). Pick a BA to override; that assignment then wins everywhere."
                         >
-                          <option value="">— Auto (from visits) —</option>
+                          <option value="">
+                            {store.derivedBaName
+                              ? `— Auto: ${store.derivedBaName} (from visits) —`
+                              : '— Auto (no visits yet) —'}
+                          </option>
                           {store.assignedBaEmail && !bas.some(b => b.email === store.assignedBaEmail) && (
                             <option value={store.assignedBaEmail}>{store.assignedBaName || store.assignedBaEmail}</option>
                           )}

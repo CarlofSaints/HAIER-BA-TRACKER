@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
+import SamsFreshnessCard from '@/components/SamsFreshnessCard';
 
 interface DispoSalesData {
   sales: Record<string, Record<string, Record<string, number>>>;
@@ -867,14 +868,19 @@ export function SalesStockView({ forceSams = false }: { forceSams?: boolean }) {
     <div style={{ display: 'flex' }}>
       <Sidebar role={session.role} name={`${session.name} ${session.surname}`} onLogout={logout} />
       <main style={{ flex: 1, padding: '2rem', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
-          Sales & Stock{isSams && <span style={{ color: '#7c3aed', fontWeight: 700 }}> — SAMS (comparison)</span>}
-        </h1>
-        <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: isSams ? '0.75rem' : '1.25rem' }}>
-          {isSams
-            ? 'SAMS sales & stock (SoH), pulled from SQL — read-only comparison dataset'
-            : 'DISPO sales, stock on hand, and stock on order data'}
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+          <div>
+            <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
+              Sales & Stock{isSams && <span style={{ color: '#7c3aed', fontWeight: 700 }}> — SAMS (comparison)</span>}
+            </h1>
+            <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: isSams ? '0.75rem' : '1.25rem' }}>
+              {isSams
+                ? 'SAMS sales & stock (SoH), pulled from SQL — read-only comparison dataset'
+                : 'DISPO sales, stock on hand, and stock on order data'}
+            </p>
+          </div>
+          <SamsFreshnessCard />
+        </div>
         {isSams && (
           <div style={{
             background: '#f5f3ff', border: '1px solid #ddd6fe', color: '#5b21b6',
