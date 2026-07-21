@@ -423,5 +423,40 @@ requires the BA to check in that month + a target for the month to score.
 **Commit:** `7a4d21b` on branch `claude/are-you-there-kztyaz` (restarted off master
 `8542455` since PR #1 was already merged). Build + typecheck pass. Not yet merged.
 
+**PR:** #14 work + §13 notes opened as **PR #2** (`claude/are-you-there-kztyaz` →
+master), left for Carl to review/merge (not auto-merged — it's a feature change).
+
+### 15. SAMS Data Freshness Card — Dashboard + Sales & Stock (Jul 21, 2026, on branch)
+
+A small top-right card on `/dashboard` and `/sales` surfaces how up to date the SAMS
+data is, so users can see the data's recency at a glance.
+
+**Card content:** `SAMS DATA` label + `Up to {latestDataDate}` (latest date present in
+the SAMS facts) + `Synced {lastSync}` subtitle. A colored dot signals staleness:
+green ≤7 days, amber ≤21, red older.
+
+**Modified/new files:**
+- **`lib/samsSync.ts`** — `SamsSyncMeta` gains `latestDataDate?`. During the fact
+  loop, tracks the max valid `row.DATE` (`maxDataTime`) and persists it via
+  `finalizeMeta` (only on the success path — the error path preserves the prior
+  value). Populated on the NEXT sync; existing meta has no value until then.
+- **`app/api/sams/freshness/route.ts`** (new) — lightweight **`requireAnyUser`**
+  endpoint returning `{ latestDataDate, lastSync }`. Separate from the admin-only
+  `/api/sams/sync` GET so clients (dashboard/sales are client-accessible) can see the
+  card without exposing sync internals.
+- **`components/SamsFreshnessCard.tsx`** (new) — shared client component; fetches
+  freshness, formats dates `en-GB` (`18 Jul 2026`), renders **nothing** until data
+  exists (no empty card on fresh deploys).
+- **`app/dashboard/page.tsx`** + **`app/sales/page.tsx`** — header wrapped in a
+  `justify-content: space-between` flex row with the card top-right. Sales page shares
+  the card across `/sales` (DISPO) and `/sales-sams` (it's always SAMS freshness).
+
+**Known limit:** `latestDataDate` is day-accurate but only fills in after the next
+SAMS sync runs. Could backfill immediately from SAMS staging data, but that's
+month-bucketed (coarser). Left as on-sync capture for exact-day accuracy.
+
+**Commit:** `94e237f` on branch `claude/are-you-there-kztyaz`. Build + typecheck pass.
+Rides on PR #2. Not yet merged.
+
 ---
 
