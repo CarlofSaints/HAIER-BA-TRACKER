@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
-import { loadVisitIndex, loadVisitData } from '@/lib/visitData';
+import { loadAllVisits } from '@/lib/visitData';
 import { loadScoringConfig } from '@/lib/scoringConfig';
 
 export const dynamic = 'force-dynamic';
@@ -31,12 +31,7 @@ export async function POST(req: NextRequest) {
     const { lateCheckinTime, earlyCheckoutTime } = await loadScoringConfig();
 
     // Load all visits
-    const index = await loadVisitIndex();
-    const allVisits = [];
-    for (const meta of index) {
-      const visits = await loadVisitData(meta.id);
-      allVisits.push(...visits);
-    }
+    const allVisits = await loadAllVisits();
 
     // Filter visits for the target month
     const monthVisits = allVisits.filter(v => v.checkInDate && v.checkInDate.substring(0, 7) === month);

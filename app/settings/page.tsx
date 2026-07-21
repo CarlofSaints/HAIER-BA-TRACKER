@@ -110,6 +110,7 @@ export default function SettingsPage() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [testingCron, setTestingCron] = useState(false);
   const [cronLogOpen, setCronLogOpen] = useState(false); // collapsed by default
+  const [migrating, setMigrating] = useState(false);
   const [excludedReps, setExcludedReps] = useState<{ email: string; repName?: string }[]>([]);
   const [newExclEmail, setNewExclEmail] = useState('');
   const [newExclName, setNewExclName] = useState('');
@@ -182,6 +183,25 @@ export default function SettingsPage() {
       if (res.ok) { setToast({ msg: 'Removed from exclusions', type: 'success' }); loadExcludedReps(); }
       else setToast({ msg: 'Failed', type: 'error' });
     } catch { setToast({ msg: 'Failed', type: 'error' }); }
+  }
+
+  async function migrateVisits() {
+    if (!confirm('Consolidate visit storage into month files? Safe to run anytime (and to re-run). Reads keep working throughout.')) return;
+    setMigrating(true);
+    try {
+      const res = await authFetch('/api/visits/migrate', { method: 'POST' });
+      const d = await res.json();
+      setToast({
+        msg: res.ok
+          ? `Consolidated ${d.migrated ?? 0} legacy upload(s) into ${d.months?.length ?? 0} month file(s).`
+          : (d.detail || d.error || 'Migration failed'),
+        type: res.ok ? 'success' : 'error',
+      });
+    } catch {
+      setToast({ msg: 'Migration failed', type: 'error' });
+    } finally {
+      setMigrating(false);
+    }
   }
 
   function loadCronLogs() {
@@ -775,6 +795,18 @@ export default function SettingsPage() {
               </table>
             </div>
           ))}
+        </div>
+
+        {/* Visit storage maintenance */}
+        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 620, marginTop: '1.5rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>Visit storage</h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+            Consolidate the per-import visit files into one file per month (faster reads, fewer files).
+            Optional and idempotent — pages already read both formats, so nothing breaks before or after.
+          </p>
+          <button className="btn btn-primary" onClick={migrateVisits} disabled={migrating} style={{ fontSize: '0.8rem', padding: '6px 14px' }}>
+            {migrating ? 'Consolidating…' : 'Consolidate visit storage'}
+          </button>
         </div>
 
         <Footer />

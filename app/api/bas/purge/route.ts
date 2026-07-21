@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadScores, saveScores } from '@/lib/scoreData';
-import { loadVisitIndex, loadVisitData, saveVisitData } from '@/lib/visitData';
+import { removeVisitsWhere } from '@/lib/visitData';
 import {
   loadTrainingIndex,
   loadTrainingData,
@@ -55,17 +55,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Remove visits from all upload files
-    const visitIndex = await loadVisitIndex();
-    for (const meta of visitIndex) {
-      const visits = await loadVisitData(meta.id);
-      const before = visits.length;
-      const after = visits.filter(v => (v.email || '').toLowerCase() !== target);
-      if (after.length < before) {
-        await saveVisitData(meta.id, after);
-        summary.visitsRemoved += (before - after.length);
-      }
-    }
+    // 2. Remove visits from all month shards / legacy blobs
+    summary.visitsRemoved += await removeVisitsWhere(v => (v.email || '').toLowerCase() === target);
 
     // 3. Remove training records from all upload files
     const trainingIndex = await loadTrainingIndex();

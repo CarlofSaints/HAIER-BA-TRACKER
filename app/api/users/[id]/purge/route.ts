@@ -3,7 +3,7 @@ import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadUsers, saveUsers } from '@/lib/userData';
 import { logFromUser } from '@/lib/activityLog';
 import { loadScores, saveScores } from '@/lib/scoreData';
-import { loadVisitIndex, loadVisitData, saveVisitData } from '@/lib/visitData';
+import { removeVisitsWhere } from '@/lib/visitData';
 import { loadTrainingIndex, loadTrainingData, saveTrainingData } from '@/lib/trainingData';
 import { readJson } from '@/lib/blob';
 
@@ -54,17 +54,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
   }
 
-  // 3. Remove visits from all upload files
-  const visitIndex = await loadVisitIndex();
-  for (const meta of visitIndex) {
-    const visits = await loadVisitData(meta.id);
-    const before = visits.length;
-    const after = visits.filter(v => (v.email || '').toLowerCase() !== email);
-    if (after.length < before) {
-      await saveVisitData(meta.id, after);
-      summary.visitsRemoved += (before - after.length);
-    }
-  }
+  // 3. Remove visits from all month shards / legacy blobs
+  summary.visitsRemoved += await removeVisitsWhere(v => (v.email || '').toLowerCase() === email);
 
   // 4. Remove training records from all upload files
   const trainingIndex = await loadTrainingIndex();

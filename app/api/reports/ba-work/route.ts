@@ -4,7 +4,7 @@ import { loadChannels, Channel } from '@/lib/channelData';
 import { loadStores, StoreMaster } from '@/lib/storeData';
 import { loadProducts, ProductMaster } from '@/lib/productData';
 import { loadDispoData, calcSalesValue, DispoSalesData, DispoUploadMeta } from '@/lib/dispoData';
-import { loadVisitIndex, loadVisitData, Visit } from '@/lib/visitData';
+import { loadAllVisits, Visit } from '@/lib/visitData';
 import { loadDisplayIndex, loadDisplayData, DisplayRecord } from '@/lib/displayData';
 import { loadWeekMapping, getWeekNumber, type WeekMappingYear } from '@/lib/weekMapping';
 import { readJson } from '@/lib/blob';
@@ -266,22 +266,15 @@ export async function GET(req: NextRequest) {
   const year = new Date().getFullYear();
 
   // Load all data in parallel
-  const [channels, stores, products, dispo, visitIndex, displayIndex, weekConfig] = await Promise.all([
+  const [channels, stores, products, dispo, allVisits, displayIndex, weekConfig] = await Promise.all([
     loadChannels(),
     loadStores(),
     loadProducts(),
     loadDispoData(),
-    loadVisitIndex(),
+    loadAllVisits(),
     loadDisplayIndex(),
     loadWeekMapping(),
   ]);
-
-  // Load all visits
-  const allVisits: Visit[] = [];
-  for (const meta of visitIndex) {
-    const v = await loadVisitData(meta.id);
-    allVisits.push(...v);
-  }
 
   // Load all display records
   const allDisplay: DisplayRecord[] = [];

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
-import { loadVisitIndex, loadVisitData, Visit, visitDedupeKey } from '@/lib/visitData';
+import { loadAllVisits, Visit, visitDedupeKey } from '@/lib/visitData';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -25,12 +25,8 @@ export async function GET(req: NextRequest) {
 
     if (!rep) return NextResponse.json({ error: 'rep (email or name) is required' }, { status: 400 });
 
-    const index = await loadVisitIndex();
-    const raw: (Visit & { _uploadId: string })[] = [];
-    for (const meta of index) {
-      const visits = await loadVisitData(meta.id);
-      for (const v of visits) raw.push({ ...v, _uploadId: meta.id });
-    }
+    const raw: (Visit & { _uploadId: string })[] =
+      (await loadAllVisits()).map(v => ({ ...v, _uploadId: v.sourceId || '' }));
 
     // Match rep by exact email OR name substring (rep names vary).
     const matchRep = (v: Visit) =>
