@@ -109,6 +109,7 @@ export default function SettingsPage() {
   const [cronLogs, setCronLogs] = useState<CronLogEntry[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [testingCron, setTestingCron] = useState(false);
+  const [cronLogOpen, setCronLogOpen] = useState(false); // collapsed by default
   const [excludedReps, setExcludedReps] = useState<{ email: string; repName?: string }[]>([]);
   const [newExclEmail, setNewExclEmail] = useState('');
   const [newExclName, setNewExclName] = useState('');
@@ -704,26 +705,35 @@ export default function SettingsPage() {
 
         {/* Cron Activity Log */}
         <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', maxWidth: 620, marginTop: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem', color: '#374151' }}>
-                Cron Activity Log
-              </h2>
-              <p style={{ color: '#9ca3af', fontSize: '0.8rem' }}>
-                Recent automated polling attempts
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="btn btn-outline" onClick={loadCronLogs} disabled={loadingLogs} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
-                {loadingLogs ? 'Loading...' : 'Refresh'}
-              </button>
-              <button className="btn btn-primary" onClick={testCronNow} disabled={testingCron} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
-                {testingCron ? 'Running...' : 'Test Cron Now'}
-              </button>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: cronLogOpen ? '1.25rem' : 0 }}>
+            <button
+              onClick={() => setCronLogOpen(o => !o)}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+              title={cronLogOpen ? 'Collapse' : 'Expand'}
+            >
+              <span style={{ fontSize: '0.85rem', color: '#9ca3af', marginTop: 2, transform: cronLogOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+              <span>
+                <span style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', display: 'block' }}>
+                  Cron Activity Log
+                </span>
+                <span style={{ color: '#9ca3af', fontSize: '0.8rem' }}>
+                  Recent automated polling attempts{!cronLogOpen && cronLogs.length ? ` (${cronLogs.length})` : ''}
+                </span>
+              </span>
+            </button>
+            {cronLogOpen && (
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className="btn btn-outline" onClick={loadCronLogs} disabled={loadingLogs} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                  {loadingLogs ? 'Loading...' : 'Refresh'}
+                </button>
+                <button className="btn btn-primary" onClick={testCronNow} disabled={testingCron} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                  {testingCron ? 'Running...' : 'Test Cron Now'}
+                </button>
+              </div>
+            )}
           </div>
 
-          {cronLogs.length === 0 ? (
+          {cronLogOpen && (cronLogs.length === 0 ? (
             <p style={{ color: '#6b7280', fontSize: '0.8rem', fontStyle: 'italic' }}>
               {loadingLogs ? 'Loading logs...' : 'No cron activity recorded yet. The cron may not have run, or logs are empty.'}
             </p>
@@ -764,7 +774,7 @@ export default function SettingsPage() {
                 </tbody>
               </table>
             </div>
-          )}
+          ))}
         </div>
 
         <Footer />
