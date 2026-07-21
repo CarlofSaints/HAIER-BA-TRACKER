@@ -45,7 +45,24 @@ export async function saveVisitIndex(index: VisitUploadMeta[]): Promise<void> {
 }
 
 export async function loadVisitData(uploadId: string): Promise<Visit[]> {
-  return readJson<Visit[]>(`visits/${uploadId}.json`, []);
+  // Per-upload visit files are immutable once written → safe to cache.
+  return readJson<Visit[]>(`visits/${uploadId}.json`, [], { useCache: true });
+}
+
+/**
+ * Load every upload's visits with BOUNDED CONCURRENCY. The visit index can hold
+ * hundreds of per-import upload files (the cron adds one every ~30 min), and
+ * reading them one-at-a-time was taking minutes. Batching the reads collapses
+ * that to seconds while capping simultaneous blob fetches.
+ */
+export async function loadAllVisits(concurrency = 25): Promise<Visit[]> {
+  const index = await loadVisitIndex();
+  const all: Visit[] = [];
+  for (let i = 0; i < index.length; i += concurrency) {
+    const chunks = await Promise.all(index.slice(i, i + concurrency).map(m => loadVisitData(m.id)));
+    for (const c of chunks) all.push(...c);
+  }
+  return all;
 }
 
 export async function saveVisitData(uploadId: string, visits: Visit[]): Promise<void> {

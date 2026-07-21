@@ -1,8 +1,11 @@
 import { get, put, del } from '@vercel/blob';
 
-export async function readJson<T>(key: string, fallback: T): Promise<T> {
+export async function readJson<T>(key: string, fallback: T, opts?: { useCache?: boolean }): Promise<T> {
   try {
-    const result = await get(key, { access: 'private', useCache: false });
+    // useCache defaults to false (mutable blobs must read fresh). Pass useCache:true
+    // for IMMUTABLE blobs (e.g. per-upload visit files that are never rewritten) to
+    // avoid re-fetching them over the network on every load.
+    const result = await get(key, { access: 'private', useCache: opts?.useCache ?? false });
     if (result && result.statusCode === 200) {
       const text = await new Response(result.stream).text();
       return JSON.parse(text) as T;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAnyUser, noCacheHeaders } from '@/lib/auth';
-import { loadVisitIndex, loadVisitData, Visit, visitDedupeKey } from '@/lib/visitData';
+import { loadAllVisits, Visit, visitDedupeKey } from '@/lib/visitData';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -14,14 +14,8 @@ export async function GET(req: NextRequest) {
     const from = url.searchParams.get('from'); // YYYY-MM-DD
     const to = url.searchParams.get('to');     // YYYY-MM-DD
 
-    const index = await loadVisitIndex();
-    const allVisits: Visit[] = [];
-
-    // Load all upload data
-    for (const meta of index) {
-      const visits = await loadVisitData(meta.id);
-      allVisits.push(...visits);
-    }
+    // Load all upload data with bounded concurrency (was sequential → minutes).
+    const allVisits: Visit[] = await loadAllVisits();
 
     // Deduplicate: by visitId when present, otherwise by composite key
     const seenKeys = new Set<string>();

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadStores, saveStores, StoreMaster } from '@/lib/storeData';
 import { loadChannels } from '@/lib/channelData';
-import { loadVisitIndex, loadVisitData, Visit } from '@/lib/visitData';
+import { loadAllVisits, Visit } from '@/lib/visitData';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -27,9 +27,7 @@ async function deriveBaByStore(
     if (pCode) codeToName[pCode] = name;
   }
 
-  const index = await loadVisitIndex();
-  const allVisits: Visit[] = [];
-  for (const meta of index) allVisits.push(...await loadVisitData(meta.id));
+  const allVisits: Visit[] = await loadAllVisits();
   // Most recent first so the first write per key wins.
   allVisits.sort((a, b) => (b.checkInDate || '').localeCompare(a.checkInDate || ''));
 
