@@ -13,11 +13,11 @@ interface Channel {
   dataSource?: 'sams' | 'dispo' | 'excel';
 }
 
-const dsLabel = (ds?: string) => (ds === 'sams' ? 'SAMS' : ds === 'excel' ? 'EXCEL' : 'DISPO');
+const dsLabel = (ds?: string) => (ds === 'sams' ? 'SAMS' : ds === 'excel' ? 'EXCEL' : ds === 'pdf' ? 'PDF (OCR)' : 'DISPO');
 const dsBadge = (ds?: string) => ({
   fontSize: '0.6rem', fontWeight: 600 as const, padding: '0.1rem 0.4rem', borderRadius: 4, marginLeft: '0.4rem',
-  background: ds === 'sams' ? '#ede9fe' : ds === 'excel' ? '#fef3c7' : '#dcfce7',
-  color: ds === 'sams' ? '#6d28d9' : ds === 'excel' ? '#92400e' : '#166534',
+  background: ds === 'sams' ? '#ede9fe' : ds === 'excel' ? '#fef3c7' : ds === 'pdf' ? '#dbeafe' : '#dcfce7',
+  color: ds === 'sams' ? '#6d28d9' : ds === 'excel' ? '#92400e' : ds === 'pdf' ? '#1d4ed8' : '#166534',
 });
 
 export default function ChannelsPage() {
@@ -246,6 +246,7 @@ export default function ChannelsPage() {
                         <option value="dispo">Data: DISPO</option>
                         <option value="sams">Data: SAMS</option>
                         <option value="excel">Data: Other Excel</option>
+                        <option value="pdf">Data: PDF (OCR)</option>
                       </select>
                       <button className="btn btn-primary" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={handleSaveEdit} disabled={saving}>Save</button>
                       <button className="btn" style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }} onClick={() => setEditingId(null)}>Cancel</button>

@@ -1,7 +1,10 @@
 import { readJson, writeJson } from './blob';
 
-/** Which pipeline supplies a (sub-)channel's sales/stock data. */
-export type ChannelDataSource = 'sams' | 'dispo' | 'excel';
+/** Which pipeline supplies a (sub-)channel's sales/stock data.
+ *  Only 'sams' is pulled by the SAMS sync — every other source is a manual upload
+ *  the sync must never touch (dispo = DISPO Excel, excel = other Excel, pdf =
+ *  Diamond-Corner-style PDF/OCR). */
+export type ChannelDataSource = 'sams' | 'dispo' | 'excel' | 'pdf';
 
 export interface Channel {
   id: string;

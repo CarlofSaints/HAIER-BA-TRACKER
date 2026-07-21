@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadChannels, saveChannels, ChannelDataSource } from '@/lib/channelData';
 
-const DATA_SOURCES: ChannelDataSource[] = ['sams', 'dispo', 'excel'];
+const DATA_SOURCES: ChannelDataSource[] = ['sams', 'dispo', 'excel', 'pdf'];
 function isDataSource(v: unknown): v is ChannelDataSource {
   return typeof v === 'string' && (DATA_SOURCES as string[]).includes(v);
 }
