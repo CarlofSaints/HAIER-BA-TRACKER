@@ -3,6 +3,7 @@ import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadStores, saveStores, StoreMaster } from '@/lib/storeData';
 import { loadChannels } from '@/lib/channelData';
 import { loadAllVisits, Visit } from '@/lib/visitData';
+import { logFromUser } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -91,4 +92,42 @@ export async function PUT(req: NextRequest) {
 
   await saveStores(stores);
   return NextResponse.json({ ok: true, count: stores.length }, { headers: noCacheHeaders() });
+}
+
+export async function DELETE(req: NextRequest) {
+  const user = await requireRole(req, ['super_admin', 'admin']);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const sp = req.nextUrl.searchParams;
+  const storeName = sp.get('storeName');
+  const siteCode = sp.get('siteCode') ?? '';
+  const channelId = sp.get('channelId') ?? '';
+  if (!storeName) {
+    return NextResponse.json({ error: 'storeName param required' }, { status: 400 });
+  }
+
+  const stores = await loadStores();
+  // Match on the full identity triple, case-sensitively: the same store can exist
+  // twice under different channels with names differing only by case (e.g. one
+  // created by a DISPO/Diamond load, the other by a Site Control File under a
+  // sub-channel). A looser match would delete the wrong row.
+  const idx = stores.findIndex(s =>
+    s.storeName === storeName &&
+    (s.siteCode || '') === siteCode &&
+    (s.channelId || '') === channelId
+  );
+  if (idx === -1) {
+    return NextResponse.json({ error: 'Store not found' }, { status: 404 });
+  }
+
+  const [removed] = stores.splice(idx, 1);
+  await saveStores(stores);
+
+  logFromUser(
+    user, 'delete_store', removed.storeName,
+    `Deleted store ${removed.storeName}${removed.siteCode ? ` (${removed.siteCode})` : ''}`,
+    { siteCode: removed.siteCode, channelId: removed.channelId, area: removed.area },
+  );
+
+  return NextResponse.json({ ok: true, removed, count: stores.length }, { headers: noCacheHeaders() });
 }

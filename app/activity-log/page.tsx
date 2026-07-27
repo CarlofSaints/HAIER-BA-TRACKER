@@ -18,7 +18,7 @@ interface LogEntry {
 
 const ACTION_GROUPS: Record<string, string[]> = {
   'Uploads': ['upload_visits', 'upload_dispo', 'upload_training', 'upload_targets', 'upload_display', 'upload_red_flags'],
-  'Deletions': ['delete_visits', 'delete_dispo', 'delete_training', 'delete_targets', 'delete_display', 'delete_red_flags'],
+  'Deletions': ['delete_visits', 'delete_dispo', 'delete_training', 'delete_targets', 'delete_display', 'delete_red_flags', 'delete_store'],
   'Users': ['user_create', 'user_edit', 'user_delete', 'user_purge', 'user_login'],
   'Scores': ['scores_save'],
   'Data Access': ['load_form_data'],
@@ -31,6 +31,7 @@ const ACTION_LABELS: Record<string, string> = {
   upload_targets: 'Upload Targets', upload_display: 'Upload Display', upload_red_flags: 'Upload Red Flags',
   delete_visits: 'Delete Visits', delete_dispo: 'Delete DISPO', delete_training: 'Delete Training',
   delete_targets: 'Delete Targets', delete_display: 'Delete Display', delete_red_flags: 'Delete Red Flags',
+  delete_store: 'Delete Store',
   cron_import: 'Cron Import',
   user_create: 'Create User', user_edit: 'Edit User', user_delete: 'Delete User', user_purge: 'Purge User',
   user_login: 'User Login',

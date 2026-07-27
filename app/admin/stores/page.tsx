@@ -53,6 +53,7 @@ export default function StoresPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [dupCodes, setDupCodes] = useState<{ siteCode: string; storeName: string; channel: string; alsoIn: string[] }[]>([]);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoadingData(true);
@@ -184,6 +185,45 @@ export default function StoresPage() {
     setDirty(true);
   }
 
+  async function handleDelete(store: StoreMaster) {
+    const label = `${store.storeName}${store.siteCode ? ` (${store.siteCode})` : ''}`;
+    const ok = window.confirm(
+      `Delete "${label}" from ${store.channelName || 'no channel'}?\n\n`
+      + `This only removes the store master record — its sales/stock data is not touched, `
+      + `and the store will re-appear if a DISPO, Diamond Corner or Site Control File upload `
+      + `contains it again.`
+    );
+    if (!ok) return;
+
+    // Identity triple must match the server's lookup exactly — the same store can
+    // exist twice under different channels with names differing only by case.
+    const key = `${store.siteCode || ''}|${store.storeName}|${store.channelId || ''}`;
+    setDeleting(key);
+    try {
+      const qs = new URLSearchParams({
+        storeName: store.storeName,
+        siteCode: store.siteCode || '',
+        channelId: store.channelId || '',
+      });
+      const res = await authFetch(`/api/stores?${qs}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setStores(prev => prev.filter(s =>
+          !(s.storeName === store.storeName
+            && (s.siteCode || '') === (store.siteCode || '')
+            && (s.channelId || '') === (store.channelId || ''))
+        ));
+        setToast({ msg: `Deleted ${label}`, type: 'success' });
+      } else {
+        setToast({ msg: data.error || 'Delete failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Delete failed', type: 'error' });
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -311,19 +351,20 @@ export default function StoresPage() {
                   <th style={{ width: 150 }}>Area</th>
                   <th style={{ width: 180 }}>Channel</th>
                   <th style={{ width: 200 }}>Assigned BA</th>
+                  <th style={{ width: 70 }}></th>
                 </tr>
               </thead>
               <tbody>
                 {loadingData ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', color: '#6b7280', padding: '2.5rem' }}>
+                    <td colSpan={8} style={{ textAlign: 'center', color: '#6b7280', padding: '2.5rem' }}>
                       <span className="stores-spinner" aria-hidden />
                       <span style={{ marginLeft: '0.6rem', verticalAlign: 'middle' }}>Loading stores…</span>
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
+                    <td colSpan={8} style={{ textAlign: 'center', color: '#9ca3af', padding: '2rem' }}>
                       {stores.length === 0 ? 'No stores yet — upload a DISPO file to populate' : 'No matches'}
                     </td>
                   </tr>
@@ -406,6 +447,20 @@ export default function StoresPage() {
                             <option key={b.email} value={b.email}>{b.repName}</option>
                           ))}
                         </select>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          className="btn"
+                          onClick={() => handleDelete(store)}
+                          disabled={deleting !== null}
+                          title="Delete this store from the store master (does not delete its sales data)"
+                          style={{
+                            padding: '0.2rem 0.5rem', fontSize: '0.72rem',
+                            color: '#991b1b', borderColor: '#fca5a5', background: '#fef2f2',
+                          }}
+                        >
+                          {deleting === `${store.siteCode || ''}|${store.storeName}|${store.channelId || ''}` ? '…' : 'Delete'}
+                        </button>
                       </td>
                     </tr>
                   ))
