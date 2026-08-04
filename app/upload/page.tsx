@@ -121,6 +121,8 @@ export default function UploadPage() {
   const [targetUploads, setTargetUploads] = useState<TargetUploadMeta[]>([]);
   const [targetUploading, setTargetUploading] = useState(false);
   const [targetDragOver, setTargetDragOver] = useState(false);
+  const [targetExporting, setTargetExporting] = useState(false);
+  const [targetDownloadingId, setTargetDownloadingId] = useState<string | null>(null);
   const targetFileRef = useRef<HTMLInputElement>(null);
 
   // Display state
@@ -449,6 +451,66 @@ export default function UploadPage() {
     } finally {
       setTargetUploading(false);
       if (targetFileRef.current) targetFileRef.current.value = '';
+    }
+  }
+
+  // Download all live targets as an .xlsx laid out for re-upload (edit → re-upload
+  // round-trip). Must go through authFetch + a blob URL: auth is the x-user-id
+  // header only, so a plain <a href> to the API 401s.
+  async function handleTargetExport() {
+    setTargetExporting(true);
+    try {
+      const res = await authFetch('/api/targets/export');
+      if (!res.ok) {
+        setToast({ msg: 'Export failed', type: 'error' });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `HaierTargets_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setToast({ msg: 'Export failed', type: 'error' });
+    } finally {
+      setTargetExporting(false);
+    }
+  }
+
+  // Download the ORIGINAL uploaded file. Same auth constraint as above; also
+  // returns a real message when the stored bytes are missing (uploads made before
+  // the file-saving was added on 20 May 2026 have no .xlsx blob) instead of
+  // letting the browser show a bare "File wasn't available on site".
+  async function handleTargetDownload(id: string, fileName: string) {
+    setTargetDownloadingId(id);
+    try {
+      const res = await authFetch(`/api/targets/download/${id}`);
+      if (!res.ok) {
+        setToast({
+          msg: res.status === 404
+            ? 'Original file was never stored for this upload — use "Export targets" instead.'
+            : 'Download failed',
+          type: 'error',
+        });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setToast({ msg: 'Download failed', type: 'error' });
+    } finally {
+      setTargetDownloadingId(null);
     }
   }
 
@@ -1495,12 +1557,27 @@ export default function UploadPage() {
 
         {/* === SALES TARGETS UPLOAD === */}
         <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
-            Sales Targets
-          </h2>
-          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
-            Upload monthly store-level sales targets. Used for auto-calculating Monthly Sales KPI (40 pts).
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
+                Sales Targets
+              </h2>
+              <p style={{ color: '#9ca3af', fontSize: '0.8rem' }}>
+                Upload monthly store-level sales targets. Used for auto-calculating Monthly Sales KPI (40 pts).
+                <br />
+                To change a target: <strong>Export targets</strong> → edit in Excel → drop the file back here.
+              </p>
+            </div>
+            <button
+              className="btn btn-outline"
+              style={{ padding: '0.35rem 0.7rem', fontSize: '0.75rem', whiteSpace: 'nowrap', flexShrink: 0 }}
+              onClick={handleTargetExport}
+              disabled={targetExporting}
+              title="Download every current target as an Excel file you can edit and re-upload"
+            >
+              {targetExporting ? 'Exporting…' : '⬇ Export targets'}
+            </button>
+          </div>
 
           {/* Drop zone */}
           <div
@@ -1583,15 +1660,11 @@ export default function UploadPage() {
                       <button
                         className="btn btn-outline"
                         style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
-                        onClick={() => {
-                          const a = document.createElement('a');
-                          a.href = `/api/targets/download/${u.id}`;
-                          a.download = u.fileName;
-                          a.click();
-                        }}
-                        title="Download original file"
+                        onClick={() => handleTargetDownload(u.id, u.fileName)}
+                        disabled={targetDownloadingId === u.id}
+                        title="Download the original uploaded file (not available for uploads made before 20 May 2026)"
                       >
-                        Download
+                        {targetDownloadingId === u.id ? '…' : 'Download'}
                       </button>
                       <button
                         className="btn btn-danger"
