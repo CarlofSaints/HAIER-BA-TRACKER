@@ -6,7 +6,13 @@ import { loadProducts, ProductMaster } from '@/lib/productData';
 import { loadDispoData, calcSalesValue, DispoSalesData, DispoUploadMeta } from '@/lib/dispoData';
 import { loadAllVisits, Visit } from '@/lib/visitData';
 import { loadDisplayIndex, loadDisplayData, DisplayRecord } from '@/lib/displayData';
-import { loadWeekMapping, getWeekNumber, type WeekMappingYear } from '@/lib/weekMapping';
+import {
+  loadWeekMapping,
+  getWeekNumber,
+  resolveYearConfig,
+  type WeekMappingYear,
+} from '@/lib/weekMapping';
+import { loadSamsDailyForYear } from '@/lib/samsDaily';
 import { readJson } from '@/lib/blob';
 import * as XLSX from 'xlsx';
 
@@ -160,10 +166,51 @@ interface RawRow {
 }
 
 /**
- * Compute weekly unit deltas by diffing consecutive raw DISPO uploads.
- * Each upload's sales are MTD per month. The delta between consecutive uploads
- * gives the units sold in that period. We assign each delta to the week of the
- * later upload.
+ * Weekly units, summed from the SAMS daily facts.
+ *
+ * This is the accurate path: SAMS gives one row per store × article × DATE, so
+ * a week is just the days that fall in it. No diffing, no dependency on when a
+ * sync ran, and re-running a sync cannot change a past week's number.
+ *
+ * Returns the same shape as the DISPO delta path so the two can be merged.
+ */
+async function buildWeeklyFromDaily(
+  yearConfig: WeekMappingYear,
+  year: number,
+): Promise<{ weekNums: Set<number>; data: Record<string, Record<string, Record<number, number>>> }> {
+  const data: Record<string, Record<string, Record<number, number>>> = {};
+  const weekNums = new Set<number>();
+
+  const days = await loadSamsDailyForYear(year);
+
+  for (const [date, byStore] of Object.entries(days)) {
+    const weekNum = getWeekNumber(new Date(date + 'T00:00:00'), yearConfig);
+    if (!weekNum) continue; // before Week 1, or past the year's last week
+    weekNums.add(weekNum);
+
+    for (const [storeName, byArticle] of Object.entries(byStore)) {
+      for (const [articleDesc, units] of Object.entries(byArticle)) {
+        if (!units) continue;
+        ((data[storeName] ||= {})[articleDesc] ||= {})[weekNum] =
+          (data[storeName][articleDesc][weekNum] || 0) + units;
+      }
+    }
+  }
+
+  return { weekNums, data };
+}
+
+/**
+ * LEGACY path — weekly unit deltas diffed from consecutive raw DISPO uploads.
+ *
+ * Each DISPO upload is a cumulative month-to-date snapshot, so the difference
+ * between two of them is the units sold in between, credited to the week of the
+ * later upload. Approximate by construction (it assumes an upload happened in
+ * every week) and it produces nothing for SAMS channels, which write no
+ * dispo/raw file.
+ *
+ * Kept only so historical DISPO-sourced weeks — and any channel still on DISPO —
+ * don't disappear from the report. SAMS wins wherever both have a figure.
  */
 async function buildWeeklyData(
   dispo: DispoSalesData,
@@ -303,23 +350,33 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Week mapping + weekly deltas from raw DISPO uploads
-  // Use configured year mapping, fall back to Jan 1 if missing or misconfigured
-  let yearConfig = weekConfig.years.find(y => y.year === year);
+  // One definition of a week for the whole report, from Week Mapping.
+  const { yearConfig, isDefault: weekMappingIsDefault } = resolveYearConfig(weekConfig, year);
 
-  // If week1Start is in the future (e.g. old buggy save of 2026-12-29 instead of 2025-12-29),
-  // the config is unusable — fall back to Jan 1
-  if (yearConfig) {
-    const w1 = new Date(yearConfig.week1Start + 'T00:00:00');
-    if (w1 > new Date()) {
-      yearConfig = { year, week1Start: `${year}-01-01` };
+  // Weekly units come from two sources:
+  //   SAMS  — summed from daily facts (exact)
+  //   DISPO — diffed from consecutive raw uploads (legacy, approximate)
+  // A store is served by one source or the other, never both, so a plain merge
+  // is safe; where they somehow overlap, SAMS wins.
+  const [samsWeekly, dispoWeekly] = await Promise.all([
+    buildWeeklyFromDaily(yearConfig, year),
+    buildWeeklyData(dispo, yearConfig, year),
+  ]);
+
+  const weeklyLookup = dispoWeekly.data;
+  for (const [storeName, byArticle] of Object.entries(samsWeekly.data)) {
+    for (const [articleDesc, byWeek] of Object.entries(byArticle)) {
+      ((weeklyLookup[storeName] ||= {})[articleDesc] ||= {});
+      Object.assign(weeklyLookup[storeName][articleDesc], byWeek);
     }
-  } else {
-    // No week mapping configured for this year — use Jan 1 as default
-    yearConfig = { year, week1Start: `${year}-01-01` };
   }
 
-  const { weekNums, data: weeklyLookup } = await buildWeeklyData(dispo, yearConfig, year);
+  // Column headers: every week either source has, plus every week up to today
+  // so the report always runs to the current week even where sales were zero.
+  const weekNumSet = new Set<number>([...dispoWeekly.weekNums, ...samsWeekly.weekNums]);
+  const currentWeek = getWeekNumber(new Date(), yearConfig);
+  if (currentWeek) for (let w = 1; w <= currentWeek; w++) weekNumSet.add(w);
+  const weekNums = [...weekNumSet].sort((a, b) => a - b);
 
   // Collect all unique (storeName, articleDesc) pairs from DISPO
   const storeProductPairs: { storeName: string; articleDesc: string }[] = [];

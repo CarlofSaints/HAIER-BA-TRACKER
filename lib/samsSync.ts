@@ -11,6 +11,7 @@ import {
   saveDispoData,
   DispoSalesData,
 } from './dispoData';
+import { upsertSamsDailyStores, toShardMonth } from './samsDaily';
 import { loadStores, StoreMaster } from './storeData';
 import { loadChannels } from './channelData';
 import { runAutoCalcForMonth } from './autoCalc';
@@ -52,6 +53,7 @@ export interface SamsSyncCounts {
   unresolvedStores?: number; // SITE_IDs with no store-master match (skipped)
   matchedNonSamsChannel?: number; // matched, but their channel isn't marked SAMS (skipped from live)
   unresolvedArticles?: number; // ARTICLE_IDs with no product-link match (kept as raw)
+  dailyDays?: number; // distinct calendar days written to the daily shards
 }
 
 export interface SamsSyncMeta {
@@ -93,6 +95,14 @@ function monthKeyFromDate(raw: unknown): string | null {
   if (isNaN(d.getTime())) return null;
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
   return `${mm}-${d.getUTCFullYear()}`;
+}
+
+/** SAMS DATE → "YYYY-MM-DD" (UTC), the daily-fact key. */
+function dayKeyFromDate(raw: unknown): string | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const d = raw instanceof Date ? raw : new Date(String(raw));
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
 }
 
 function yearFromDate(raw: unknown): number | null {
@@ -225,6 +235,9 @@ export async function runSamsSync(
   // 3. Aggregate facts → a full SAMS-resolved dataset (all MATCHED stores). The
   //    subset belonging to SAMS-marked channels is merged into live afterwards.
   const data: DispoSalesData = { sales: {}, stock: {}, prices: {}, ytd: {}, uploads: [] };
+  // Daily grain, kept alongside the monthly rollup: daily[MM-YYYY][YYYY-MM-DD][store][article].
+  // Bucketed by month so it can be written straight to the month shards.
+  const daily: Record<string, Record<string, Record<string, Record<string, number>>>> = {};
   const thisYear = new Date().getUTCFullYear();
   const latestKey = new Map<string, number>();
   const allArticles = new Set<string>();
@@ -279,6 +292,16 @@ export async function runSamsSync(
         salesRows++;
       }
       data.sales[month][storeName][article] += units;
+
+      // Keep the DAY as well as the month. Weekly figures are summed from these
+      // rather than diffed from consecutive uploads — see lib/samsDaily.ts.
+      const day = dayKeyFromDate(row.DATE);
+      if (day) {
+        const byDay = (daily[month] ||= {});
+        const byStore = (byDay[day] ||= {});
+        const byArticle = (byStore[storeName] ||= {});
+        byArticle[article] = (byArticle[article] || 0) + units;
+      }
     }
 
     if (yearFromDate(row.DATE) === thisYear && units !== 0) {
@@ -365,6 +388,27 @@ export async function runSamsSync(
   );
   await saveDispoData(live);
 
+  // 4d. Persist the daily grain, month-sharded.
+  //
+  //     Uses the SAME store set the live merge clears (`samsMasterStoreNames` —
+  //     every store in a SAMS channel that received data this run), not just the
+  //     stores that came back with rows. That way a store which stops selling
+  //     drops out of the daily shards exactly as it drops out of live, instead
+  //     of leaving stale days behind. Other channels' days are untouched, so a
+  //     per-channel sync stays safe, and only months this run produced days for
+  //     are opened at all — the empty-channel guard carries through.
+  let dailyDaysWritten = 0;
+  for (const [monthKey, byDay] of Object.entries(daily)) {
+    try {
+      await upsertSamsDailyStores(toShardMonth(monthKey), samsMasterStoreNames, byDay);
+      dailyDaysWritten += Object.keys(byDay).length;
+    } catch (err) {
+      // A daily-shard failure must not fail the sync — the monthly rollup in
+      // dispo/data.json is already saved and is what scoring reads.
+      console.error(`SAMS sync: daily shard write failed for ${monthKey}:`, err);
+    }
+  }
+
   // 5. Re-run sales auto-calc for every affected month.
   for (const mm of affectedMonths) {
     const [mmPart, yyyyPart] = mm.split('-');
@@ -384,6 +428,7 @@ export async function runSamsSync(
     unresolvedStores: unmatchedSites.size,
     matchedNonSamsChannel: matchedNonSams.size,
     unresolvedArticles: unresolvedArticleIds.size,
+    dailyDays: dailyDaysWritten,
   };
 
   const matchedNonSamsSample = [...matchedNonSams.entries()]

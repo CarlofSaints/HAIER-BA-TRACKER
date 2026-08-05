@@ -253,6 +253,22 @@ export default function WeekMappingPage() {
           </button>
         </div>
 
+        {/* The BA Work report's weekly columns are numbered against THIS year's
+            Week 1. With no entry saved it falls back to the Monday on or before
+            1 January — usually right, but nobody chose it. Say so. */}
+        {!config.years.some(y => y.year === new Date().getFullYear()) && (
+          <div style={{
+            background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8,
+            padding: '0.75rem 1rem', marginBottom: '1.5rem', maxWidth: 500,
+            fontSize: '0.8rem', color: '#92400e',
+          }}>
+            <strong>No week mapping saved for {new Date().getFullYear()}.</strong> Weekly
+            columns on the BA Work report currently fall back to the Monday on or before
+            1 January. Pick {new Date().getFullYear()} above and save the real Week 1 start
+            to make it explicit.
+          </div>
+        )}
+
         {/* Saved years overview */}
         {config.years.length > 0 && (
           <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '1rem', marginBottom: '1.5rem', maxWidth: 500 }}>

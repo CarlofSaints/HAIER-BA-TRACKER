@@ -22,6 +22,52 @@ export async function saveWeekMapping(config: WeekMappingConfig): Promise<void> 
   await writeJson(BLOB_KEY, config);
 }
 
+/** The Monday on or before the given date. */
+function mondayOnOrBefore(d: Date): Date {
+  const out = new Date(d);
+  const day = out.getDay(); // 0 = Sun
+  out.setDate(out.getDate() - (day === 0 ? 6 : day - 1));
+  return out;
+}
+
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate(),
+  ).padStart(2, '0')}`;
+}
+
+/**
+ * THE single place that answers "when does Week 1 of <year> start?".
+ *
+ * Returns the configured year if it is usable, otherwise a sane derived
+ * default: the Monday on or before 1 January. The previous fallback was
+ * 1 January itself, which for 2026 is a THURSDAY — every week silently ran
+ * Thu–Wed, and nothing in the UI said so. `isDefault` is returned so callers
+ * can surface "no week mapping configured for <year>" instead of quietly
+ * reporting numbers against a calendar nobody chose.
+ */
+export function resolveYearConfig(
+  config: WeekMappingConfig,
+  year: number,
+): { yearConfig: WeekMappingYear; isDefault: boolean } {
+  const configured = config.years.find(y => y.year === year);
+
+  if (configured) {
+    const w1 = new Date(configured.week1Start + 'T00:00:00');
+    // A Week 1 in the future is a misconfiguration (the old UI could save
+    // 2026-12-29 when 2025-12-29 was meant) — it makes getWeekNumber return
+    // undefined for every date, i.e. no weeks at all.
+    if (!isNaN(w1.getTime()) && w1 <= new Date()) {
+      return { yearConfig: configured, isDefault: false };
+    }
+  }
+
+  return {
+    yearConfig: { year, week1Start: isoDate(mondayOnOrBefore(new Date(year, 0, 1))) },
+    isDefault: true,
+  };
+}
+
 /**
  * Given a year config, return all 52/53 weeks with their start and end dates.
  * Weeks are generated from the start date for a full year (52 weeks minimum,
