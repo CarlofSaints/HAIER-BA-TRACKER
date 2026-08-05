@@ -964,16 +964,11 @@ export function SalesStockView() {
           </div>
         </div>
 
-        {/* Last DISPO loaded timestamp */}
-        {data && data.uploads && data.uploads.length > 0 && (
-          <div style={{
-            background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8,
-            padding: '0.5rem 1rem', fontSize: '0.8rem', color: '#0c4a6e', marginBottom: '1rem',
-          }}>
-            Last DISPO loaded: <strong>{new Date(data.uploads[data.uploads.length - 1].uploadedAt).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })}</strong>
-            {' '}({data.uploads[data.uploads.length - 1].fileName})
-          </div>
-        )}
+        {/* Data recency lives in <SamsFreshnessCard /> in the header above.
+            The old "Last DISPO loaded" banner read the LAST entry of
+            dispo/data.json uploads[], which the SAMS sync was appending to on
+            every cron run — so it reported a DISPO file that was never
+            uploaded. Sales now come from SAMS (daily, via SQL), not DISPO. */}
 
         {loadingData ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>Loading sales data...</div>

@@ -66,27 +66,48 @@ export async function POST(req: NextRequest) {
       const sheet = workbook.Sheets[sheetName];
       const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
 
-      if (rows.length < 10) continue;
+      // Need at least a header row + one data row.
+      if (rows.length < 2) continue;
 
-      // Scan row 7 (index 6) for cells matching *Target* (case-insensitive)
-      const headerRow = rows[6] as unknown[];
-      if (!headerRow) continue;
+      // FIND the header row rather than assuming one.
+      //
+      // This used to hardcode "headers are in row 7, data starts at row 10",
+      // which is the layout of the original Makro workbook. Any other
+      // perfectly valid targets file — e.g. headers in row 1, data from row 3 —
+      // was rejected with "No sheets found with Target headers in row 7".
+      // We now scan for the first row containing a "<Month> Target" cell.
+      let headerIdx = -1;
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows[r] as unknown[];
+        if (row && row.some(c => parseTargetMonth(c))) { headerIdx = r; break; }
+      }
+      if (headerIdx === -1) continue;
+      const headerRow = rows[headerIdx] as unknown[];
 
-      // Find month columns: header cell contains "Target", value col = that col, volume col = col+1
+      // Find month columns: header cell contains "Target", value col = that col,
+      // volume col = col+1. Advance by 2 after a hit so a MERGED header (which
+      // sheet_to_json expands to the same text in BOTH columns, e.g.
+      // "April Target","April Target") doesn't also register the volume column
+      // as its own month — that would read quantity as value and the next
+      // month's value as quantity, then overwrite the correct row with garbage.
       const monthCols: { monthKey: string; valueCol: number; volumeCol: number }[] = [];
       for (let col = 0; col < headerRow.length; col++) {
         const monthKey = parseTargetMonth(headerRow[col]);
         if (monthKey) {
           monthCols.push({ monthKey, valueCol: col, volumeCol: col + 1 });
           allMonths.add(monthKey);
+          col++; // skip the paired volume column
         }
       }
 
       if (monthCols.length === 0) continue;
       processedSheets.push(sheetName);
 
-      // Data rows from row 10 (index 9) onward
-      for (let r = 9; r < rows.length; r++) {
+      // Data rows: everything below the header. A row only counts when BOTH
+      // Store Name (col A) and Site Code (col B) are filled, which naturally
+      // skips the "Value (R) / Quantity (units)" sub-label row and any blank
+      // spacer rows — no fixed data-start row needed.
+      for (let r = headerIdx + 1; r < rows.length; r++) {
         const row = rows[r] as unknown[];
         if (!row) continue;
 
@@ -121,8 +142,22 @@ export async function POST(req: NextRequest) {
     }
 
     if (processedSheets.length === 0) {
+      // Show what we actually saw, so the fix is obvious instead of guesswork.
+      const seen = workbook.SheetNames.map((sn: string) => {
+        const rows: unknown[][] = XLSX.utils.sheet_to_json(workbook.Sheets[sn], {
+          header: 1, raw: true, defval: null,
+        });
+        const firstFilled = rows.find(r => r && r.some(c => c !== null && String(c).trim() !== ''));
+        return `"${sn}" (${rows.length} rows, first row: ${
+          firstFilled ? JSON.stringify(firstFilled.slice(0, 8)) : 'empty'
+        })`;
+      });
       return NextResponse.json({
-        error: 'No sheets found with Target headers in row 7. Expected headers like "April Target", "May Target" etc.',
+        error:
+          'No month columns found. Every sheet needs a header row with cells like ' +
+          '"April Target", "May Target" — one per month — with Store Name in column A ' +
+          'and Site Code in column B on the rows underneath. The header row can be anywhere.',
+        detail: `Sheets checked: ${seen.join('; ')}`,
       }, { status: 400 });
     }
 

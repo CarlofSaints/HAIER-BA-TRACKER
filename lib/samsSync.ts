@@ -10,7 +10,6 @@ import {
   loadDispoData,
   saveDispoData,
   DispoSalesData,
-  DispoUploadMeta,
 } from './dispoData';
 import { loadStores, StoreMaster } from './storeData';
 import { loadChannels } from './channelData';
@@ -303,19 +302,6 @@ export async function runSamsSync(
     }
   }
 
-  const uploadId = Date.now().toString(36) + '-sams';
-  const uploadMeta: DispoUploadMeta & { source?: string } = {
-    id: uploadId,
-    fileName: `SAMS sync (${source})`,
-    uploadedAt: new Date().toISOString(),
-    uploadedBy: source === 'cron' ? 'cron' : 'manual sync',
-    rowCount: facts.length,
-    months: [...monthsSeen],
-    products: allArticles.size,
-    stores: liveStoreNames.size,
-    source: 'sams',
-  };
-
   // 4. Merge SAMS-marked channels into the LIVE dataset.
   const live = await loadDispoData();
   if (!live.ytd) live.ytd = {};
@@ -365,7 +351,18 @@ export async function runSamsSync(
     if (data.ytd[name]) live.ytd[name] = data.ytd[name];
   }
   for (const [art, p] of Object.entries(data.prices)) live.prices[art] = p;
-  live.uploads.push({ ...uploadMeta });
+
+  // 4c. The SAMS sync is NOT a DISPO upload and must not appear in the DISPO
+  //     upload log. It used to push a synthetic entry per run, which (a) made
+  //     /sales read "Last DISPO loaded: <SAMS cron time>" — a file Carl never
+  //     uploaded — and (b) put a Delete button per cron run on /upload, where
+  //     deleting ANY DISPO upload rebuilds dispo/data.json from dispo/raw/*
+  //     only, silently wiping every SAMS (and Diamond Corner) store. SAMS
+  //     recency already lives in dispo/sync-meta.json → SamsFreshnessCard.
+  //     Prune any entries left behind by the old behaviour so this self-heals.
+  live.uploads = (live.uploads || []).filter(
+    u => (u as { source?: string }).source !== 'sams' && !/^SAMS sync/i.test(u.fileName || ''),
+  );
   await saveDispoData(live);
 
   // 5. Re-run sales auto-calc for every affected month.

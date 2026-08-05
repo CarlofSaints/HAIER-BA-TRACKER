@@ -5,6 +5,7 @@ import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
 import Footer from '@/components/Footer';
+import CollapsibleCard from '@/components/CollapsibleCard';
 
 interface UploadMeta {
   id: string;
@@ -93,6 +94,19 @@ function Spinner({ size = 20, color = '#0054A6' }: { size?: number; color?: stri
       <circle cx="12" cy="12" r="10" stroke={color} strokeWidth="3" fill="none" strokeDasharray="31.4 31.4" strokeLinecap="round" />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </svg>
+  );
+}
+
+/** Upload count shown on a collapsed section header, so you can see at a glance
+ *  which sections hold data without expanding them. */
+function Pill({ n }: { n: number }) {
+  return (
+    <span style={{
+      background: '#eef2ff', color: '#4338ca', borderRadius: 999,
+      padding: '0.1rem 0.5rem', fontSize: '0.7rem', fontWeight: 600, whiteSpace: 'nowrap',
+    }}>
+      {n} upload{n === 1 ? '' : 's'}
+    </span>
   );
 }
 
@@ -866,13 +880,11 @@ export default function UploadPage() {
         )}
 
         {/* === VISIT DATA UPLOAD === */}
-        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
-            Visit Data (Perigee)
-          </h2>
-          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
-            Upload Perigee visits export files (Excel format)
-          </p>
+        <CollapsibleCard
+          title="Visit Data (Perigee)"
+          subtitle="Upload Perigee visits export files (Excel format)"
+          badge={uploads.length > 0 ? <Pill n={uploads.length} /> : null}
+        >
 
           {/* Drop zone */}
           <div
@@ -975,16 +987,14 @@ export default function UploadPage() {
               No visit uploads yet
             </div>
           )}
-        </div>
+        </CollapsibleCard>
 
         {/* === DISPO DATA UPLOAD === */}
-        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
-            DISPO — Sales & Stock Data
-          </h2>
-          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
-            Upload weekly DISPO Excel files containing sales, stock on hand, and stock on order data
-          </p>
+        <CollapsibleCard
+          title="DISPO — Sales & Stock Data"
+          subtitle="Legacy Excel route. Sales now come from the SAMS SQL sync (daily) for every channel marked Data: SAMS — only load DISPO for channels still on it."
+          badge={dispoUploads.length > 0 ? <Pill n={dispoUploads.length} /> : null}
+        >
 
           {/* Drop zone */}
           <div
@@ -1091,19 +1101,19 @@ export default function UploadPage() {
               No DISPO uploads yet
             </div>
           )}
-        </div>
+        </CollapsibleCard>
 
         {/* === DIAMOND CORNER — SALES (PDF / OCR) === */}
-        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
-            Diamond Corner — Sales (PDF)
-          </h2>
-          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
+        <CollapsibleCard
+          title="Diamond Corner — Sales (PDF)"
+          badge={diamondUploads.length > 0 ? <Pill n={diamondUploads.length} /> : null}
+          subtitle={<>
             Upload a Diamond Corner &quot;Sales Analysis By Item&quot; PDF (one store per file). The PDF is read with OCR,
             you pick the store &amp; month, then it loads into the sales &amp; stock data exactly like DISPO data —
             feeding scores, the leaderboard and reports. Map Diamond Corner item codes to products on the Products page
             so they consolidate under the same product.
-          </p>
+          </>}
+        >
 
           {/* Step 1 — PDF drop zone */}
           {!diamondExtract && (
@@ -1441,16 +1451,14 @@ export default function UploadPage() {
               No Diamond Corner uploads yet
             </div>
           )}
-        </div>
+        </CollapsibleCard>
 
         {/* === TRAINING FORM DATA UPLOAD === */}
-        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
-            Training Form Data (Perigee)
-          </h2>
-          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
-            Upload Perigee training form exports. Used for auto-calculating training scores (5 pts).
-          </p>
+        <CollapsibleCard
+          title="Training Form Data (Perigee)"
+          subtitle="Upload Perigee training form exports. Used for auto-calculating training scores (5 pts)."
+          badge={trainingUploads.length > 0 ? <Pill n={trainingUploads.length} /> : null}
+        >
 
           {/* Drop zone */}
           <div
@@ -1553,21 +1561,20 @@ export default function UploadPage() {
               No training uploads yet
             </div>
           )}
-        </div>
+        </CollapsibleCard>
 
         {/* === SALES TARGETS UPLOAD === */}
-        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '1rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
-                Sales Targets
-              </h2>
-              <p style={{ color: '#9ca3af', fontSize: '0.8rem' }}>
-                Upload monthly store-level sales targets. Used for auto-calculating Monthly Sales KPI (40 pts).
-                <br />
-                To change a target: <strong>Export targets</strong> → edit in Excel → drop the file back here.
-              </p>
-            </div>
+        <CollapsibleCard
+          title="Sales Targets"
+          badge={targetUploads.length > 0 ? <Pill n={targetUploads.length} /> : null}
+          subtitle={<>
+            Upload monthly store-level sales targets. Used for auto-calculating Monthly Sales KPI (40 pts).
+            <br />
+            To change a target: <strong>Export targets</strong> → edit in Excel → drop the file back here.
+            The header row can sit anywhere — we look for cells like <strong>&quot;August Target&quot;</strong>,
+            with Store Name in column A and Site Code in column B underneath.
+          </>}
+          headerRight={
             <button
               className="btn btn-outline"
               style={{ padding: '0.35rem 0.7rem', fontSize: '0.75rem', whiteSpace: 'nowrap', flexShrink: 0 }}
@@ -1577,7 +1584,8 @@ export default function UploadPage() {
             >
               {targetExporting ? 'Exporting…' : '⬇ Export targets'}
             </button>
-          </div>
+          }
+        >
 
           {/* Drop zone */}
           <div
@@ -1684,16 +1692,14 @@ export default function UploadPage() {
               No target uploads yet
             </div>
           )}
-        </div>
+        </CollapsibleCard>
 
         {/* === DISPLAY DATA UPLOAD === */}
-        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
-            Display Inspections
-          </h2>
-          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
-            Upload Perigee display form data. Images are cached to CDN during upload.
-          </p>
+        <CollapsibleCard
+          title="Display Inspections"
+          subtitle="Upload Perigee display form data. Images are cached to CDN during upload."
+          badge={displayUploads.length > 0 ? <Pill n={displayUploads.length} /> : null}
+        >
 
           {/* Drop zone */}
           <div
@@ -1786,16 +1792,14 @@ export default function UploadPage() {
               No display uploads yet
             </div>
           )}
-        </div>
+        </CollapsibleCard>
 
         {/* === RED FLAGS UPLOAD === */}
-        <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', border: '1px solid #e5e7eb', marginTop: '2rem' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
-            Red Flags (Perigee)
-          </h2>
-          <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginBottom: '1rem' }}>
-            Upload Perigee red flag form exports. Tracks in-store issues (out of stock, dented products, etc).
-          </p>
+        <CollapsibleCard
+          title="Red Flags (Perigee)"
+          subtitle="Upload Perigee red flag form exports. Tracks in-store issues (out of stock, dented products, etc)."
+          badge={redFlagUploads.length > 0 ? <Pill n={redFlagUploads.length} /> : null}
+        >
 
           {/* Drop zone */}
           <div
@@ -1894,7 +1898,7 @@ export default function UploadPage() {
               No red flag uploads yet
             </div>
           )}
-        </div>
+        </CollapsibleCard>
 
         <Footer />
       </main>
