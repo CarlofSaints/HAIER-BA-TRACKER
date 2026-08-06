@@ -46,93 +46,75 @@ function fmtDate(d: Date): string {
   return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
-function toIsoDate(year: number, month: number, day: number): string {
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+function toIsoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
+/** The Monday on or before the given date. Mirrors resolveYearConfig() in lib/weekMapping.ts. */
+function mondayOnOrBefore(d: Date): Date {
+  const out = new Date(d);
+  const dow = out.getDay(); // 0 = Sun
+  out.setDate(out.getDate() - (dow === 0 ? 6 : dow - 1));
+  return out;
 }
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-/** Month options: 0 = December of previous year, 1-12 = Jan-Dec of selected year */
-function getMonthOptions(year: number): { value: number; label: string }[] {
-  return [
-    { value: 0, label: `December ${year - 1}` },
-    ...MONTHS.map((name, i) => ({ value: i + 1, label: name })),
-  ];
+/**
+ * What the server derives when a year has no saved entry: the Monday on or
+ * before 1 January. Used as the form's starting value so "Save" makes the
+ * current behaviour explicit rather than changing it.
+ */
+function defaultWeek1Start(year: number): string {
+  return toIsoDate(mondayOnOrBefore(new Date(year, 0, 1)));
 }
 
 export default function WeekMappingPage() {
   const { session, loading: authLoading, logout } = useAuth(['super_admin', 'admin']);
   const [config, setConfig] = useState<WeekMappingConfig>({ years: [] });
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [month, setMonth] = useState(1);
-  const [day, setDay] = useState(1);
+  // The Week 1 start date is a real date in its own right — it is NOT constrained
+  // to the year being defined. A retail year almost always starts in the previous
+  // December (2026 starts Mon 29 Dec 2025). The old picker was year + month + day
+  // where the year was the year being DEFINED, so the only reachable prior-year
+  // date was a single hard-coded "December {year-1}" option.
+  const [week1Start, setWeek1Start] = useState(() => defaultWeek1Start(new Date().getFullYear()));
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
+  // Fetches the whole config, so it does NOT depend on selectedYear. It used to,
+  // which meant every year change refetched and could stomp an in-progress edit.
+  // Populating the date field is the single effect below.
   const loadConfig = useCallback(async () => {
     try {
       const res = await authFetch('/api/week-mapping');
-      if (res.ok) {
-        const data = await res.json();
-        setConfig(data);
-        // Load existing values for the selected year if they exist
-        const existing = data.years?.find((y: WeekMappingYear) => y.year === selectedYear);
-        if (existing) {
-          const d = new Date(existing.week1Start + 'T00:00:00');
-          const m = d.getMonth() + 1;
-          const yr = d.getFullYear();
-          if (m === 12 && yr === selectedYear - 1) {
-            setMonth(0);
-          } else {
-            setMonth(m);
-          }
-          setDay(d.getDate());
-        }
-      }
+      if (res.ok) setConfig(await res.json());
     } catch { /* ignore */ }
-  }, [selectedYear]);
+  }, []);
 
   useEffect(() => {
     if (session) loadConfig();
   }, [session, loadConfig]);
 
-  // When year changes, load existing config for that year
+  // Show the saved start date for the selected year, or the date the server
+  // would derive if nothing is saved.
   useEffect(() => {
     const existing = config.years.find(y => y.year === selectedYear);
-    if (existing) {
-      const d = new Date(existing.week1Start + 'T00:00:00');
-      const m = d.getMonth() + 1; // 1-12
-      const yr = d.getFullYear();
-      // If the start date is in December of the previous year, set month=0
-      if (m === 12 && yr === selectedYear - 1) {
-        setMonth(0);
-      } else {
-        setMonth(m);
-      }
-      setDay(d.getDate());
-    } else {
-      setMonth(1);
-      setDay(1);
-    }
+    setWeek1Start(existing ? existing.week1Start : defaultWeek1Start(selectedYear));
   }, [selectedYear, config.years]);
 
-  // month=0 means December of the previous year
-  const dateYear = month === 0 ? selectedYear - 1 : selectedYear;
-  const dateMonth = month === 0 ? 12 : month;
-  const maxDay = daysInMonth(dateYear, dateMonth);
-  const effectiveDay = Math.min(day, maxDay);
-
-  const week1Start = toIsoDate(dateYear, dateMonth, effectiveDay);
-  const dayOfWeek = new Date(week1Start + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+  const parsedStart = new Date(week1Start + 'T00:00:00');
+  const validDate = week1Start !== '' && !isNaN(parsedStart.getTime());
+  const dayOfWeek = validDate ? parsedStart.toLocaleDateString('en-US', { weekday: 'long' }) : '';
+  // Weeks run in 7-day blocks from this date, so a non-Monday start silently
+  // shifts every week boundary — the exact trap that ran 2026 Thu-Wed.
+  const startsOnMonday = validDate && parsedStart.getDay() === 1;
+  // resolveYearConfig() ignores a future week1Start and falls back, so saving one
+  // looks successful but changes nothing.
+  const startsInFuture = validDate && parsedStart > new Date();
 
   const weeks = useMemo(() => getWeeksPreview(week1Start), [week1Start]);
 
   const existingConfig = config.years.find(y => y.year === selectedYear);
-  const hasChanges = !existingConfig || existingConfig.week1Start !== week1Start;
+  const hasChanges = validDate && (!existingConfig || existingConfig.week1Start !== week1Start);
 
   async function handleSave() {
     setSaving(true);
@@ -181,68 +163,76 @@ export default function WeekMappingPage() {
             Week 1 Start Date
           </div>
 
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-            {/* Year */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.7rem', color: '#6b7280', marginBottom: 4, fontWeight: 500 }}>Year</label>
-              <select
-                className="input"
-                value={selectedYear}
-                onChange={e => setSelectedYear(Number(e.target.value))}
-                style={{ width: 100 }}
-              >
-                {yearOptions.map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
+          {/* Step 1 — which year is being defined. */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4, fontWeight: 600 }}>
+              What year are you setting Week 1 for?
+            </label>
+            <select
+              className="input"
+              value={selectedYear}
+              onChange={e => setSelectedYear(Number(e.target.value))}
+              style={{ width: 120 }}
+            >
+              {yearOptions.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
 
-            {/* Month */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.7rem', color: '#6b7280', marginBottom: 4, fontWeight: 500 }}>Month</label>
-              <select
-                className="input"
-                value={month}
-                onChange={e => setMonth(Number(e.target.value))}
-                style={{ width: 170 }}
-              >
-                {getMonthOptions(selectedYear).map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Day */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.7rem', color: '#6b7280', marginBottom: 4, fontWeight: 500 }}>Day</label>
-              <select
-                className="input"
-                value={effectiveDay}
-                onChange={e => setDay(Number(e.target.value))}
-                style={{ width: 80 }}
-              >
-                {Array.from({ length: maxDay }, (_, i) => i + 1).map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
+          {/* Step 2 — a real date, with its own year. A retail year normally
+              starts in the previous December, so this must not be tied to the
+              year above. */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: '#374151', marginBottom: 4, fontWeight: 600 }}>
+              What date does Week 1 of {selectedYear} start on?
+            </label>
+            <input
+              type="date"
+              className="input"
+              value={week1Start}
+              onChange={e => setWeek1Start(e.target.value)}
+              style={{ width: 200 }}
+            />
+            <div style={{ fontSize: '0.72rem', color: '#6b7280', marginTop: 4 }}>
+              Can be any date, including one in {selectedYear - 1} — retail years usually
+              start in the previous December.
             </div>
           </div>
 
           {/* Summary */}
-          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem' }}>
-            <div style={{ fontSize: '0.85rem', color: '#0369a1', fontWeight: 600 }}>
-              Week 1 starts on {dayOfWeek}, {fmtDate(new Date(week1Start + 'T00:00:00'))}
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#0c4a6e', marginTop: 2 }}>
-              {weeks.length} weeks in {selectedYear}
-              {existingConfig && (
-                <span style={{ marginLeft: '0.5rem', color: hasChanges ? '#dc2626' : '#16a34a' }}>
-                  {hasChanges ? '(unsaved changes)' : '(saved)'}
-                </span>
+          {validDate ? (
+            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.85rem', color: '#0369a1', fontWeight: 600 }}>
+                Week 1 of {selectedYear} starts on {dayOfWeek}, {fmtDate(parsedStart)}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#0c4a6e', marginTop: 2 }}>
+                {weeks.length} weeks in {selectedYear}
+                {existingConfig && (
+                  <span style={{ marginLeft: '0.5rem', color: hasChanges ? '#dc2626' : '#16a34a' }}>
+                    {hasChanges ? '(unsaved changes)' : '(saved)'}
+                  </span>
+                )}
+                {!existingConfig && <span style={{ marginLeft: '0.5rem', color: '#9ca3af' }}>(not yet saved)</span>}
+              </div>
+              {!startsOnMonday && (
+                <div style={{ fontSize: '0.75rem', color: '#92400e', marginTop: 6 }}>
+                  ⚠ This is a {dayOfWeek}. Every week will then run {dayOfWeek}–
+                  {new Date(parsedStart.getTime() + 6 * 86400000).toLocaleDateString('en-US', { weekday: 'long' })}.
+                </div>
               )}
-              {!existingConfig && <span style={{ marginLeft: '0.5rem', color: '#9ca3af' }}>(not yet saved)</span>}
+              {startsInFuture && (
+                <div style={{ fontSize: '0.75rem', color: '#b91c1c', marginTop: 6 }}>
+                  ⚠ This date is in the future, so reports will ignore it and fall back
+                  until it arrives.
+                </div>
+              )}
             </div>
-          </div>
+          ) : (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: '#b91c1c' }}>
+              Pick a valid start date.
+            </div>
+          )}
 
           <button
             className="btn btn-primary"
