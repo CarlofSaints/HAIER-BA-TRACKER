@@ -87,6 +87,8 @@ export default function LeaderboardPage() {
   const [includeSales, setIncludeSales] = useState(true);
   const [capturing, setCapturing] = useState(false);
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   // Column resize state
   const DEFAULT_WIDTHS = useMemo(() => [60, 180, 120, 200, 70, 70, 60, 60, 60, 60, 60, 80, 80], []);
@@ -262,6 +264,58 @@ export default function LeaderboardPage() {
     URL.revokeObjectURL(url);
   }
 
+  /*
+    Excel export. Must go through authFetch — lib/auth.ts is x-user-id header
+    only with no cookie fallback, so a plain <a href="/api/…"> download 401s.
+  */
+  async function handleExportExcel() {
+    setExporting(true);
+    setExportError('');
+    try {
+      const res = await authFetch('/api/scores/leaderboard/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          month: selectedMonth,
+          includeSales: hasDispoData && includeSales,
+          rows: ranked.map((e, i) => ({
+            rank: i + 1,
+            repName: e.repName,
+            email: e.email,
+            storeName: e.storeName,
+            total: e.total,
+            grandTotal: e.grandTotal,
+            monthlySales: e.monthlySales,
+            checkInOnTime: e.checkInOnTime,
+            displayInspection: e.displayInspection,
+            training: e.training,
+            weeklySummaries: e.weeklySummaries,
+            bonusSuggestions: e.bonusSuggestions,
+            salesVol: e.salesVol ?? null,
+            salesVal: e.salesVal ?? null,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        setExportError('Export failed. Please try again.');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `HaierLeaderboard_${selectedMonth.replace('-', '')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError('Export failed. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function handleShare() {
     if (!capturedBlob) return;
     const file = new File([capturedBlob], `leaderboard-${selectedMonth}.png`, { type: 'image/png' });
@@ -309,6 +363,25 @@ export default function LeaderboardPage() {
                 Include Sales Data
               </label>
             )}
+
+            <button
+              onClick={handleExportExcel}
+              disabled={exporting}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                background: '#047857', color: 'white', border: 'none', borderRadius: 6,
+                fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer',
+                opacity: exporting ? 0.5 : 1,
+              }}
+              title="Export to Excel — leaderboard plus a site code / site name / BA sheet"
+            >
+              {exporting ? (
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}><circle opacity="0.25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path opacity="0.75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
+              ) : (
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              )}
+              {exporting ? 'Exporting…' : 'Export Excel'}
+            </button>
 
             {capturedBlob ? (
               <div style={{ display: 'flex', gap: 6, paddingBottom: 2 }}>
@@ -364,6 +437,12 @@ export default function LeaderboardPage() {
             )}
           </div>
         </div>
+
+        {exportError && (
+          <div style={{ marginBottom: '1rem', padding: '0.5rem 0.75rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: '0.8rem', color: '#991b1b' }}>
+            {exportError}
+          </div>
+        )}
 
         {loadingData ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>Loading leaderboard...</div>
