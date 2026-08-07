@@ -19,9 +19,23 @@ export interface StoreBa {
   email: string;
   repName: string;
   source: BaSource;
+  // How much check-in evidence backs this BA at this store. The derivation rule
+  // is "most recent visit wins", so ONE walk-in claims a store just as firmly as
+  // a permanent posting — a Makro BA who stepped into a GAME store once outranks
+  // nobody but looks identical to the BA stationed there. Exports carry the count
+  // so a weak claim is visible rather than hidden behind a confident-looking name.
+  visitCount: number;
+  lastVisit: string;
 }
 
-export type DerivedBaMap = Record<string, { email: string; repName: string }>;
+export interface DerivedBa {
+  email: string;
+  repName: string;
+  visitCount: number;
+  lastVisit: string;
+}
+
+export type DerivedBaMap = Record<string, DerivedBa>;
 
 /*
   Per-store BA derived from Perigee visits: the rep of the most recent visit that
@@ -44,26 +58,62 @@ export async function deriveBaByStore(stores: StoreMaster[]): Promise<DerivedBaM
   // Most recent first so the first write per key wins.
   allVisits.sort((a, b) => (b.checkInDate || '').localeCompare(a.checkInDate || ''));
 
+  // The keys a visit can be filed under: its store name, its store code, and the
+  // master store name that code bridges to.
+  const visitKeys = (v: Visit): string[] => {
+    const keys: string[] = [];
+    const nameKey = (v.storeName || '').toLowerCase().trim();
+    if (nameKey) keys.push(nameKey);
+    const codeKey = (v.storeCode || '').toLowerCase().trim();
+    if (codeKey) {
+      keys.push(codeKey);
+      if (codeToName[codeKey]) keys.push(codeToName[codeKey]);
+    }
+    return keys;
+  };
+
+  // Pass 1 — most recent visit wins each key.
   const derived: DerivedBaMap = {};
   for (const v of allVisits) {
     if (!v.email && !v.repName) continue;
-    const val = { email: (v.email || '').toLowerCase(), repName: v.repName || v.email || '' };
-    const nameKey = (v.storeName || '').toLowerCase().trim();
-    if (nameKey && !derived[nameKey]) derived[nameKey] = val;
-    const codeKey = (v.storeCode || '').toLowerCase().trim();
-    if (codeKey && !derived[codeKey]) derived[codeKey] = val;
-    if (codeKey && codeToName[codeKey] && !derived[codeToName[codeKey]]) {
-      derived[codeToName[codeKey]] = val;
+    const val: DerivedBa = {
+      email: (v.email || '').toLowerCase(),
+      repName: v.repName || v.email || '',
+      visitCount: 0,
+      lastVisit: '',
+    };
+    for (const k of visitKeys(v)) {
+      if (!derived[k]) derived[k] = { ...val };
+    }
+  }
+
+  // Pass 2 — count how many visits the winning rep actually made to each key, so
+  // callers can tell a home store from a single walk-in.
+  for (const v of allVisits) {
+    if (!v.email && !v.repName) continue;
+    for (const k of visitKeys(v)) {
+      const d = derived[k];
+      if (!d || !sameRep(d, v)) continue;
+      d.visitCount++;
+      const when = v.checkInDate || '';
+      if (when > d.lastVisit) d.lastVisit = when;
     }
   }
   return derived;
+}
+
+/* Match on email when both sides have one, else fall back to the rep's name. */
+function sameRep(d: { email: string; repName: string }, v: Visit): boolean {
+  const vEmail = (v.email || '').toLowerCase();
+  if (d.email && vEmail) return d.email === vEmail;
+  return d.repName === (v.repName || v.email || '');
 }
 
 /* Look a store up in a derived map by name, siteCode, then Perigee code. */
 export function lookupDerivedBa(
   store: StoreMaster,
   derived: DerivedBaMap,
-): { email: string; repName: string } | null {
+): DerivedBa | null {
   const nameKey = (store.storeName || '').toLowerCase().trim();
   const codeKey = (store.siteCode || '').toLowerCase().trim();
   const pKey = (store.perigeeSiteCode || '').toLowerCase().trim();
@@ -76,14 +126,26 @@ export function lookupDerivedBa(
   vs never visited), so exports render the source alongside it.
 */
 export function resolveStoreBa(store: StoreMaster, derived: DerivedBaMap): StoreBa {
+  const d = lookupDerivedBa(store, derived);
+
   if (store.assignedBaEmail || store.assignedBaName) {
+    const email = (store.assignedBaEmail || '').toLowerCase();
+    const repName = store.assignedBaName || store.assignedBaEmail || '';
+    // Carry the visit evidence only when the assigned BA is the one who actually
+    // visits this store. When someone else does, 0 is the honest number — it says
+    // the override is doing real work rather than rubber-stamping the visit data.
+    const matches = d && (d.email && email ? d.email === email : d.repName === repName);
     return {
       email: store.assignedBaEmail || '',
-      repName: store.assignedBaName || store.assignedBaEmail || '',
+      repName,
       source: 'assigned',
+      visitCount: matches ? d!.visitCount : 0,
+      lastVisit: matches ? d!.lastVisit : '',
     };
   }
-  const d = lookupDerivedBa(store, derived);
-  if (d) return { email: d.email, repName: d.repName, source: 'visits' };
-  return { email: '', repName: '', source: 'none' };
+
+  if (d) {
+    return { email: d.email, repName: d.repName, source: 'visits', visitCount: d.visitCount, lastVisit: d.lastVisit };
+  }
+  return { email: '', repName: '', source: 'none', visitCount: 0, lastVisit: '' };
 }

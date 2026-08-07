@@ -76,6 +76,11 @@ export async function POST(req: NextRequest) {
           'SITE CODE': s.siteCode || '',
           'SITE NAME': s.storeName || '',
           BA: ba.repName,
+          // The BA name alone can't distinguish a permanent posting from a single
+          // walk-in — "most recent visit wins" treats both the same. These two
+          // columns are what make the BA column interpretable.
+          VISITS: ba.visitCount,
+          'LAST VISIT': ba.lastVisit || '',
           'BA EMAIL': ba.email,
           'BA SOURCE': SOURCE_LABEL[ba.source],
           CHANNEL: parent?.name || ch?.name || '',
@@ -94,12 +99,12 @@ export async function POST(req: NextRequest) {
     const wb = XLSX.utils.book_new();
 
     const storeHeader = [
-      'SITE CODE', 'SITE NAME', 'BA', 'BA EMAIL', 'BA SOURCE',
+      'SITE CODE', 'SITE NAME', 'BA', 'VISITS', 'LAST VISIT', 'BA EMAIL', 'BA SOURCE',
       'CHANNEL', 'SUB-CHANNEL', 'AREA', 'PROVINCE', 'STATUS',
     ];
     const wsStores = XLSX.utils.json_to_sheet(storeRows, { header: storeHeader });
     wsStores['!cols'] = [
-      { wch: 12 }, { wch: 42 }, { wch: 26 }, { wch: 30 }, { wch: 20 },
+      { wch: 12 }, { wch: 42 }, { wch: 26 }, { wch: 9 }, { wch: 13 }, { wch: 30 }, { wch: 20 },
       { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 10 },
     ];
     wsStores['!autofilter'] = { ref: XLSX.utils.encode_range({
