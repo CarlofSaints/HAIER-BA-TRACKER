@@ -46,13 +46,16 @@ interface Summary {
     byBa: { email: string; repName: string; qty: number; value: number; submissions: number }[];
     detail: { email: string; repName: string; product: string; qty: number; value: number }[];
     dataQuality: {
-      includeSuspect: boolean;
-      count: number;
-      qty: number;
-      value: number;
+      quantity: { count: number; qty: number; value: number; included: boolean };
+      price: {
+        count: number; qty: number; value: number; excluded: boolean;
+        bandPct: number; minSamples: number; unjudged: number;
+      };
       lines: {
+        kind: 'quantity' | 'price';
         submissionId: string; date: string; repName: string; store: string;
         product: string; qty: number; unitPrice: number; value: number; reason: string;
+        bandLow?: number; bandHigh?: number; bandAverage?: number; sampleSize?: number;
       }[];
     };
   };
@@ -106,7 +109,8 @@ export default function DailySalesPage() {
   const [toDate, setToDate] = useState('');
   const [salesView, setSalesView] = useState<SalesView>('product');
   const [productSearch, setProductSearch] = useState('');
-  const [includeSuspect, setIncludeSuspect] = useState(false);
+  const [includeBadQty, setIncludeBadQty] = useState(false);
+  const [excludeBadPrice, setExcludeBadPrice] = useState(false);
   const [showSuspect, setShowSuspect] = useState(false);
 
   /** The server picks the opening range (latest month with data). Adopt it once
@@ -122,7 +126,8 @@ export default function DailySalesPage() {
       if (weekStart) params.set('weekStart', weekStart);
       if (fromDate) params.set('from', fromDate);
       if (toDate) params.set('to', toDate);
-      if (includeSuspect) params.set('includeSuspect', '1');
+      if (includeBadQty) params.set('includeBadQty', '1');
+      if (excludeBadPrice) params.set('excludeBadPrice', '1');
       const res = await authFetch(`/api/daily-sales/summary?${params}`);
       const body = await res.json();
       if (!res.ok) {
@@ -139,7 +144,7 @@ export default function DailySalesPage() {
       setError('Failed to load daily sales data');
     }
     setLoading(false);
-  }, [weekStart, fromDate, toDate, includeSuspect]);
+  }, [weekStart, fromDate, toDate, includeBadQty, excludeBadPrice]);
 
   useEffect(() => { if (session) load(); }, [session, load]);
 
@@ -185,6 +190,7 @@ export default function DailySalesPage() {
   }
 
   const comp = data?.compliance;
+  const dq = data?.sales.dataQuality;
   const totalSubmitted = comp?.dayTotals.reduce((s, d) => s + d.submitted, 0) ?? 0;
   const totalExpected = comp?.dayTotals.reduce((s, d) => s + d.expected, 0) ?? 0;
   const compliancePct = totalExpected > 0 ? Math.round((totalSubmitted / totalExpected) * 100) : 0;
@@ -374,39 +380,56 @@ export default function DailySalesPage() {
 
               {/* Capture errors. Stated whenever any exist, so the totals below
                   are never presented without saying what is in or out of them. */}
-              {data.sales.dataQuality.count > 0 && (
+              {dq && (dq.quantity.count > 0 || dq.price.count > 0) && (
                 <div style={{ padding: '0.8rem 1.25rem', borderBottom: '1px solid #f3f4f6', background: '#fffbeb' }}>
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'baseline', flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: '0.8rem', color: '#92400e', flex: 1, minWidth: 320 }}>
-                      <strong>
-                        {data.sales.dataQuality.count} captured line{data.sales.dataQuality.count === 1 ? '' : 's'}
-                        {' '}cannot be a real sale
-                      </strong>
-                      {' '}({data.sales.dataQuality.qty.toLocaleString()} units, {money(data.sales.dataQuality.value)}).
-                      {' '}
-                      {data.sales.dataQuality.includeSuspect
-                        ? 'They are INCLUDED in the figures below.'
-                        : 'They are excluded from the figures below.'}
+                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#92400e', flex: 1, minWidth: 340, lineHeight: 1.5 }}>
+                      {dq.quantity.count > 0 && (
+                        <div>
+                          <strong>{dq.quantity.count} line{dq.quantity.count === 1 ? '' : 's'} with an impossible quantity</strong>
+                          {' '}({dq.quantity.qty.toLocaleString()} units, {money(dq.quantity.value)}).
+                          {' '}{dq.quantity.included ? 'INCLUDED in the figures below.' : 'Excluded from the figures below.'}
+                        </div>
+                      )}
+                      {dq.price.count > 0 && (
+                        <div>
+                          <strong>{dq.price.count} line{dq.price.count === 1 ? '' : 's'} priced outside the {dq.price.bandPct}% band for that product</strong>
+                          {' '}({dq.price.qty.toLocaleString()} units, {money(dq.price.value)}).
+                          {' '}{dq.price.excluded ? 'Excluded from the figures below.' : 'Still counted in the figures below.'}
+                        </div>
+                      )}
+                      {dq.price.unjudged > 0 && (
+                        <div style={{ color: '#a16207', fontSize: '0.74rem' }}>
+                          {dq.price.unjudged} line{dq.price.unjudged === 1 ? '' : 's'} could not be price checked: fewer than {dq.price.minSamples} other submissions for that product.
+                        </div>
+                      )}
                     </div>
-                    <button
-                      className="btn btn-outline"
-                      style={{ fontSize: '0.75rem', padding: '0.3rem 0.7rem' }}
-                      onClick={() => setShowSuspect(s => !s)}
-                    >
-                      {showSuspect ? 'Hide' : 'Show'} them
-                    </button>
-                    <label style={{ fontSize: '0.75rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={includeSuspect}
-                        onChange={e => setIncludeSuspect(e.target.checked)}
-                      />
-                      Include them anyway
-                    </label>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                      <button
+                        className="btn btn-outline"
+                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.7rem' }}
+                        onClick={() => setShowSuspect(s => !s)}
+                      >
+                        {showSuspect ? 'Hide' : 'Show'} the {dq.quantity.count + dq.price.count} lines
+                      </button>
+                      {dq.quantity.count > 0 && (
+                        <label style={{ fontSize: '0.75rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={includeBadQty} onChange={e => setIncludeBadQty(e.target.checked)} />
+                          Count impossible quantities
+                        </label>
+                      )}
+                      {dq.price.count > 0 && (
+                        <label style={{ fontSize: '0.75rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={excludeBadPrice} onChange={e => setExcludeBadPrice(e.target.checked)} />
+                          Drop out-of-band prices
+                        </label>
+                      )}
+                    </div>
                   </div>
 
                   {showSuspect && (
-                    <div style={{ marginTop: '0.75rem', overflowX: 'auto', background: 'white', borderRadius: 8, border: '1px solid #fde68a' }}>
+                    <div style={{ marginTop: '0.75rem', overflowX: 'auto', background: 'white', borderRadius: 8, border: '1px solid #fde68a', maxHeight: 380 }}>
                       <table className="data-table">
                         <thead>
                           <tr>
@@ -415,18 +438,28 @@ export default function DailySalesPage() {
                             <th>Product</th>
                             <th style={{ textAlign: 'right' }}>Qty</th>
                             <th style={{ textAlign: 'right' }}>Unit Price</th>
+                            <th style={{ textAlign: 'right' }}>Expected Band</th>
                             <th style={{ textAlign: 'right' }}>Value</th>
                             <th>Why it is flagged</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {data.sales.dataQuality.lines.map(l => (
-                            <tr key={`${l.submissionId}|${l.product}`}>
+                          {dq.lines.map(l => (
+                            <tr key={`${l.kind}|${l.submissionId}|${l.product}`}>
                               <td style={{ whiteSpace: 'nowrap' }}>{l.date}</td>
                               <td style={{ whiteSpace: 'nowrap' }}>{l.repName}</td>
                               <td>{l.product}</td>
-                              <td style={{ textAlign: 'right', color: '#b91c1c', fontWeight: 600 }}>{l.qty.toLocaleString()}</td>
-                              <td style={{ textAlign: 'right' }}>{l.unitPrice.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right', fontWeight: l.kind === 'quantity' ? 600 : 400, color: l.kind === 'quantity' ? '#b91c1c' : undefined }}>
+                                {l.qty.toLocaleString()}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: l.kind === 'price' ? 600 : 400, color: l.kind === 'price' ? '#b91c1c' : undefined }}>
+                                {l.unitPrice.toLocaleString()}
+                              </td>
+                              <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: '#6b7280' }}>
+                                {l.bandLow !== undefined
+                                  ? `${money(l.bandLow)} to ${money(l.bandHigh!)}`
+                                  : '-'}
+                              </td>
                               <td style={{ textAlign: 'right' }}>{money(l.value)}</td>
                               <td style={{ fontSize: '0.72rem', color: '#6b7280' }}>{l.reason}</td>
                             </tr>
