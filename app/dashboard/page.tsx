@@ -462,7 +462,7 @@ export default function DashboardPage() {
 
         {baFilter && (
           <div style={{ marginTop: '-0.75rem', marginBottom: '1.5rem', fontSize: '0.75rem', color: '#6b7280' }}>
-            Showing <strong style={{ color: '#111827' }}>{bas.find(b => b.key === baFilter)?.name || baFilter}</strong> only — every card, chart and table below is filtered to this BA.
+            Showing <strong style={{ color: '#111827' }}>{bas.find(b => b.key === baFilter)?.name || baFilter}</strong> only. Every card, chart and table below is filtered to this BA.
           </div>
         )}
 
