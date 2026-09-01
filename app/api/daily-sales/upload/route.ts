@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     const dates = parsed.records.map(r => r.date).filter(Boolean).sort();
 
     const uploadId = crypto.randomUUID();
-    const { added, replaced, months } = await addDailySales({
+    const { added, refreshed, months } = await addDailySales({
       id: uploadId,
       fileName,
       uploadedAt: new Date().toISOString(),
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       user,
       'upload_daily_sales',
       `daily-sales/${uploadId}`,
-      `Uploaded ${parsed.records.length} daily sales submissions (${parsed.lineCount} product lines) from ${fileName}`,
+      `Uploaded ${fileName}: ${added} new submissions, ${refreshed} already held (${parsed.lineCount} product lines)`,
     );
 
     return NextResponse.json({
@@ -81,8 +81,10 @@ export async function POST(req: NextRequest) {
       rowCount: parsed.records.length,
       lineCount: parsed.lineCount,
       productSets: parsed.productSets,
+      /** Submissions this file introduced. */
       added,
-      replaced,
+      /** Submissions already held, re-read from this file (never duplicated). */
+      refreshed,
       months,
       dateFrom: dates[0] || '',
       dateTo: dates[dates.length - 1] || '',

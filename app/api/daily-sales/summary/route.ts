@@ -17,6 +17,40 @@ export const maxDuration = 60;
 
 type CellStatus = 'submitted' | 'missed' | 'none';
 
+/**
+ * A quantity no BA plausibly sells in one store visit. These are large
+ * appliances; the highest genuine quantity in the May-Aug 2026 data is 6.
+ */
+const SUSPECT_QTY = 50;
+
+interface SuspectLine {
+  submissionId: string;
+  date: string;
+  email: string;
+  repName: string;
+  store: string;
+  product: string;
+  qty: number;
+  unitPrice: number;
+  value: number;
+  reason: string;
+}
+
+/**
+ * Flag a captured line that cannot be a real sale.
+ *
+ * The dominant failure is the BA typing the PRICE into the quantity box, which
+ * leaves qty exactly equal to unitPrice and squares the value: three such lines
+ * in May/June 2026 produced R179m of a R189m total. Left in, they bury every
+ * real number on the page.
+ */
+function suspectReason(qty: number, unitPrice: number): string | null {
+  if (qty <= SUSPECT_QTY) return null;
+  return qty === unitPrice
+    ? 'Quantity is identical to the unit price, so the price was very likely typed into the quantity box'
+    : `Quantity of ${qty.toLocaleString()} is not a plausible number of units for one visit`;
+}
+
 interface ComplianceCell {
   date: string;
   status: CellStatus;
@@ -165,6 +199,13 @@ export async function GET(req: NextRequest) {
     let totalQty = 0;
     let totalValue = 0;
 
+    // Capture errors are listed always, but kept OUT of the figures unless the
+    // user asks for them, so the headline number is never 19x the truth.
+    const includeSuspect = url.searchParams.get('includeSuspect') === '1';
+    const suspectLines: SuspectLine[] = [];
+    let suspectQty = 0;
+    let suspectValue = 0;
+
     for (const r of inRange) {
       const baKey = r.email || r.repName.toLowerCase();
       const ba = baMap.get(baKey);
@@ -173,6 +214,18 @@ export async function GET(req: NextRequest) {
       }
 
       for (const line of r.lines) {
+        const reason = suspectReason(line.qty, line.unitPrice);
+        if (reason) {
+          suspectLines.push({
+            submissionId: r.submissionId, date: r.date, email: r.email, repName: r.repName,
+            store: r.store, product: line.product, qty: line.qty, unitPrice: line.unitPrice,
+            value: line.value, reason,
+          });
+          suspectQty += line.qty;
+          suspectValue += line.value;
+          if (!includeSuspect) continue;
+        }
+
         totalQty += line.qty;
         totalValue += line.value;
 
@@ -224,6 +277,14 @@ export async function GET(req: NextRequest) {
         byProduct,
         byBa,
         detail,
+        dataQuality: {
+          /** Whether the figures above include the flagged lines. */
+          includeSuspect,
+          count: suspectLines.length,
+          qty: suspectQty,
+          value: suspectValue,
+          lines: suspectLines.sort((a, b) => b.value - a.value).slice(0, 50),
+        },
       },
       options: {
         weeks: weekOptions(earliest, today),

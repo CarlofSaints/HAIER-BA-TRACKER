@@ -15,10 +15,10 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const removed = await deleteDailySalesUpload(id);
+    const { removed, retained } = await deleteDailySalesUpload(id);
     logFromUser(user, 'delete_daily_sales', `daily-sales/${id}`,
-      `Deleted daily sales upload ${id} (${removed} submissions removed)`);
-    return NextResponse.json({ ok: true, removed }, { headers: noCacheHeaders() });
+      `Deleted daily sales upload ${id}: ${removed} submissions removed, ${retained} kept (also supplied by another upload)`);
+    return NextResponse.json({ ok: true, removed, retained }, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Daily sales delete error:', err);
     return NextResponse.json({ error: 'Delete failed' }, { status: 500 });

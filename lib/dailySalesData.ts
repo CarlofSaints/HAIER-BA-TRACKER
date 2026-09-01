@@ -30,8 +30,24 @@ export interface DailySalesRecord {
   /** Totals across `lines`, precomputed so consumers never re-derive them. */
   totalQty: number;
   totalValue: number;
-  /** Which upload last wrote this record. */
+  /**
+   * Every upload that has supplied this submission. Overlapping loads are the
+   * normal way this data arrives (load the 1st today, load the 1st and 2nd
+   * tomorrow to catch late submissions), so the same submission routinely comes
+   * from several files. The record survives until the LAST of them is deleted.
+   */
+  sourceIds?: string[];
+  /**
+   * @deprecated Single-owner field written before the multi-source change.
+   * Read through `recordSources()`, never directly.
+   */
   sourceId?: string;
+}
+
+/** Which uploads supplied this record, tolerating the legacy single-owner field. */
+export function recordSources(r: DailySalesRecord): string[] {
+  if (r.sourceIds?.length) return r.sourceIds;
+  return r.sourceId ? [r.sourceId] : [];
 }
 
 export interface DailySalesUploadMeta {
@@ -156,7 +172,7 @@ export async function loadDailySalesUpload(uploadId: string): Promise<DailySales
   const meta = (await loadDailySalesIndex()).find(m => m.id === uploadId);
   if (!meta?.months?.length) return [];
   const shards = await Promise.all(meta.months.map(m => loadMonthShard(m)));
-  return shards.flat().filter(r => r.sourceId === uploadId);
+  return shards.flat().filter(r => recordSources(r).includes(uploadId));
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────
@@ -169,19 +185,18 @@ export async function loadDailySalesUpload(uploadId: string): Promise<DailySales
 export async function addDailySales(
   meta: Omit<DailySalesUploadMeta, 'months'>,
   records: DailySalesRecord[],
-): Promise<{ added: number; replaced: number; months: string[] }> {
+): Promise<{ added: number; refreshed: number; months: string[] }> {
   const byMonth = new Map<string, DailySalesRecord[]>();
   for (const r of records) {
     const month = dailySalesMonthKey(r);
-    const tagged = { ...r, sourceId: meta.id };
     const arr = byMonth.get(month);
-    if (arr) arr.push(tagged); else byMonth.set(month, [tagged]);
+    if (arr) arr.push(r); else byMonth.set(month, [r]);
   }
 
   const monthList = new Set(await loadMonthList());
   const touched: string[] = [];
   let added = 0;
-  let replaced = 0;
+  let refreshed = 0;
 
   for (const [month, incoming] of byMonth) {
     const shard = await loadMonthShard(month);
@@ -190,8 +205,18 @@ export async function addDailySales(
 
     for (const r of incoming) {
       const k = dailySalesDedupeKey(r);
-      if (byKey.has(k)) replaced++; else added++;
-      byKey.set(k, r);
+      const existing = byKey.get(k);
+      if (existing) {
+        // Already held. Take this file's values (a submission edited in Perigee
+        // must land) but ADD this upload as another source rather than taking
+        // ownership, so deleting this upload later cannot remove a submission an
+        // earlier upload also supplied.
+        refreshed++;
+        byKey.set(k, { ...r, sourceIds: [...new Set([...recordSources(existing), meta.id])] });
+      } else {
+        added++;
+        byKey.set(k, { ...r, sourceIds: [meta.id] });
+      }
     }
 
     await saveMonthShard(month, [...byKey.values()]);
@@ -205,26 +230,53 @@ export async function addDailySales(
   index.unshift({ ...meta, months: touched });
   await saveDailySalesIndex(index);
 
-  return { added, replaced, months: touched };
+  return { added, refreshed, months: touched };
 }
 
-/** Delete one upload: remove its records from the shards, drop its meta. */
-export async function deleteDailySalesUpload(uploadId: string): Promise<number> {
+/**
+ * Delete one upload and drop its meta.
+ *
+ * A submission is removed only when this upload was its LAST remaining source.
+ * One that another upload also supplied is kept, minus this upload's claim on
+ * it, so deleting a file that re-covered an earlier date range cannot take that
+ * earlier range's data with it.
+ */
+export async function deleteDailySalesUpload(
+  uploadId: string,
+): Promise<{ removed: number; retained: number }> {
   const index = await loadDailySalesIndex();
   const meta = index.find(m => m.id === uploadId);
   let removed = 0;
-  if (meta?.months?.length) {
-    for (const month of meta.months) {
-      const shard = await loadMonthShard(month);
-      const filtered = shard.filter(r => r.sourceId !== uploadId);
-      if (filtered.length !== shard.length) {
-        removed += shard.length - filtered.length;
-        await saveMonthShard(month, filtered);
+  let retained = 0;
+
+  // Fall back to every month if the meta somehow carries none, so a delete can
+  // never leave orphaned records behind.
+  const months = meta?.months?.length ? meta.months : await loadMonthList();
+
+  for (const month of months) {
+    const shard = await loadMonthShard(month);
+    const next: DailySalesRecord[] = [];
+    let changed = false;
+
+    for (const r of shard) {
+      const sources = recordSources(r);
+      if (!sources.includes(uploadId)) { next.push(r); continue; }
+
+      const rest = sources.filter(id => id !== uploadId);
+      changed = true;
+      if (rest.length === 0) {
+        removed++;
+      } else {
+        retained++;
+        next.push({ ...r, sourceIds: rest, sourceId: undefined });
       }
     }
+
+    if (changed) await saveMonthShard(month, next);
   }
+
   await saveDailySalesIndex(index.filter(m => m.id !== uploadId));
-  return removed;
+  return { removed, retained };
 }
 
 /** Remove every record matching `predicate` from ALL shards (BA / user purges). */

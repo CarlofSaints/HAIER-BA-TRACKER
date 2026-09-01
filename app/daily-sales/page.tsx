@@ -45,6 +45,16 @@ interface Summary {
     byProduct: { product: string; qty: number; value: number; submissions: number }[];
     byBa: { email: string; repName: string; qty: number; value: number; submissions: number }[];
     detail: { email: string; repName: string; product: string; qty: number; value: number }[];
+    dataQuality: {
+      includeSuspect: boolean;
+      count: number;
+      qty: number;
+      value: number;
+      lines: {
+        submissionId: string; date: string; repName: string; store: string;
+        product: string; qty: number; unitPrice: number; value: number; reason: string;
+      }[];
+    };
   };
   options: { weeks: WeekOption[]; months: string[]; dataMonths: string[] };
   hasData: boolean;
@@ -96,6 +106,8 @@ export default function DailySalesPage() {
   const [toDate, setToDate] = useState('');
   const [salesView, setSalesView] = useState<SalesView>('product');
   const [productSearch, setProductSearch] = useState('');
+  const [includeSuspect, setIncludeSuspect] = useState(false);
+  const [showSuspect, setShowSuspect] = useState(false);
 
   /** The server picks the opening range (latest month with data). Adopt it once
    *  so the Month dropdown shows what is actually on screen, then leave the
@@ -110,6 +122,7 @@ export default function DailySalesPage() {
       if (weekStart) params.set('weekStart', weekStart);
       if (fromDate) params.set('from', fromDate);
       if (toDate) params.set('to', toDate);
+      if (includeSuspect) params.set('includeSuspect', '1');
       const res = await authFetch(`/api/daily-sales/summary?${params}`);
       const body = await res.json();
       if (!res.ok) {
@@ -126,7 +139,7 @@ export default function DailySalesPage() {
       setError('Failed to load daily sales data');
     }
     setLoading(false);
-  }, [weekStart, fromDate, toDate]);
+  }, [weekStart, fromDate, toDate, includeSuspect]);
 
   useEffect(() => { if (session) load(); }, [session, load]);
 
@@ -358,6 +371,72 @@ export default function DailySalesPage() {
                   ))}
                 </div>
               </div>
+
+              {/* Capture errors. Stated whenever any exist, so the totals below
+                  are never presented without saying what is in or out of them. */}
+              {data.sales.dataQuality.count > 0 && (
+                <div style={{ padding: '0.8rem 1.25rem', borderBottom: '1px solid #f3f4f6', background: '#fffbeb' }}>
+                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'baseline', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#92400e', flex: 1, minWidth: 320 }}>
+                      <strong>
+                        {data.sales.dataQuality.count} captured line{data.sales.dataQuality.count === 1 ? '' : 's'}
+                        {' '}cannot be a real sale
+                      </strong>
+                      {' '}({data.sales.dataQuality.qty.toLocaleString()} units, {money(data.sales.dataQuality.value)}).
+                      {' '}
+                      {data.sales.dataQuality.includeSuspect
+                        ? 'They are INCLUDED in the figures below.'
+                        : 'They are excluded from the figures below.'}
+                    </div>
+                    <button
+                      className="btn btn-outline"
+                      style={{ fontSize: '0.75rem', padding: '0.3rem 0.7rem' }}
+                      onClick={() => setShowSuspect(s => !s)}
+                    >
+                      {showSuspect ? 'Hide' : 'Show'} them
+                    </button>
+                    <label style={{ fontSize: '0.75rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={includeSuspect}
+                        onChange={e => setIncludeSuspect(e.target.checked)}
+                      />
+                      Include them anyway
+                    </label>
+                  </div>
+
+                  {showSuspect && (
+                    <div style={{ marginTop: '0.75rem', overflowX: 'auto', background: 'white', borderRadius: 8, border: '1px solid #fde68a' }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>BA</th>
+                            <th>Product</th>
+                            <th style={{ textAlign: 'right' }}>Qty</th>
+                            <th style={{ textAlign: 'right' }}>Unit Price</th>
+                            <th style={{ textAlign: 'right' }}>Value</th>
+                            <th>Why it is flagged</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.sales.dataQuality.lines.map(l => (
+                            <tr key={`${l.submissionId}|${l.product}`}>
+                              <td style={{ whiteSpace: 'nowrap' }}>{l.date}</td>
+                              <td style={{ whiteSpace: 'nowrap' }}>{l.repName}</td>
+                              <td>{l.product}</td>
+                              <td style={{ textAlign: 'right', color: '#b91c1c', fontWeight: 600 }}>{l.qty.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right' }}>{l.unitPrice.toLocaleString()}</td>
+                              <td style={{ textAlign: 'right' }}>{money(l.value)}</td>
+                              <td style={{ fontSize: '0.72rem', color: '#6b7280' }}>{l.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Totals */}
               <div style={{ padding: '0.9rem 1.25rem', borderBottom: '1px solid #f3f4f6', display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>

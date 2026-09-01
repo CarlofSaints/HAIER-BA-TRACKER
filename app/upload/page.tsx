@@ -481,10 +481,10 @@ export default function UploadPage() {
       if (!res.ok) {
         setToast({ msg: data.error || 'Upload failed', type: 'error' });
       } else {
-        const bits = [`${data.rowCount} submissions`, `${data.lineCount} product lines`];
-        if (data.replaced > 0) bits.push(`${data.replaced} updated`);
+        const bits = [`${data.added} new submissions`];
+        if (data.refreshed > 0) bits.push(`${data.refreshed} already held (not duplicated)`);
         if (data.skippedRows > 0) bits.push(`${data.skippedRows} rows skipped`);
-        setToast({ msg: `Loaded ${bits.join(', ')} (${data.dateFrom} to ${data.dateTo})`, type: 'success' });
+        setToast({ msg: `${data.dateFrom} to ${data.dateTo}: ${bits.join(', ')}`, type: 'success' });
         loadDailySalesUploads();
       }
     } catch {
@@ -496,11 +496,13 @@ export default function UploadPage() {
   }
 
   async function handleDailySalesDelete(id: string) {
-    if (!confirm('Delete this daily sales upload? Its submissions will be removed.')) return;
+    if (!confirm('Delete this daily sales upload?\n\nSubmissions that another upload also supplied are kept. Only ones this file alone brought in are removed.')) return;
     try {
       const res = await authFetch(`/api/daily-sales/delete/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        setToast({ msg: 'Daily sales upload deleted', type: 'success' });
+        const d = await res.json();
+        const kept = d.retained > 0 ? `, ${d.retained} kept (also in another upload)` : '';
+        setToast({ msg: `Upload deleted: ${d.removed} submissions removed${kept}`, type: 'success' });
         loadDailySalesUploads();
       } else {
         setToast({ msg: 'Delete failed', type: 'error' });
