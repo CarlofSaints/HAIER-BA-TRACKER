@@ -610,13 +610,6 @@ export default function LeaderboardPage() {
                 </table>
               </div>
             </div>
-
-            {/* DISPO sales warning */}
-            {hasDispoData && (
-              <div style={{ marginTop: '1rem', padding: '0.5rem 0.75rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: '0.7rem', color: '#92400e' }}>
-                Sales value is calculated (units x price) and not supplied directly from channel.
-              </div>
-            )}
           </>
         )}
 

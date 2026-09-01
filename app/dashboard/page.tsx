@@ -87,6 +87,15 @@ function VisitsPerDayTooltip({ active, payload, label }: {
 
 type SortKey = keyof Visit;
 
+/**
+ * The BA identity key shared by visits, form summaries and leaderboard rows:
+ * lowercased email, falling back to lowercased name when a source has no email.
+ * Must stay in step with /api/forms/summary, which keys its reps the same way.
+ */
+function baKey(email?: string, name?: string): string {
+  return (email || '').toLowerCase() || (name || '').toLowerCase();
+}
+
 export default function DashboardPage() {
   const { session, loading: authLoading, logout } = useAuth();
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -94,12 +103,13 @@ export default function DashboardPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
+  const [baFilter, setBaFilter] = useState('');
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>('checkInDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [dispoData, setDispoData] = useState<DispoSalesData | null>(null);
   const [lbData, setLbData] = useState<LBEntry[]>([]);
-  const [formSummary, setFormSummary] = useState<{ name: string; training: number; display: number; redFlags: number; total: number }[]>([]);
+  const [formSummary, setFormSummary] = useState<{ key?: string; email?: string; name: string; training: number; display: number; redFlags: number; total: number }[]>([]);
   const [formTypeFilter, setFormTypeFilter] = useState<'all' | 'training' | 'display' | 'redFlags'>('all');
 
   const loadVisits = useCallback(async () => {
@@ -147,15 +157,18 @@ export default function DashboardPage() {
     const month = currentMonth();
     const entries = lbData
       .filter(e => e.scores[month])
+      .filter(e => !baFilter || baKey(e.email, e.repName) === baFilter)
       .map(e => ({ ...e, ms: e.scores[month] }));
     if (entries.length === 0) return [];
 
-    const kpis: { key: keyof LBEntry['scores'][string]; label: string; max: number; color: string }[] = [
-      { key: 'monthlySales', label: 'Top Seller', max: 40, color: '#059669' },
-      { key: 'checkInOnTime', label: 'Best Attendee', max: 10, color: '#0054A6' },
-      { key: 'displayInspection', label: 'Best Display', max: 15, color: '#7c3aed' },
-      { key: 'training', label: 'Best Trainer', max: 15, color: '#d97706' },
-      { key: 'feedback', label: 'Best Feedback', max: 10, color: '#0891b2' },
+    // With a BA selected there is nobody to be "top" of, so each card is just
+    // that BA's own score for the KPI — use the plain KPI name instead.
+    const kpis: { key: keyof LBEntry['scores'][string]; label: string; soloLabel: string; max: number; color: string }[] = [
+      { key: 'monthlySales', label: 'Top Seller', soloLabel: 'Monthly Sales', max: 40, color: '#059669' },
+      { key: 'checkInOnTime', label: 'Best Attendee', soloLabel: 'Check-in on Time', max: 10, color: '#0054A6' },
+      { key: 'displayInspection', label: 'Best Display', soloLabel: 'Display Inspection', max: 15, color: '#7c3aed' },
+      { key: 'training', label: 'Best Trainer', soloLabel: 'Training', max: 15, color: '#d97706' },
+      { key: 'feedback', label: 'Best Feedback', soloLabel: 'Feedback', max: 10, color: '#0891b2' },
     ];
 
     const result: TopPerformer[] = [];
@@ -168,7 +181,7 @@ export default function DashboardPage() {
       }
       if (best && bestVal > 0) {
         result.push({
-          label: kpi.label,
+          label: baFilter ? kpi.soloLabel : kpi.label,
           name: best.repName,
           store: best.storeName || '-',
           score: `${bestVal}/${kpi.max}`,
@@ -177,19 +190,60 @@ export default function DashboardPage() {
       }
     }
     return result;
-  }, [lbData]);
+  }, [lbData, baFilter]);
 
-  // Channel filter applied client-side
+  // Channel + BA filters applied client-side (the date range is applied server-side)
   const filtered = useMemo(() => {
-    if (!channelFilter) return visits;
-    return visits.filter(v => v.channel === channelFilter);
-  }, [visits, channelFilter]);
+    return visits.filter(v =>
+      (!channelFilter || v.channel === channelFilter) &&
+      (!baFilter || baKey(v.email, v.repName) === baFilter)
+    );
+  }, [visits, channelFilter, baFilter]);
 
-  // Unique channels for dropdown
+  // Unique channels for dropdown — follows the BA filter, so you can't pick a
+  // channel the selected BA never worked. The current selection is always kept
+  // in the list so the <select> never falls back to displaying option one.
   const channels = useMemo(() => {
-    const set = new Set(visits.map(v => v.channel).filter(Boolean));
+    const set = new Set(
+      visits
+        .filter(v => !baFilter || baKey(v.email, v.repName) === baFilter)
+        .map(v => v.channel)
+        .filter(Boolean)
+    );
+    if (channelFilter) set.add(channelFilter);
     return Array.from(set).sort();
-  }, [visits]);
+  }, [visits, baFilter, channelFilter]);
+
+  // BAs for the page filter. Built from visits (following the channel filter)
+  // and, when no channel is chosen, unioned with BAs who only submitted forms —
+  // otherwise a BA with forms but no check-ins in range would be unpickable.
+  const bas = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const v of visits) {
+      if (channelFilter && v.channel !== channelFilter) continue;
+      const key = baKey(v.email, v.repName);
+      if (key) map.set(key, v.repName || v.email);
+    }
+    if (!channelFilter) {
+      for (const r of formSummary) {
+        const key = r.key || baKey(r.email, r.name);
+        if (key && !map.has(key)) map.set(key, r.name);
+      }
+    }
+    if (baFilter && !map.has(baFilter)) {
+      const known = visits.find(v => baKey(v.email, v.repName) === baFilter);
+      map.set(baFilter, known?.repName || known?.email || baFilter);
+    }
+    return Array.from(map.entries())
+      .map(([key, name]) => ({ key, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [visits, formSummary, channelFilter, baFilter]);
+
+  // Form submissions scoped to the selected BA
+  const filteredFormSummary = useMemo(() => {
+    if (!baFilter) return formSummary;
+    return formSummary.filter(r => (r.key || baKey(r.email, r.name)) === baFilter);
+  }, [formSummary, baFilter]);
 
   // Helper: parse "HH:MM" or "HH:MM:SS" to minutes since midnight
   function timeToMinutes(t: string): number | null {
@@ -296,7 +350,7 @@ export default function DashboardPage() {
 
   // Chart: forms per rep (top 15) — from uploaded form data
   const formsPerRep = useMemo(() => {
-    return formSummary
+    return filteredFormSummary
       .map(r => {
         const count = formTypeFilter === 'all' ? r.total
           : formTypeFilter === 'training' ? r.training
@@ -306,12 +360,12 @@ export default function DashboardPage() {
       })
       .filter(r => r.forms > 0)
       .sort((a, b) => b.forms - a.forms);
-  }, [formSummary, formTypeFilter]);
+  }, [filteredFormSummary, formTypeFilter]);
 
   // Total form submissions from uploaded data
   const totalFormSubmissions = useMemo(() => {
-    return formSummary.reduce((sum, r) => sum + r.total, 0);
-  }, [formSummary]);
+    return filteredFormSummary.reduce((sum, r) => sum + r.total, 0);
+  }, [filteredFormSummary]);
 
   // Chart: visits per rep (top 15) — unique visits per BA
   const visitsPerRep = useMemo(() => {
@@ -394,10 +448,23 @@ export default function DashboardPage() {
               {channels.map(ch => <option key={ch} value={ch}>{ch}</option>)}
             </select>
           </div>
-          <button className="btn btn-outline" onClick={() => { setFromDate(''); setToDate(''); setChannelFilter(''); setPage(1); }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>BA</label>
+            <select className="select" value={baFilter} onChange={e => { setBaFilter(e.target.value); setPage(1); }} style={{ minWidth: 200 }}>
+              <option value="">All BAs</option>
+              {bas.map(b => <option key={b.key} value={b.key}>{b.name}</option>)}
+            </select>
+          </div>
+          <button className="btn btn-outline" onClick={() => { setFromDate(''); setToDate(''); setChannelFilter(''); setBaFilter(''); setPage(1); }}>
             Clear Filters
           </button>
         </div>
+
+        {baFilter && (
+          <div style={{ marginTop: '-0.75rem', marginBottom: '1.5rem', fontSize: '0.75rem', color: '#6b7280' }}>
+            Showing <strong style={{ color: '#111827' }}>{bas.find(b => b.key === baFilter)?.name || baFilter}</strong> only — every card, chart and table below is filtered to this BA.
+          </div>
+        )}
 
         {loadingData ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>Loading visits data...</div>
@@ -433,7 +500,10 @@ export default function DashboardPage() {
                 <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Active Reps</div>
                 <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0054A6' }}>{kpis.uniqueReps.toLocaleString()}</div>
               </div>
-              {dispoData && dispoKpis.volume > 0 && (
+              {/* Sales volume/value come from DISPO/SAMS, which has no BA dimension —
+                  store sales are attributed to a BA server-side (lib/autoCalc). Rather
+                  than show an all-BA figure beside BA-scoped cards, hide them. */}
+              {dispoData && dispoKpis.volume > 0 && !baFilter && (
                 <>
                   <div className="kpi-card">
                     <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Sales Volume (units)</div>
@@ -446,13 +516,6 @@ export default function DashboardPage() {
                 </>
               )}
             </div>
-
-            {/* DISPO sales warning */}
-            {dispoData && dispoKpis.volume > 0 && (
-              <div style={{ marginBottom: '1.5rem', padding: '0.5rem 0.75rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: '0.7rem', color: '#92400e' }}>
-                Sales value is calculated (units x price) and not supplied directly from channel.
-              </div>
-            )}
 
             {/* Top Performers per KPI */}
             {topPerformers.length > 0 && (
@@ -479,34 +542,48 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Charts */}
-            {filtered.length > 0 && (
+            {/* Charts. Kept up when there are no visits but there IS form data —
+                a BA can be picked from the form summary, and blanking the whole
+                page for them reads as broken. */}
+            {(filtered.length > 0 || formsPerRep.length > 0) && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
                 {/* Visits per day */}
                 <div style={{ background: 'white', borderRadius: 12, padding: '1.25rem', border: '1px solid #e5e7eb' }}>
                   <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Check-ins per Day</h3>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={visitsPerDay}>
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip content={<VisitsPerDayTooltip />} />
-                      <Bar dataKey="count" name="Visits" fill="#0054A6" radius={[3, 3, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  {visitsPerDay.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <BarChart data={visitsPerDay}>
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip content={<VisitsPerDayTooltip />} />
+                        <Bar dataKey="count" name="Visits" fill="#0054A6" radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af', fontSize: '0.85rem' }}>
+                      No check-ins match the current filters
+                    </div>
+                  )}
                 </div>
 
                 {/* Check-ins by visit channel */}
                 <div style={{ background: 'white', borderRadius: 12, padding: '1.25rem', border: '1px solid #e5e7eb' }}>
                   <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#374151' }}>Check-ins by Visit Channel</h3>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie data={visitsByChannel} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
-                        {visitsByChannel.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                      </Pie>
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  {visitsByChannel.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <PieChart>
+                        <Pie data={visitsByChannel} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
+                          {visitsByChannel.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                        </Pie>
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af', fontSize: '0.85rem' }}>
+                      No check-ins match the current filters
+                    </div>
+                  )}
                 </div>
 
                 {/* Forms per rep */}

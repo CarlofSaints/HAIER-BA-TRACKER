@@ -19,14 +19,15 @@ export async function GET(req: NextRequest) {
     const from = url.searchParams.get('from') || '';
     const to = url.searchParams.get('to') || '';
 
-    // Accumulate per-rep counts
-    const reps = new Map<string, { name: string; training: number; display: number; redFlags: number }>();
+    // Accumulate per-rep counts. `key` is the BA identity used by consumers to
+    // line these rows up with visit/leaderboard rows (email, falling back to name).
+    const reps = new Map<string, { key: string; email: string; name: string; training: number; display: number; redFlags: number }>();
 
     function getOrCreate(email: string, repName: string) {
       const key = email.toLowerCase() || repName.toLowerCase();
       if (!key) return null;
       if (!reps.has(key)) {
-        reps.set(key, { name: repName || email, training: 0, display: 0, redFlags: 0 });
+        reps.set(key, { key, email: email.toLowerCase(), name: repName || email, training: 0, display: 0, redFlags: 0 });
       }
       const entry = reps.get(key)!;
       if (repName && entry.name !== repName) entry.name = repName;

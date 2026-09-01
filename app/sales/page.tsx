@@ -1213,11 +1213,6 @@ export function SalesStockView() {
                 </div>
               </div>
             )}
-
-            {/* Warning */}
-            <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: '0.8rem', color: '#92400e' }}>
-              Sales value is calculated (units x price) and not supplied directly from channel.
-            </div>
           </>
         )}
 
