@@ -18,6 +18,7 @@ const LEADERBOARD: NavItem = { label: 'Leaderboard', href: '/leaderboard', icon:
 
 const KPI_ITEMS: NavItem[] = [
   { label: 'Visit Analytics', href: '/dashboard', icon: '📊', roles: ['super_admin', 'admin', 'client'] },
+  { label: 'Daily Sales Submissions', href: '/daily-sales', icon: '🧾', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Training', href: '/training', icon: '📋', roles: ['super_admin', 'admin'] },
   { label: 'Sales & Stock', href: '/sales', icon: '💰', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Display Maintenance', href: '/display-maintenance', icon: '🖥️', roles: ['super_admin', 'admin', 'client'] },

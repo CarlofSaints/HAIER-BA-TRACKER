@@ -20,6 +20,7 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   { key: 'leaderboard.view', label: 'View Leaderboard', category: 'Leaderboard' },
   // KPIs
   { key: 'kpi.visit_analytics', label: 'View Visit Analytics', category: 'KPIs' },
+  { key: 'kpi.daily_sales', label: 'View Daily Sales Submissions', category: 'KPIs' },
   { key: 'kpi.training', label: 'View Training KPI', category: 'KPIs' },
   { key: 'kpi.sales', label: 'View Sales KPI', category: 'KPIs' },
   { key: 'kpi.display', label: 'View Display KPI', category: 'KPIs' },
@@ -35,6 +36,7 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   { key: 'upload.targets', label: 'Upload Target Data', category: 'Data Load' },
   { key: 'upload.display', label: 'Upload Display Data', category: 'Data Load' },
   { key: 'upload.red_flags', label: 'Upload Red Flag Data', category: 'Data Load' },
+  { key: 'upload.daily_sales', label: 'Upload Daily Sales Data', category: 'Data Load' },
   // Users
   { key: 'users.view', label: 'View Users', category: 'Users' },
   { key: 'users.manage', label: 'Create / Edit / Delete Users', category: 'Users' },

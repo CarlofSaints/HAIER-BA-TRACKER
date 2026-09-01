@@ -26,6 +26,19 @@ interface DispoUploadMeta {
   stores: number;
 }
 
+interface DailySalesUploadMeta {
+  id: string;
+  fileName: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  rowCount: number;
+  lineCount: number;
+  productSets: number;
+  months: string[];
+  dateFrom: string;
+  dateTo: string;
+}
+
 interface TargetUploadMeta {
   id: string;
   fileName: string;
@@ -131,6 +144,12 @@ export default function UploadPage() {
   const [trainingDragOver, setTrainingDragOver] = useState(false);
   const trainingFileRef = useRef<HTMLInputElement>(null);
 
+  // Daily Sales state
+  const [dailySalesUploads, setDailySalesUploads] = useState<DailySalesUploadMeta[]>([]);
+  const [dailySalesUploading, setDailySalesUploading] = useState(false);
+  const [dailySalesDragOver, setDailySalesDragOver] = useState(false);
+  const dailySalesFileRef = useRef<HTMLInputElement>(null);
+
   // Target state
   const [targetUploads, setTargetUploads] = useState<TargetUploadMeta[]>([]);
   const [targetUploading, setTargetUploading] = useState(false);
@@ -214,6 +233,13 @@ export default function UploadPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const loadDailySalesUploads = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/daily-sales');
+      if (res.ok) setDailySalesUploads(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
   const loadTargetUploads = useCallback(async () => {
     try {
       const res = await authFetch('/api/targets');
@@ -281,6 +307,7 @@ export default function UploadPage() {
       loadUploads();
       loadDispoUploads();
       loadTrainingUploads();
+      loadDailySalesUploads();
       loadTargetUploads();
       loadDisplayUploads();
       loadRedFlagUploads();
@@ -290,7 +317,7 @@ export default function UploadPage() {
       loadDiamondUploads();
       loadDiamondProducts();
     }
-  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadTargetUploads, loadDisplayUploads, loadRedFlagUploads, loadDiamondStores, loadDiamondChannels, loadDiamondBas, loadDiamondUploads, loadDiamondProducts]);
+  }, [session, loadUploads, loadDispoUploads, loadTrainingUploads, loadDailySalesUploads, loadTargetUploads, loadDisplayUploads, loadRedFlagUploads, loadDiamondStores, loadDiamondChannels, loadDiamondBas, loadDiamondUploads, loadDiamondProducts]);
 
   async function handleFile(file: File) {
     if (!file.name.match(/\.(xlsx?|csv)$/i)) {
@@ -429,6 +456,52 @@ export default function UploadPage() {
       if (res.ok) {
         setToast({ msg: 'Training upload deleted', type: 'success' });
         loadTrainingUploads();
+      } else {
+        setToast({ msg: 'Delete failed', type: 'error' });
+      }
+    } catch {
+      setToast({ msg: 'Delete failed', type: 'error' });
+    }
+  }
+
+  async function handleDailySalesFile(file: File) {
+    if (!file.name.match(/\.(xlsx?|csv)$/i)) {
+      setToast({ msg: 'Please upload an Excel file (.xlsx / .xls)', type: 'error' });
+      return;
+    }
+
+    setDailySalesUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await authFetch('/api/daily-sales/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setToast({ msg: data.error || 'Upload failed', type: 'error' });
+      } else {
+        const bits = [`${data.rowCount} submissions`, `${data.lineCount} product lines`];
+        if (data.replaced > 0) bits.push(`${data.replaced} updated`);
+        if (data.skippedRows > 0) bits.push(`${data.skippedRows} rows skipped`);
+        setToast({ msg: `Loaded ${bits.join(', ')} (${data.dateFrom} to ${data.dateTo})`, type: 'success' });
+        loadDailySalesUploads();
+      }
+    } catch {
+      setToast({ msg: 'Daily sales upload failed', type: 'error' });
+    } finally {
+      setDailySalesUploading(false);
+      if (dailySalesFileRef.current) dailySalesFileRef.current.value = '';
+    }
+  }
+
+  async function handleDailySalesDelete(id: string) {
+    if (!confirm('Delete this daily sales upload? Its submissions will be removed.')) return;
+    try {
+      const res = await authFetch(`/api/daily-sales/delete/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setToast({ msg: 'Daily sales upload deleted', type: 'success' });
+        loadDailySalesUploads();
       } else {
         setToast({ msg: 'Delete failed', type: 'error' });
       }
@@ -1559,6 +1632,125 @@ export default function UploadPage() {
           {trainingUploads.length === 0 && (
             <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
               No training uploads yet
+            </div>
+          )}
+        </CollapsibleCard>
+
+        {/* === DAILY SALES FORM UPLOAD === */}
+        <CollapsibleCard
+          title="Daily Sales Form Data (Perigee)"
+          subtitle="Upload Perigee Daily Sales form exports. Feeds the Daily Sales Submissions page: who submitted each day, and what they sold."
+          badge={dailySalesUploads.length > 0 ? <Pill n={dailySalesUploads.length} /> : null}
+        >
+
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDailySalesDragOver(true); }}
+            onDragLeave={() => setDailySalesDragOver(false)}
+            onDrop={e => {
+              e.preventDefault();
+              setDailySalesDragOver(false);
+              const file = e.dataTransfer.files[0];
+              if (file) handleDailySalesFile(file);
+            }}
+            onClick={() => dailySalesFileRef.current?.click()}
+            style={{
+              border: `2px dashed ${dailySalesDragOver ? '#059669' : '#d1d5db'}`,
+              borderRadius: 10,
+              padding: '2rem 1.5rem',
+              textAlign: 'center',
+              cursor: dailySalesUploading ? 'not-allowed' : 'pointer',
+              background: dailySalesDragOver ? 'rgba(5,150,105,0.04)' : '#fafafa',
+              transition: 'border-color 0.2s, background 0.2s',
+              marginBottom: '1.25rem',
+              opacity: dailySalesUploading ? 0.6 : 1,
+            }}
+          >
+            <input
+              ref={dailySalesFileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) handleDailySalesFile(file);
+              }}
+            />
+            {dailySalesUploading ? (
+              <>
+                <div style={{ marginBottom: '0.6rem' }}><Spinner size={32} color="#059669" /></div>
+                <div style={{ fontWeight: 600, color: '#059669', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Reading submissions...
+                </div>
+                <div style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                  Please do not close or navigate away.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>🧾</div>
+                <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4, fontSize: '0.9rem' }}>
+                  Drop the Daily Sales export here or click to browse
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+                  Expects columns: ID, Email, Name, Date, Store, and one or more sets of
+                  &quot;Product sold&quot; + &quot;QTY sold:&quot; + &quot;Unit price:&quot;
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: '0.72rem', marginTop: 6 }}>
+                  Re-uploading a period that is already loaded updates those submissions rather than doubling them.
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Upload history */}
+          {dailySalesUploads.length > 0 ? (
+            <>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+                Upload History
+              </h3>
+              <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>File Name</th>
+                      <th>Submissions</th>
+                      <th>Product Lines</th>
+                      <th>Period Covered</th>
+                      <th>Uploaded By</th>
+                      <th>Date</th>
+                      <th style={{ width: 80 }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dailySalesUploads.map(u => (
+                      <tr key={u.id}>
+                        <td>{u.fileName}</td>
+                        <td>{u.rowCount.toLocaleString()}</td>
+                        <td>{(u.lineCount ?? 0).toLocaleString()}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {u.dateFrom === u.dateTo ? u.dateFrom : `${u.dateFrom} to ${u.dateTo}`}
+                        </td>
+                        <td>{u.uploadedBy}</td>
+                        <td>{new Date(u.uploadedAt).toLocaleString('en-ZA')}</td>
+                        <td>
+                          <button
+                            className="btn btn-danger"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                            onClick={() => handleDailySalesDelete(u.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <div style={{ color: '#9ca3af', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
+              No daily sales uploads yet
             </div>
           )}
         </CollapsibleCard>
