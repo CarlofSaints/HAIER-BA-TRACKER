@@ -43,6 +43,16 @@ const EXTRACT_TOOL = {
           required: ['code', 'description', 'qty', 'soh', 'value'],
         },
       },
+      totals: {
+        type: 'object',
+        description: "The report's printed TOTALS row at the bottom of the table (the row excluded from `rows`). Omit this property entirely if the report has no totals row.",
+        properties: {
+          qty: { type: 'number', description: 'Printed total of the Qty column.' },
+          soh: { type: 'number', description: 'Printed total of the SOH column. May be negative.' },
+          value: { type: 'number', description: 'Printed total of the Value column. Strip thousands separators.' },
+        },
+        required: ['qty', 'soh', 'value'],
+      },
     },
     required: ['storeName', 'rows'],
   },
@@ -83,7 +93,7 @@ export async function POST(req: NextRequest) {
           role: 'user',
           content: [
             { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-            { type: 'text', text: 'Extract every product line item from this Diamond Corner sales report into the emit_sales_report tool. Read the header for the store name, department and date range. Each line has Code, Description, Qty, SOH and Value. Item codes can wrap onto multiple lines in the PDF — reassemble them into a single code with no internal spaces. Exclude the bottom totals row. Return numbers as plain numbers (no currency symbols or thousands separators).' },
+            { type: 'text', text: 'Extract every product line item from this Diamond Corner sales report into the emit_sales_report tool. Read the header for the store name, department and date range. Each line has Code, Description, Qty, SOH and Value. Item codes can wrap onto multiple lines in the PDF — reassemble them into a single code with no internal spaces. Exclude the bottom totals row from the rows array, but DO read its printed Qty, SOH and Value into totals - they are used to verify no line was missed. Return numbers as plain numbers (no currency symbols or thousands separators).' },
           ],
         }],
       }),
@@ -104,6 +114,7 @@ export async function POST(req: NextRequest) {
     const extracted = toolUse.input as {
       storeName?: string; dept?: string; dateFrom?: string; dateTo?: string;
       rows?: { code: string; description: string; qty: number; soh: number; value: number }[];
+      totals?: { qty: number; soh: number; value: number };
     };
 
     const rawRows = Array.isArray(extracted.rows) ? extracted.rows : [];
@@ -139,6 +150,15 @@ export async function POST(req: NextRequest) {
 
     const month = monthKeyFromIso(extracted.dateTo) || monthKeyFromIso(extracted.dateFrom);
 
+    // The report prints its own totals row. It stays OUT of `rows` (it is not a
+    // product), but we pass it back so the review screen can reconcile the
+    // extracted lines against it. That is the only signal that OCR DROPPED a
+    // whole line - something editing the visible rows can never reveal.
+    const t = extracted.totals;
+    const totals = t && [t.qty, t.soh, t.value].some(v => Number.isFinite(Number(v)))
+      ? { qty: Number(t.qty) || 0, soh: Number(t.soh) || 0, value: Number(t.value) || 0 }
+      : null;
+
     return NextResponse.json({
       ok: true,
       storeName: extracted.storeName || '',
@@ -147,6 +167,7 @@ export async function POST(req: NextRequest) {
       dateTo: extracted.dateTo || '',
       month,
       rows,
+      totals,
       fileName: file.name,
     }, { headers: noCacheHeaders() });
   } catch (err) {

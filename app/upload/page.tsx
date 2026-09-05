@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { sumDiamondRows, reconcileDiamond, DIAMOND_TOTAL_KEYS } from '@/lib/diamondRecon';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
@@ -66,6 +67,8 @@ interface DiamondExtract {
   dateTo: string;
   month: string | null;
   rows: DiamondRow[];
+  /** The report's own printed totals row, when OCR could read it. */
+  totals: { qty: number; soh: number; value: number } | null;
   fileName: string;
 }
 
@@ -191,6 +194,9 @@ export default function UploadPage() {
   const [diamondMatchedExisting, setDiamondMatchedExisting] = useState(false);
   const [diamondMonth, setDiamondMonth] = useState('');
   const [diamondUploads, setDiamondUploads] = useState<DiamondUploadMeta[]>([]);
+  // The totals printed on the PDF, editable — OCR can mis-read the totals row
+  // too, and a wrong oracle is worse than none.
+  const [diamondTotals, setDiamondTotals] = useState({ qty: '', soh: '', value: '' });
   const diamondFileRef = useRef<HTMLInputElement>(null);
 
   // New stores modal
@@ -736,6 +742,11 @@ export default function UploadPage() {
         setToast({ msg: data.error || 'OCR failed', type: 'error' });
       } else {
         setDiamondExtract(data);
+        setDiamondTotals({
+          qty: data.totals ? String(data.totals.qty) : '',
+          soh: data.totals ? String(data.totals.soh) : '',
+          value: data.totals ? String(data.totals.value) : '',
+        });
         setDiamondMonth(data.month || '');
         setDiamondStoreName(data.storeName || '');
         // Best-effort: if this store already exists in the master, prefill the
@@ -783,6 +794,21 @@ export default function UploadPage() {
     if (!/^\d{2}-\d{4}$/.test(diamondMonth)) {
       setToast({ msg: 'Enter a valid month as MM-YYYY (e.g. 06-2026)', type: 'error' });
       return;
+    }
+    // A line with neither code nor description is dropped by the commit route,
+    // so refuse it here instead of loading fewer rows than the screen shows.
+    const blankIdx = diamondExtract.rows.findIndex(r => !(r.code || '').trim() && !(r.description || '').trim());
+    if (blankIdx >= 0) {
+      setToast({ msg: `Line ${blankIdx + 1} has no Code or Description — fill it in or remove it before loading.`, type: 'error' });
+      return;
+    }
+    if (diamondRecon.checked && !diamondRecon.balanced) {
+      const fmt = (n: number) => n.toLocaleString('en-ZA', { maximumFractionDigits: 2 });
+      const detail = diamondRecon.cols
+        .filter(c => c.ok === false)
+        .map(c => `${c.key.toUpperCase()}: ${fmt(diamondSums[c.key])} on these lines vs ${fmt(c.printed as number)} on the PDF (${c.diff > 0 ? '+' : ''}${fmt(c.diff)})`)
+        .join('\n');
+      if (!confirm(`These lines do not add up to the totals printed on the PDF:\n\n${detail}\n\nA line may be missing or mis-read. Load anyway?`)) return;
     }
     const assignedBaName = diamondBas.find(b => b.email === diamondBaEmail)?.repName || '';
     setDiamondCommitting(true);
@@ -840,6 +866,7 @@ export default function UploadPage() {
   }
 
   function resetDiamondStoreFields() {
+    setDiamondTotals({ qty: '', soh: '', value: '' });
     setDiamondStoreName('');
     setDiamondSiteCode('');
     setDiamondArea('');
@@ -899,6 +926,20 @@ export default function UploadPage() {
     if (!diamondExtract) return;
     setDiamondExtract({ ...diamondExtract, rows: diamondExtract.rows.filter((_, i) => i !== idx) });
   }
+
+  // Add a line OCR missed entirely. Starts blank; commit refuses a line with
+  // neither a code nor a description rather than dropping it silently.
+  function handleDiamondRowAdd() {
+    if (!diamondExtract) return;
+    const blank: DiamondRow = { code: '', description: '', qty: 0, soh: 0, value: 0, mapped: false, articleDesc: '' };
+    setDiamondExtract({ ...diamondExtract, rows: [...diamondExtract.rows, blank] });
+  }
+
+  // Reconcile the edited lines against the totals row printed on the PDF. This
+  // is what catches a line OCR skipped altogether — correcting the lines you
+  // can see never reveals the one that isn't there.
+  const diamondSums = useMemo(() => sumDiamondRows(diamondExtract?.rows || []), [diamondExtract]);
+  const diamondRecon = useMemo(() => reconcileDiamond(diamondSums, diamondTotals), [diamondSums, diamondTotals]);
 
   async function handleDiamondDelete(id: string) {
     if (diamondDeletingId) return; // a delete is already in progress
@@ -1382,7 +1423,8 @@ export default function UploadPage() {
               {/* Preview table — all OCR'd fields are editable so the user can
                   correct any mis-reads to match the PDF before loading. */}
               <p style={{ fontSize: '0.72rem', color: '#6b7280', marginBottom: '0.4rem' }}>
-                Check the OCR results below and correct any values to match the PDF. Editing a Code or
+                Check the OCR results below and correct any values to match the PDF, remove any line that
+                should not be there, and use “+ Add line” for one OCR missed. Editing a Code or
                 Description updates which product the row maps to.
               </p>
               <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', maxHeight: 320 }}>
@@ -1466,6 +1508,73 @@ export default function UploadPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDiamondRowAdd}
+                style={{
+                  marginTop: '0.5rem', padding: '0.35rem 0.7rem', fontSize: '0.75rem', fontWeight: 600,
+                  border: '1px dashed #9ca3af', borderRadius: 6, background: 'white', color: '#374151', cursor: 'pointer',
+                }}
+              >
+                + Add line
+              </button>
+
+              {/* Reconcile against the totals row printed on the PDF. The lines you
+                  can see can be corrected; only this catches one that was skipped. */}
+              <div style={{
+                marginTop: '0.85rem', padding: '0.6rem 0.75rem', borderRadius: 8,
+                border: `1px solid ${diamondRecon.balanced ? '#86efac' : diamondRecon.checked ? '#fcd34d' : '#e5e7eb'}`,
+                background: diamondRecon.balanced ? '#f0fdf4' : diamondRecon.checked ? '#fffbeb' : '#f9fafb',
+              }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#374151', marginBottom: '0.15rem' }}>
+                  {diamondRecon.balanced
+                    ? '✓ These lines add up to the totals printed on the PDF'
+                    : diamondRecon.checked
+                      ? '⚠ These lines do not add up to the totals printed on the PDF'
+                      : 'Check against the totals printed on the PDF'}
+                </div>
+                <p style={{ fontSize: '0.68rem', color: '#6b7280', margin: '0 0 0.5rem' }}>
+                  {diamondExtract.totals
+                    ? 'Read off the bottom of the report — correct them if OCR got the totals row wrong.'
+                    : 'No totals row was read from this PDF. Type in the totals it prints to check nothing was missed.'}
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '5.5rem repeat(3, minmax(0, 1fr))', gap: '0.3rem 0.5rem', alignItems: 'center' }}>
+                  <div />
+                  {DIAMOND_TOTAL_KEYS.map(k => (
+                    <div key={k} style={{ fontSize: '0.66rem', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', textAlign: 'right' }}>{k}</div>
+                  ))}
+
+                  <div style={{ fontSize: '0.7rem', color: '#374151' }}>These lines</div>
+                  {DIAMOND_TOTAL_KEYS.map(k => (
+                    <div key={k} style={{ fontSize: '0.78rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {diamondSums[k].toLocaleString('en-ZA', { maximumFractionDigits: 2 })}
+                    </div>
+                  ))}
+
+                  <div style={{ fontSize: '0.7rem', color: '#374151' }}>On the PDF</div>
+                  {DIAMOND_TOTAL_KEYS.map(k => (
+                    <input
+                      key={k}
+                      className="input" type="number" step="any"
+                      value={diamondTotals[k]}
+                      onChange={e => setDiamondTotals({ ...diamondTotals, [k]: e.target.value })}
+                      placeholder="—"
+                      style={{ width: '100%', fontSize: '0.78rem', textAlign: 'right', padding: '0.15rem 0.35rem' }}
+                    />
+                  ))}
+
+                  <div style={{ fontSize: '0.7rem', color: '#374151' }}>Difference</div>
+                  {diamondRecon.cols.map(c => (
+                    <div key={c.key} style={{
+                      fontSize: '0.78rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600,
+                      color: c.ok === null ? '#9ca3af' : c.ok ? '#059669' : '#b45309',
+                    }}>
+                      {c.ok === null ? '—' : c.ok ? '✓ 0' : `${c.diff > 0 ? '+' : ''}${c.diff.toLocaleString('en-ZA', { maximumFractionDigits: 2 })}`}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
