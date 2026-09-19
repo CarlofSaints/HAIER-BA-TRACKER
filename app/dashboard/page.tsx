@@ -314,7 +314,8 @@ export default function DashboardPage() {
           totalUnits += units;
           const p = dispoData.prices[article];
           if (p) {
-            const price = p.promSP > 0 ? p.promSP : p.inclSP;
+            // Nett of VAT, same as calcSalesValue (stored prices are VAT-inclusive).
+            const price = (p.promSP > 0 ? p.promSP : p.inclSP) / 1.15;
             totalValue += units * price;
           }
         }
@@ -510,7 +511,7 @@ export default function DashboardPage() {
                     <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#059669' }}>{dispoKpis.volume.toLocaleString()}</div>
                   </div>
                   <div className="kpi-card">
-                    <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Sales Value</div>
+                    <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Sales Value (ex VAT)</div>
                     <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#059669' }}>R {dispoKpis.value.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                   </div>
                 </>

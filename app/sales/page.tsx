@@ -38,9 +38,11 @@ interface VisitRecord {
 type ViewMode = 'store' | 'product' | 'detail';
 type SortDir = 'asc' | 'desc';
 
+// Nett of VAT, same as calcSalesValue in lib/dispoData.ts (stored prices are VAT-inclusive).
+// Not imported from there because that module pulls the blob client into the browser.
 function calcValue(units: number, prices: { inclSP: number; promSP: number } | undefined): number {
   if (!prices) return 0;
-  const price = prices.promSP > 0 ? prices.promSP : prices.inclSP;
+  const price = (prices.promSP > 0 ? prices.promSP : prices.inclSP) / 1.15;
   return units * price;
 }
 
@@ -667,14 +669,14 @@ export function SalesStockView() {
     let wsData: unknown[][] = [];
 
     if (viewMode === 'store') {
-      wsData = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value', 'Val Target', 'Vol Target', 'Val Var%', 'Vol Var%', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      wsData = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value (ex VAT)', 'Val Target', 'Vol Target', 'Val Var%', 'Vol Var%', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of storeSummary) wsData.push([r.channel, r.store, r.visits, r.checkins, r.units, r.value, r.valTarget || '', r.volTarget || '', r.valVar, r.volVar, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
     } else if (viewMode === 'product') {
-      wsData = [['Article', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      wsData = [['Article', 'Units', 'Value (ex VAT)', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of productSummary) wsData.push([r.article, r.units, r.value, r.contribVol, r.contribVal, r.growthLM, r.ytd, r.soh, r.soo]);
     } else {
       const monthCols = monthFilter === 'all' ? months : [monthFilter];
-      wsData = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+      wsData = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Article', ...monthCols.map(formatMonthLabel), 'Total Units', 'Value (ex VAT)', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
       for (const r of detailRows) {
         wsData.push([r.channel, r.store, r.visits, r.checkins, r.article, ...monthCols.map(m => r.monthUnits[m] || 0), r.units, r.value, r.growthLM, r.ytd, r.soh, r.soo]);
       }
@@ -692,7 +694,7 @@ export function SalesStockView() {
     const wb = XLSX.utils.book_new();
 
     // Store Summary (unfiltered, non-DC)
-    const storeData: unknown[][] = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value', 'Val Target', 'Vol Target', 'Val Var%', 'Vol Var%', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+    const storeData: unknown[][] = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Units', 'Value (ex VAT)', 'Val Target', 'Vol Target', 'Val Var%', 'Vol Var%', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const allMonths = Object.keys(data.sales);
     const storeAgg = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number; curUnits: number; prevUnits: number }>();
     for (const month of allMonths) {
@@ -736,7 +738,7 @@ export function SalesStockView() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(storeData), 'Store Summary');
 
     // Product Summary
-    const prodData: unknown[][] = [['Article', 'Units', 'Value', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+    const prodData: unknown[][] = [['Article', 'Units', 'Value (ex VAT)', 'Contrib Vol%', 'Contrib Val%', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const prodAgg = new Map<string, { units: number; value: number; ytd: number; soh: number; soo: number; curUnits: number; prevUnits: number }>();
     for (const month of allMonths) {
       for (const [store, products] of Object.entries(data.sales[month])) {
@@ -776,7 +778,7 @@ export function SalesStockView() {
 
     // Detail
     const sortedMonths = months;
-    const detData: unknown[][] = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Article', ...sortedMonths.map(formatMonthLabel), 'Total Units', 'Value', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
+    const detData: unknown[][] = [['Sales Channel', 'Store', 'Visits', 'Check-ins', 'Article', ...sortedMonths.map(formatMonthLabel), 'Total Units', 'Value (ex VAT)', 'Growth on LM%', 'YTD Sales', 'SOH', 'SOO']];
     const detCombos = new Map<string, { units: number; value: number; monthUnits: Record<string, number> }>();
     for (const month of allMonths) {
       for (const [store, products] of Object.entries(data.sales[month])) {
@@ -987,7 +989,7 @@ export function SalesStockView() {
                 </div>
               </div>
               <div className="kpi-card">
-                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Total Sales Value</div>
+                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: 4 }}>Total Sales Value (ex VAT)</div>
                 <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#0054A6' }}>
                   {formatCurrency(storeSummary.reduce((s, r) => s + r.value, 0))}
                 </div>
@@ -1049,7 +1051,7 @@ export function SalesStockView() {
                         {renderSortHeader('Visits', 'visits', 'center')}
                         {renderSortHeader('Check-ins', 'checkins', 'center')}
                         {renderSortHeader('Units', 'units', 'center')}
-                        {renderSortHeader('Value', 'value', 'right')}
+                        {renderSortHeader('Value (ex VAT)', 'value', 'right')}
                         {renderSortHeader('Val Target', 'valTarget', 'right')}
                         {renderSortHeader('Vol Target', 'volTarget', 'center')}
                         {renderSortHeader('Val Var%', 'valVar', 'center')}
@@ -1097,7 +1099,7 @@ export function SalesStockView() {
                       <tr>
                         {renderSortHeader('Article', 'article')}
                         {renderSortHeader('Units', 'units', 'center')}
-                        {renderSortHeader('Value', 'value', 'right')}
+                        {renderSortHeader('Value (ex VAT)', 'value', 'right')}
                         {renderSortHeader('Contrib Vol%', 'contribVol', 'center')}
                         {renderSortHeader('Contrib Val%', 'contribVal', 'center')}
                         {renderSortHeader('Growth on LM%', 'growthLM', 'center')}
@@ -1137,7 +1139,7 @@ export function SalesStockView() {
                           <th key={m} style={{ textAlign: 'center' }}>{formatMonthLabel(m)}</th>
                         ))}
                         {renderSortHeader('Total Units', 'units', 'center')}
-                        {renderSortHeader('Value', 'value', 'right')}
+                        {renderSortHeader('Value (ex VAT)', 'value', 'right')}
                         {renderSortHeader('Growth on LM%', 'growthLM', 'center')}
                         {renderSortHeader('YTD Sales', 'ytd', 'center')}
                         {renderSortHeader('SOH', 'soh', 'center')}
