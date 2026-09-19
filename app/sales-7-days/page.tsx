@@ -104,6 +104,8 @@ export default function Sales7DaysPage() {
 
   const days = data?.days || [];
   const rows = data?.rows || [];
+  // Day columns are shown newest first; the data arrays stay oldest first.
+  const dayOrder = days.map((_, i) => days.length - 1 - i);
 
   // Main channels, each followed by its sub-channels.
   const channelOptions = useMemo(() => {
@@ -225,14 +227,14 @@ export default function Sales7DaysPage() {
     const head = [
       ...(showStore ? ['Sales Channel', 'Store', 'BA', 'BA Source'] : []),
       ...(showArticle ? ['Article'] : []),
-      ...days.map(dayLabel),
+      ...dayOrder.map(i => dayLabel(days[i])),
       'Total Units', 'Value (ex VAT)', 'Contrib Val%', 'SOH',
     ];
     const sourceLabel: Record<BaSource, string> = { assigned: 'Assigned', visits: 'From Perigee visits', none: 'No BA' };
     const body = viewRows.map(r => [
       ...(showStore ? [r.channel, r.store, r.ba, sourceLabel[r.baSource]] : []),
       ...(showArticle ? [r.article] : []),
-      ...r.daily,
+      ...dayOrder.map(i => r.daily[i]),
       r.units, Math.round(r.value * 100) / 100, Math.round(r.contribVal * 10) / 10, r.soh,
     ]);
     const wb = XLSX.utils.book_new();
@@ -381,7 +383,7 @@ export default function Sales7DaysPage() {
                       {showStore && sortHeader('Store', 'store')}
                       {showStore && sortHeader('BA', 'ba')}
                       {showArticle && sortHeader('SKU', 'article')}
-                      {days.map((d, i) => sortHeader(dayLabel(d), `d${i}`, 'center'))}
+                      {dayOrder.map(i => sortHeader(dayLabel(days[i]), `d${i}`, 'center'))}
                       {sortHeader('Total Units', 'units', 'center')}
                       {sortHeader('Value (ex VAT)', 'value', 'right')}
                       {sortHeader('Contrib Val%', 'contribVal', 'center')}
@@ -395,7 +397,7 @@ export default function Sales7DaysPage() {
                         {showStore && <td>{r.store}</td>}
                         {showStore && baCell(r)}
                         {showArticle && <td>{r.article}</td>}
-                        {r.daily.map((u, i) => (
+                        {dayOrder.map(i => r.daily[i]).map((u, i) => (
                           <td key={i} style={{ ...ctr, color: u === 0 ? '#d1d5db' : undefined }}>{u.toLocaleString()}</td>
                         ))}
                         <td style={{ ...ctr, fontWeight: 600 }}>{r.units.toLocaleString()}</td>
@@ -417,7 +419,7 @@ export default function Sales7DaysPage() {
                         {showStore && <td />}
                         {showStore && <td />}
                         {showArticle && <td>{showStore ? '' : 'Total'}</td>}
-                        {totals.daily.map((u, i) => <td key={i} style={ctr}>{u.toLocaleString()}</td>)}
+                        {dayOrder.map(i => totals.daily[i]).map((u, i) => <td key={i} style={ctr}>{u.toLocaleString()}</td>)}
                         <td style={ctr}>{totals.units.toLocaleString()}</td>
                         <td style={rgt}>{formatCurrency(totals.value)}</td>
                         <td style={ctr}>100.0%</td>
