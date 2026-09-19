@@ -4,6 +4,7 @@ import { runSamsSync } from '@/lib/samsSync';
 import { isSqlProxyConfigured } from '@/lib/sqlProxy';
 import { logActivity } from '@/lib/activityLog';
 import { loadSamsSchedule, shouldRunNow } from '@/lib/samsSchedule';
+import { runSales7EmailCheck, Sales7CheckResult } from '@/lib/sales7Email';
 
 // SAMS is the lowest-grain fact pull and can be large — give it the same headroom
 // as the manual sync route.
@@ -29,18 +30,35 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const sync = await runScheduledSync(req);
+
+  // Every hourly run, whether or not it synced: email the Sales: Last 7 Days
+  // report if a new day of data has landed (a manual sync counts too).
+  // Never lets an email problem fail the sync response.
+  let email: Sales7CheckResult | { action: 'failed'; error: string };
+  try {
+    email = await runSales7EmailCheck('Cron');
+  } catch (err) {
+    email = { action: 'failed', error: err instanceof Error ? err.message : String(err) };
+    console.error('Sales 7 days email check error:', err);
+  }
+
+  return NextResponse.json({ ...sync.body, email }, { status: sync.status });
+}
+
+async function runScheduledSync(req: NextRequest): Promise<{ status: number; body: Record<string, unknown> }> {
   // Gate on the user's schedule unless explicitly forced (manual "run now").
   const force = req.nextUrl.searchParams.get('force') === 'true';
   const schedule = await loadSamsSchedule();
   if (!force && !shouldRunNow(schedule, new Date())) {
-    return NextResponse.json({ ok: true, action: 'skipped', reason: 'Outside the scheduled window.' });
+    return { status: 200, body: { ok: true, action: 'skipped', reason: 'Outside the scheduled window.' } };
   }
 
   if (!isSqlProxyConfigured()) {
-    return NextResponse.json(
-      { ok: false, error: 'SQL proxy not configured — set SQL_PROXY_URL and SQL_PROXY_API_KEY.' },
-      { status: 400 },
-    );
+    return {
+      status: 400,
+      body: { ok: false, error: 'SQL proxy not configured — set SQL_PROXY_URL and SQL_PROXY_API_KEY.' },
+    };
   }
 
   try {
@@ -53,10 +71,10 @@ export async function GET(req: NextRequest) {
       `Cron SAMS sync — ${meta.counts?.salesRows ?? 0} sales cells across ${meta.counts?.months ?? 0} months, ${meta.counts?.stores ?? 0} stores.`,
       { salesRows: meta.counts?.salesRows ?? 0, stores: meta.counts?.stores ?? 0 },
     ).catch(() => {});
-    return NextResponse.json({ ok: true, meta });
+    return { status: 200, body: { ok: true, meta } };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error('Cron SAMS sync error:', err);
-    return NextResponse.json({ ok: false, error: 'SAMS sync failed', detail }, { status: 500 });
+    return { status: 500, body: { ok: false, error: 'SAMS sync failed', detail } };
   }
 }

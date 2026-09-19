@@ -16,6 +16,7 @@ export async function sendEmail(opts: {
   from?: string;
   cc?: string | string[];
   bcc?: string | string[];
+  attachments?: { filename: string; content: Buffer }[];
 }) {
   const resend = getResend();
   return resend.emails.send({
@@ -25,5 +26,6 @@ export async function sendEmail(opts: {
     html: opts.html,
     ...(opts.cc ? { cc: Array.isArray(opts.cc) ? opts.cc : [opts.cc] } : {}),
     ...(opts.bcc ? { bcc: Array.isArray(opts.bcc) ? opts.bcc : [opts.bcc] } : {}),
+    ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
   });
 }

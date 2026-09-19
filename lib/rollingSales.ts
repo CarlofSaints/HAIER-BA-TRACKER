@@ -1,4 +1,9 @@
 import { listSamsDailyMonths, loadSamsDailyMonths } from './samsDaily';
+import { loadDispoData, calcSalesValue } from './dispoData';
+import { loadStores } from './storeData';
+import { loadChannels } from './channelData';
+import { deriveBaByStore, resolveStoreBa } from './storeBa';
+import type { Rolling7Row } from './rolling7View';
 
 /*
   Rolling-7-day sales, read from the daily SAMS shards (lib/samsDaily.ts).
@@ -68,4 +73,68 @@ export async function loadRollingDaily(n = ROLLING_DAYS): Promise<RollingDaily> 
     }
   }
   return { days, byStore };
+}
+
+export interface Rolling7Report {
+  /** The window, oldest first. Empty when no daily data exists yet. */
+  days: string[];
+  rows: Rolling7Row[];
+  channels: { id: string; name: string; parentId: string }[];
+}
+
+/*
+  The rolling-7-day report at store × SKU grain, each row carrying its store's
+  BA (resolveStoreBa, the same rule as the leaderboard export). Used by the
+  Sales: Last 7 Days page and the daily email.
+*/
+export async function buildRolling7Report(): Promise<Rolling7Report> {
+  const [rolling, dispo, stores, channels] = await Promise.all([
+    loadRollingDaily(),
+    loadDispoData(),
+    loadStores(),
+    loadChannels(),
+  ]);
+  const derived = await deriveBaByStore(stores);
+
+  const channelById = new Map(channels.map(c => [c.id, c]));
+  const storeByName = new Map(stores.map(s => [s.storeName, s]));
+
+  // Same rule as /sales: the 'dc' channel and its subs are depots, not shops.
+  const dcIds = new Set(['dc', ...channels.filter(c => c.parentId === 'dc').map(c => c.id)]);
+
+  const rows: Rolling7Row[] = [];
+  for (const [storeName, articles] of Object.entries(rolling.byStore)) {
+    const sm = storeByName.get(storeName);
+    const channelId = sm?.channelId || '';
+    if (dcIds.has(channelId)) continue;
+    const ch = channelById.get(channelId);
+    const ba = sm ? resolveStoreBa(sm, derived) : null;
+
+    for (const [article, daily] of Object.entries(articles)) {
+      if (daily.every(u => u === 0)) continue;
+      const units = daily.reduce((s, u) => s + u, 0);
+      rows.push({
+        store: storeName,
+        siteCode: sm?.siteCode || '',
+        channelId,
+        channel: ch?.name || '',
+        mainChannelId: ch?.parentId || channelId,
+        ba: ba?.repName || '',
+        baSource: ba?.source || 'none',
+        article,
+        daily,
+        units,
+        value: calcSalesValue(units, dispo.prices[article]),
+        soh: dispo.stock[storeName]?.[article]?.soh || 0,
+      });
+    }
+  }
+
+  return {
+    days: rolling.days,
+    rows,
+    channels: channels
+      .filter(c => !dcIds.has(c.id))
+      .map(c => ({ id: c.id, name: c.name, parentId: c.parentId || '' })),
+  };
 }

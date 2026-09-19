@@ -5,23 +5,14 @@ import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 import SamsFreshnessCard from '@/components/SamsFreshnessCard';
+import {
+  aggregateRolling7, rolling7SheetAoa, dayLabel, newestFirst, ROLLING7_MODES,
+  type BaSource, type Rolling7Mode, type Rolling7Row, type Rolling7ViewRow,
+} from '@/lib/rolling7View';
 
-type BaSource = 'assigned' | 'visits' | 'none';
-
-interface Row {
-  store: string;
-  siteCode: string;
-  channelId: string;
-  channel: string;
-  mainChannelId: string;
-  ba: string;
-  baSource: BaSource;
-  article: string;
-  daily: number[];
-  units: number;
-  value: number;
-  soh: number;
-}
+type Row = Rolling7Row;
+type ViewMode = Rolling7Mode;
+type SortDir = 'asc' | 'desc';
 
 interface Channel {
   id: string;
@@ -33,32 +24,6 @@ interface Payload {
   days: string[];
   rows: Row[];
   channels: Channel[];
-}
-
-type ViewMode = 'store' | 'product' | 'detail';
-type SortDir = 'asc' | 'desc';
-
-interface ViewRow {
-  key: string;
-  channel: string;
-  store: string;
-  ba: string;
-  baSource: BaSource;
-  article: string;
-  daily: number[];
-  units: number;
-  value: number;
-  soh: number;
-  contribVal: number;
-}
-
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "2026-09-14" → "Mon 14 Sep" */
-function dayLabel(iso: string): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  return `${DAY_NAMES[d.getUTCDay()]} ${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
 }
 
 function formatCurrency(val: number): string {
@@ -105,7 +70,7 @@ export default function Sales7DaysPage() {
   const days = data?.days || [];
   const rows = data?.rows || [];
   // Day columns are shown newest first; the data arrays stay oldest first.
-  const dayOrder = days.map((_, i) => days.length - 1 - i);
+  const dayOrder = newestFirst(days.length);
 
   // Main channels, each followed by its sub-channels.
   const channelOptions = useMemo(() => {
@@ -146,37 +111,10 @@ export default function Sales7DaysPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, channelFilter]);
 
-  const viewRows = useMemo<ViewRow[]>(() => {
-    const groups = new Map<string, ViewRow>();
-    for (const r of filtered) {
-      const key = viewMode === 'store' ? r.store : viewMode === 'product' ? r.article : `${r.store}|||${r.article}`;
-      let g = groups.get(key);
-      if (!g) {
-        g = {
-          key,
-          channel: viewMode === 'product' ? '' : r.channel,
-          store: viewMode === 'product' ? '' : r.store,
-          ba: viewMode === 'product' ? '' : r.ba,
-          baSource: r.baSource,
-          article: viewMode === 'store' ? '' : r.article,
-          daily: new Array(days.length).fill(0),
-          units: 0,
-          value: 0,
-          soh: 0,
-          contribVal: 0,
-        };
-        groups.set(key, g);
-      }
-      r.daily.forEach((u, i) => (g!.daily[i] += u));
-      g.units += r.units;
-      g.value += r.value;
-      g.soh += r.soh;
-    }
-    const out = [...groups.values()];
-    const totalValue = out.reduce((s, r) => s + r.value, 0);
-    for (const r of out) r.contribVal = totalValue > 0 ? (r.value / totalValue) * 100 : 0;
+  const viewRows = useMemo<Rolling7ViewRow[]>(() => {
+    const out = aggregateRolling7(filtered, viewMode, days.length);
 
-    const val = (r: ViewRow): string | number =>
+    const val = (r: Rolling7ViewRow): string | number =>
       sortKey.startsWith('d') && /^d\d+$/.test(sortKey)
         ? r.daily[Number(sortKey.slice(1))]
         : (r as unknown as Record<string, string | number>)[sortKey];
@@ -224,22 +162,9 @@ export default function Sales7DaysPage() {
 
   async function exportView() {
     const XLSX = await import('xlsx');
-    const head = [
-      ...(showStore ? ['Sales Channel', 'Store', 'BA', 'BA Source'] : []),
-      ...(showArticle ? ['Article'] : []),
-      ...dayOrder.map(i => dayLabel(days[i])),
-      'Total Units', 'Value (ex VAT)', 'Contrib Val%', 'SOH',
-    ];
-    const sourceLabel: Record<BaSource, string> = { assigned: 'Assigned', visits: 'From Perigee visits', none: 'No BA' };
-    const body = viewRows.map(r => [
-      ...(showStore ? [r.channel, r.store, r.ba, sourceLabel[r.baSource]] : []),
-      ...(showArticle ? [r.article] : []),
-      ...dayOrder.map(i => r.daily[i]),
-      r.units, Math.round(r.value * 100) / 100, Math.round(r.contribVal * 10) / 10, r.soh,
-    ]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([head, ...body]),
-      viewMode === 'store' ? 'Store' : viewMode === 'product' ? 'SKU' : 'SKU by Store');
+    const label = ROLLING7_MODES.find(m => m.mode === viewMode)!.label;
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rolling7SheetAoa(viewRows, viewMode, days)), label);
     XLSX.writeFile(wb, `sales_7_days_${viewMode}_${days[days.length - 1] || 'none'}.xlsx`);
   }
 
@@ -255,7 +180,7 @@ export default function Sales7DaysPage() {
     );
   }
 
-  function baCell(r: ViewRow) {
+  function baCell(r: Rolling7ViewRow) {
     if (!r.ba) return <td style={{ color: '#9ca3af' }} title={BA_SOURCE_HINT.none}>No BA</td>;
     return (
       <td title={BA_SOURCE_HINT[r.baSource]}>
