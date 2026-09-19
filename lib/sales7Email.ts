@@ -2,7 +2,8 @@ import { readJson, writeJson } from './blob';
 import { sendEmail } from './email';
 import { logActivity } from './activityLog';
 import { buildRolling7Report, loadRollingDaily, Rolling7Report } from './rollingSales';
-import { aggregateRolling7, rolling7SheetAoa, dayLabel, ROLLING7_MODES } from './rolling7View';
+import { aggregateRolling7, rolling7Sheet, dayLabel, ROLLING7_MODES } from './rolling7View';
+import { buildRolling7Workbook } from './rolling7Excel';
 
 /*
   DAILY "SALES: LAST 7 DAYS" EMAIL.
@@ -67,15 +68,14 @@ const esc = (s: string) =>
 const rand = (n: number) =>
   'R ' + n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function workbook(report: Rolling7Report): Buffer {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const XLSX = require('xlsx');
-  const wb = XLSX.utils.book_new();
-  for (const { mode, label } of ROLLING7_MODES) {
-    const view = aggregateRolling7(report.rows, mode, report.days.length).sort((a, b) => b.value - a.value);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rolling7SheetAoa(view, mode, report.days)), label);
-  }
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+async function workbook(report: Rolling7Report): Promise<Buffer> {
+  const sheets = ROLLING7_MODES.map(({ mode }) =>
+    rolling7Sheet(
+      aggregateRolling7(report.rows, mode, report.days.length).sort((a, b) => b.value - a.value),
+      mode,
+      report.days,
+    ));
+  return Buffer.from(await buildRolling7Workbook(sheets));
 }
 
 function emailBody(report: Rolling7Report): { subject: string; html: string } {
@@ -128,7 +128,7 @@ async function deliver(report: Rolling7Report, to: string[], cc: string[]): Prom
     cc: cc.length ? cc : undefined,
     subject,
     html,
-    attachments: [{ filename: `Haier_Sales_Last_7_Days_to_${last}.xlsx`, content: workbook(report) }],
+    attachments: [{ filename: `Haier_Sales_Last_7_Days_to_${last}.xlsx`, content: await workbook(report) }],
   });
   // Resend reports failure in the result, it does not throw.
   const err = (res as { error?: { message?: string } | null }).error;

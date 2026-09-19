@@ -98,30 +98,48 @@ export function aggregateRolling7(rows: Rolling7Row[], mode: Rolling7Mode, nDays
   return out;
 }
 
-/** One Excel sheet (array of arrays) for a view, newest day first, with a total row. */
-export function rolling7SheetAoa(viewRows: Rolling7ViewRow[], mode: Rolling7Mode, days: string[]): unknown[][] {
+/** How a column is formatted in Excel. */
+export type Rolling7ColKind = 'text' | 'int' | 'rand' | 'pct';
+
+export interface Rolling7Sheet {
+  name: string;
+  columns: { header: string; kind: Rolling7ColKind }[];
+  rows: (string | number)[][];
+  total: (string | number)[];
+}
+
+/*
+  One sheet for a view: newest day first, then a total row. Percentages are
+  fractions (0.15 = 15%) so Excel's % format shows them correctly.
+*/
+export function rolling7Sheet(viewRows: Rolling7ViewRow[], mode: Rolling7Mode, days: string[]): Rolling7Sheet {
   const showStore = mode !== 'product';
   const showArticle = mode !== 'store';
   const order = newestFirst(days.length);
-  const head = [
-    ...(showStore ? ['Sales Channel', 'Store', 'BA', 'BA Source'] : []),
-    ...(showArticle ? ['SKU'] : []),
-    ...order.map(i => dayLabel(days[i])),
-    'Total Units', 'Value (ex VAT)', 'Contrib Val%', 'SOH',
+  const columns: Rolling7Sheet['columns'] = [
+    ...(showStore
+      ? (['Sales Channel', 'Store', 'BA', 'BA Source'] as const).map(header => ({ header, kind: 'text' as const }))
+      : []),
+    ...(showArticle ? [{ header: 'SKU', kind: 'text' as const }] : []),
+    ...order.map(i => ({ header: dayLabel(days[i]), kind: 'int' as const })),
+    { header: 'Total Units', kind: 'int' },
+    { header: 'Value (ex VAT)', kind: 'rand' },
+    { header: 'Contrib Val%', kind: 'pct' },
+    { header: 'SOH', kind: 'int' },
   ];
   const round2 = (n: number) => Math.round(n * 100) / 100;
-  const body = viewRows.map(r => [
+  const rows = viewRows.map(r => [
     ...(showStore ? [r.channel, r.store, r.ba, BA_SOURCE_LABEL[r.baSource]] : []),
     ...(showArticle ? [r.article] : []),
     ...order.map(i => r.daily[i]),
-    r.units, round2(r.value), Math.round(r.contribVal * 10) / 10, r.soh,
+    r.units, round2(r.value), r.contribVal / 100, r.soh,
   ]);
   const sum = (f: (r: Rolling7ViewRow) => number) => viewRows.reduce((s, r) => s + f(r), 0);
   const total = [
     'Total',
     ...new Array((showStore ? 4 : 0) + (showArticle ? 1 : 0) - 1).fill(''),
     ...order.map(i => sum(r => r.daily[i])),
-    sum(r => r.units), round2(sum(r => r.value)), viewRows.length ? 100 : 0, sum(r => r.soh),
+    sum(r => r.units), round2(sum(r => r.value)), viewRows.length ? 1 : 0, sum(r => r.soh),
   ];
-  return [head, ...body, total];
+  return { name: ROLLING7_MODES.find(m => m.mode === mode)!.label, columns, rows, total };
 }

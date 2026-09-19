@@ -6,9 +6,10 @@ import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 import SamsFreshnessCard from '@/components/SamsFreshnessCard';
 import {
-  aggregateRolling7, rolling7SheetAoa, dayLabel, newestFirst, ROLLING7_MODES,
+  aggregateRolling7, rolling7Sheet, dayLabel, newestFirst,
   type BaSource, type Rolling7Mode, type Rolling7Row, type Rolling7ViewRow,
 } from '@/lib/rolling7View';
+import { buildRolling7Workbook } from '@/lib/rolling7Excel';
 
 type Row = Rolling7Row;
 type ViewMode = Rolling7Mode;
@@ -161,11 +162,13 @@ export default function Sales7DaysPage() {
   const showArticle = viewMode !== 'store';
 
   async function exportView() {
-    const XLSX = await import('xlsx');
-    const wb = XLSX.utils.book_new();
-    const label = ROLLING7_MODES.find(m => m.mode === viewMode)!.label;
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rolling7SheetAoa(viewRows, viewMode, days)), label);
-    XLSX.writeFile(wb, `sales_7_days_${viewMode}_${days[days.length - 1] || 'none'}.xlsx`);
+    const buf = await buildRolling7Workbook([rolling7Sheet(viewRows, viewMode, days)]);
+    const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sales_7_days_${viewMode}_${days[days.length - 1] || 'none'}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const ctr: React.CSSProperties = { textAlign: 'center' };
