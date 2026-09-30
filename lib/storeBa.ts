@@ -33,6 +33,11 @@ export interface DerivedBa {
   repName: string;
   visitCount: number;
   lastVisit: string;
+  // When the store became theirs: the first check-in of the winning rep's
+  // CURRENT unbroken run of visits (after the last visit by anyone else), not
+  // their first visit ever. Rebuilt from visits on every read, so it is never
+  // stale and needs no stored history.
+  firstVisit: string;
 }
 
 export type DerivedBaMap = Record<string, DerivedBa>;
@@ -81,6 +86,7 @@ export async function deriveBaByStore(stores: StoreMaster[]): Promise<DerivedBaM
       repName: v.repName || v.email || '',
       visitCount: 0,
       lastVisit: '',
+      firstVisit: '',
     };
     for (const k of visitKeys(v)) {
       if (!derived[k]) derived[k] = { ...val };
@@ -88,15 +94,20 @@ export async function deriveBaByStore(stores: StoreMaster[]): Promise<DerivedBaM
   }
 
   // Pass 2 — count how many visits the winning rep actually made to each key, so
-  // callers can tell a home store from a single walk-in.
+  // callers can tell a home store from a single walk-in. Visits are newest
+  // first, so firstVisit walks back through the winner's run and stops at the
+  // first visit by another rep: that is when the store last changed hands.
+  const runEnded = new Set<string>();
   for (const v of allVisits) {
     if (!v.email && !v.repName) continue;
     for (const k of visitKeys(v)) {
       const d = derived[k];
-      if (!d || !sameRep(d, v)) continue;
+      if (!d) continue;
+      if (!sameRep(d, v)) { runEnded.add(k); continue; }
       d.visitCount++;
       const when = v.checkInDate || '';
       if (when > d.lastVisit) d.lastVisit = when;
+      if (when && !runEnded.has(k)) d.firstVisit = when;
     }
   }
   return derived;

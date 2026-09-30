@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
-import { loadStores, saveStores, StoreMaster } from '@/lib/storeData';
+import { loadStores, loadStoresStrict, saveStores, StoreMaster } from '@/lib/storeData';
 import { loadChannels } from '@/lib/channelData';
 import { deriveBaByStore, lookupDerivedBa } from '@/lib/storeBa';
 import { logFromUser } from '@/lib/activityLog';
+import { loadBaProfilesStrict, stampAssignments, logAssignmentChanges, dedicatedConflicts } from '@/lib/baProfiles';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -24,9 +25,10 @@ export async function GET(req: NextRequest) {
     const parent = ch?.parentId ? channelMap[ch.parentId] : undefined;
     let derivedBaEmail = '';
     let derivedBaName = '';
+    let derivedBaSince = '';
     if (derived) {
       const d = lookupDerivedBa(s, derived);
-      if (d) { derivedBaEmail = d.email; derivedBaName = d.repName; }
+      if (d) { derivedBaEmail = d.email; derivedBaName = d.repName; derivedBaSince = d.firstVisit; }
     }
     return {
       ...s,
@@ -35,6 +37,7 @@ export async function GET(req: NextRequest) {
       mainChannelName: parent?.name || ch?.name || '',
       derivedBaEmail,
       derivedBaName,
+      derivedBaSince,
     };
   });
 
@@ -50,8 +53,30 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'stores array required' }, { status: 400 });
   }
 
+  let previous: StoreMaster[];
+  let profiles;
+  try {
+    [previous, profiles] = await Promise.all([loadStoresStrict(), loadBaProfilesStrict()]);
+  } catch (err) {
+    console.error('Stores PUT: could not read current stores/profiles', err);
+    return NextResponse.json({ error: 'Could not read the current store list. Nothing was saved; try again.' }, { status: 503 });
+  }
+  const changes = stampAssignments(previous, stores, user);
+
+  // A Dedicated BA works one store. The Stores page already moves them when a
+  // second store is picked; this is the backstop for any other caller.
+  const conflicts = dedicatedConflicts(stores, changes, profiles);
+  if (conflicts.length) {
+    const c = conflicts[0];
+    return NextResponse.json({
+      error: `${c.email} is a Dedicated BA and would be on ${c.stores.length} stores (${c.stores.join(', ')}). Take them off the other store(s), or mark them Roaming on BA Management.`,
+      conflicts,
+    }, { status: 409 });
+  }
+
   await saveStores(stores);
-  return NextResponse.json({ ok: true, count: stores.length }, { headers: noCacheHeaders() });
+  await logAssignmentChanges(user, changes);
+  return NextResponse.json({ ok: true, count: stores.length, assignmentChanges: changes.length }, { headers: noCacheHeaders() });
 }
 
 export async function DELETE(req: NextRequest) {

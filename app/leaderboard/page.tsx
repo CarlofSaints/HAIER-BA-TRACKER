@@ -18,6 +18,7 @@ interface MonthScore {
   bonusSuggestions: number;
   salesVol?: number;
   salesVal?: number;
+  salesStores?: string[];
 }
 
 interface LeaderboardEntry {
@@ -167,6 +168,9 @@ export default function LeaderboardPage() {
         const ms = e.scores[selectedMonth];
         return {
           ...e,
+          // The stores the sales figures were summed over, so a BA credited
+          // with two stores shows both rather than looking like one.
+          storeName: ms?.salesStores?.length ? ms.salesStores.join(', ') : e.storeName,
           total: ms?.total ?? 0,
           grandTotal: ms?.grandTotal ?? 0,
           monthlySales: ms?.monthlySales ?? 0,
@@ -561,7 +565,7 @@ export default function LeaderboardPage() {
                             <div style={{ fontSize: '0.7rem', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.email}</div>
                           </td>
                           {/* Frozen: Store */}
-                          <td style={{ ...stickyCell(FROZEN_LEFT[2]), color: '#374151', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderRight: '2px solid #d1d5db', maxWidth: colWidths[2] }}>
+                          <td style={{ ...stickyCell(FROZEN_LEFT[2]), color: '#374151', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderRight: '2px solid #d1d5db', maxWidth: colWidths[2] }} title={entry.storeName || undefined}>
                             {entry.storeName || <span style={{ color: '#d1d5db' }}>—</span>}
                           </td>
                           {/* Scrollable columns */}

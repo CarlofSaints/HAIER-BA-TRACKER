@@ -1,4 +1,4 @@
-import { readJson, writeJson } from './blob';
+import { readJson, readJsonStrict, writeJson } from './blob';
 
 export interface StoreMaster {
   siteCode: string;
@@ -21,6 +21,14 @@ export interface StoreMaster {
   // = auto-derive the BA from visit data as before.
   assignedBaEmail?: string;
   assignedBaName?: string;
+  // When/who set the current assignedBaEmail. Stamped by the server on save,
+  // never taken from the client. Blank on assignments made before tracking
+  // started (30 Sep 2026): the date is genuinely unknown for those.
+  // Visit-derived (Perigee) allocations are not stored here; their "since" is
+  // the BA's first check-in at the store, derived live (lib/storeBa.ts).
+  assignedAt?: string;
+  assignedBy?: string;
+  assignedVia?: 'manual';
   // Where this store was first/also seen. A store can be ingested from a data
   // load (DISPO/Diamond/Hirsch upload) and/or from Perigee visits — both tags
   // accumulate so a single store DB holds stores even for channels we never get
@@ -34,6 +42,12 @@ const BLOB_KEY = 'admin/stores.json';
 
 export async function loadStores(): Promise<StoreMaster[]> {
   return readJson<StoreMaster[]>(BLOB_KEY, []);
+}
+
+/* For read-modify-write: throws on a failed read instead of returning [], so a
+   Blob hiccup can't make every assignment look new (re-dated to today). */
+export async function loadStoresStrict(): Promise<StoreMaster[]> {
+  return readJsonStrict<StoreMaster[]>(BLOB_KEY, []);
 }
 
 export async function saveStores(stores: StoreMaster[]): Promise<void> {
