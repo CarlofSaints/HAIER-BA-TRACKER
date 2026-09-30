@@ -128,7 +128,11 @@ export default function BAsPage() {
   }
 
   const allocsOf = (ba: BA) => allocations[ba.email.toLowerCase()] || [];
-  const needsAttention = (ba: BA) => deployments[ba.email.toLowerCase()] === 'dedicated' && allocsOf(ba).length > 1;
+  // Counts MANUAL assignments only: those are what the admin can clear on the
+  // Stores page. A Perigee allocation (last visitor to an unassigned store) is
+  // shown but can't be "fixed" there, so it must not keep a BA flagged.
+  const manualCount = (ba: BA) => allocsOf(ba).filter(a => a.via === 'manual').length;
+  const needsAttention = (ba: BA) => deployments[ba.email.toLowerCase()] === 'dedicated' && manualCount(ba) > 1;
   const attentionCount = bas.filter(needsAttention).length;
 
   const filteredBAs = bas
@@ -177,12 +181,12 @@ export default function BAsPage() {
             <option value="unset">Dedicated/Roaming not set</option>
             <option value="dedicated">Dedicated</option>
             <option value="roaming">Roaming</option>
-            <option value="attention">Dedicated but on more than one store ({attentionCount})</option>
+            <option value="attention">Dedicated but assigned to more than one store ({attentionCount})</option>
           </select>
         </div>
         {attentionCount > 0 && typeFilter !== 'attention' && (
           <div style={{ marginBottom: '1rem', padding: '0.6rem 0.9rem', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#991b1b', fontSize: '0.85rem' }}>
-            {attentionCount} Dedicated BA{attentionCount === 1 ? ' is' : 's are'} on more than one store. On the Stores page, set Assigned BA
+            {attentionCount} Dedicated BA{attentionCount === 1 ? ' is' : 's are'} assigned to more than one store. On the Stores page, set Assigned BA
             back to Auto on the stores they no longer work, then Save.
           </div>
         )}
@@ -230,7 +234,7 @@ export default function BAsPage() {
                     <td style={{ fontSize: '0.78rem' }}>
                       {needsAttention(ba) && (
                         <div style={{ color: '#991b1b', fontWeight: 600, marginBottom: 2 }}>
-                          Dedicated but on {allocsOf(ba).length} stores
+                          Dedicated but assigned to {manualCount(ba)} stores
                         </div>
                       )}
                       {allocsOf(ba).length === 0 && <span style={{ color: '#9ca3af' }}>None</span>}

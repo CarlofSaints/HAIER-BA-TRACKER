@@ -1,4 +1,4 @@
-import { readJson, writeJson } from './blob';
+import { readJson, readJsonStrict, writeJson } from './blob';
 import { logActivity } from './activityLog';
 import type { StoreMaster } from './storeData';
 import type { User } from './userData';
@@ -32,6 +32,12 @@ const BLOB_KEY = 'admin/ba-profiles.json';
 
 export async function loadBaProfiles(): Promise<BaProfiles> {
   return readJson<BaProfiles>(BLOB_KEY, {});
+}
+
+/* For read-modify-write: a failed read throws rather than returning {}, which
+   would save back one BA and wipe everyone else's setting. */
+export async function loadBaProfilesStrict(): Promise<BaProfiles> {
+  return readJsonStrict<BaProfiles>(BLOB_KEY, {});
 }
 
 export async function saveBaProfiles(profiles: BaProfiles): Promise<void> {
@@ -102,18 +108,28 @@ export function stampAssignments(prev: StoreMaster[], next: StoreMaster[], user:
   return changes;
 }
 
-/* Awaited, one entry per change: a fire-and-forget write is dropped when the
-   serverless function returns. */
+function describeChange(c: AssignmentChange): string {
+  const store = `${c.storeName}${c.siteCode ? ` (${c.siteCode})` : ''}`;
+  return c.toEmail
+    ? `Assigned ${c.toName} to ${store}${c.fromEmail ? ` (was ${c.fromName})` : ''}`
+    : `Removed ${c.fromName} from ${store} (back to auto from Perigee visits)`;
+}
+
+/* ONE log entry per save, however many stores changed: each log write re-reads
+   and rewrites the month's file, so one per change could outrun the function
+   timeout on a big save. Awaited, because a fire-and-forget write is dropped
+   when the serverless function returns. */
 export async function logAssignmentChanges(user: User, changes: AssignmentChange[]): Promise<void> {
-  for (const c of changes) {
-    const store = `${c.storeName}${c.siteCode ? ` (${c.siteCode})` : ''}`;
-    const summary = c.toEmail
-      ? `Assigned ${c.toName} to ${store}${c.fromEmail ? ` (was ${c.fromName})` : ''}`
-      : `Removed ${c.fromName} from ${store} (back to auto from Perigee visits)`;
-    await logActivity('assign_ba', user.email, `${user.name} ${user.surname}`, store, summary, {
-      siteCode: c.siteCode, from: c.fromEmail, to: c.toEmail, via: 'manual',
+  if (!changes.length) return;
+  const lines = changes.map(describeChange);
+  const summary = changes.length === 1
+    ? lines[0]
+    : `${changes.length} BA assignment changes: ${lines.slice(0, 5).join('; ')}${changes.length > 5 ? `; and ${changes.length - 5} more` : ''}`;
+  await logActivity('assign_ba', user.email, `${user.name} ${user.surname}`,
+    changes.length === 1 ? changes[0].storeName : `${changes.length} stores`, summary, {
+      via: 'manual',
+      changes: changes.map(c => ({ store: c.storeName, siteCode: c.siteCode, from: c.fromEmail, to: c.toEmail })),
     }).catch(() => {});
-  }
 }
 
 /* Dedicated BAs left on more than one store by this save, counting only BAs

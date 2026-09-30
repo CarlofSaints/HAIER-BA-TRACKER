@@ -1,4 +1,4 @@
-import { readJson, writeJson } from './blob';
+import { readJson, readJsonStrict, writeJson } from './blob';
 
 export interface StoreMaster {
   siteCode: string;
@@ -42,6 +42,12 @@ const BLOB_KEY = 'admin/stores.json';
 
 export async function loadStores(): Promise<StoreMaster[]> {
   return readJson<StoreMaster[]>(BLOB_KEY, []);
+}
+
+/* For read-modify-write: throws on a failed read instead of returning [], so a
+   Blob hiccup can't make every assignment look new (re-dated to today). */
+export async function loadStoresStrict(): Promise<StoreMaster[]> {
+  return readJsonStrict<StoreMaster[]>(BLOB_KEY, []);
 }
 
 export async function saveStores(stores: StoreMaster[]): Promise<void> {

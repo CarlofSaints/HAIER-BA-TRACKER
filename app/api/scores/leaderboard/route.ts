@@ -85,8 +85,8 @@ export async function GET(req: NextRequest) {
       const [y, m] = month.split('-');
       const dispoMonthKey = `${m}-${y}`;
 
-      // Same stores the Monthly Sales points were scored on (lib/baStores.ts),
-      // summed. A BA covering several stores (Roaming, or a Dedicated BA not yet
+      // The stores the BA is credited with (lib/baStores.ts, same rule as the
+      // Sales points, but stores with no target still count here), summed. A BA covering several stores (Roaming, or a Dedicated BA not yet
       // cleaned up) gets all of them, not whichever store happened to be last.
       const baStores = buildBaStoresForMonth(month, storeMaster, allVisits);
       const monthSalesNorm: Record<string, Record<string, number>> = {};

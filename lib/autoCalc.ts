@@ -72,8 +72,8 @@ export async function calcSalesScores(month: string): Promise<SalesResult[]> {
 
   const salesThreshold = kpiControls.salesThresholdPct ?? 80;
 
-  // Which stores each BA is credited with: shared with the leaderboard so the
-  // points and its Sales Vol / Val are always over the same stores.
+  // Which stores each BA is credited with: shared with the leaderboard's Sales
+  // Vol / Val (which, unlike the points, also shows stores with no target).
   const baStores = buildBaStoresForMonth(month, stores, allVisits);
 
   const rawMonthSales = dispoData.sales[dispoMonth] || {};

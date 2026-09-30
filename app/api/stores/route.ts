@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
-import { loadStores, saveStores, StoreMaster } from '@/lib/storeData';
+import { loadStores, loadStoresStrict, saveStores, StoreMaster } from '@/lib/storeData';
 import { loadChannels } from '@/lib/channelData';
 import { deriveBaByStore, lookupDerivedBa } from '@/lib/storeBa';
 import { logFromUser } from '@/lib/activityLog';
-import { loadBaProfiles, stampAssignments, logAssignmentChanges, dedicatedConflicts } from '@/lib/baProfiles';
+import { loadBaProfilesStrict, stampAssignments, logAssignmentChanges, dedicatedConflicts } from '@/lib/baProfiles';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -53,7 +53,14 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'stores array required' }, { status: 400 });
   }
 
-  const [previous, profiles] = await Promise.all([loadStores(), loadBaProfiles()]);
+  let previous: StoreMaster[];
+  let profiles;
+  try {
+    [previous, profiles] = await Promise.all([loadStoresStrict(), loadBaProfilesStrict()]);
+  } catch (err) {
+    console.error('Stores PUT: could not read current stores/profiles', err);
+    return NextResponse.json({ error: 'Could not read the current store list. Nothing was saved; try again.' }, { status: 503 });
+  }
   const changes = stampAssignments(previous, stores, user);
 
   // A Dedicated BA works one store. The Stores page already moves them when a

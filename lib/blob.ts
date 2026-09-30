@@ -1,4 +1,4 @@
-import { get, put, del } from '@vercel/blob';
+import { get, put, del, BlobNotFoundError } from '@vercel/blob';
 
 export async function readJson<T>(key: string, fallback: T, opts?: { useCache?: boolean }): Promise<T> {
   try {
@@ -14,6 +14,26 @@ export async function readJson<T>(key: string, fallback: T, opts?: { useCache?: 
   } catch {
     return fallback;
   }
+}
+
+/*
+  readJson for read-modify-write paths. readJson turns ANY failure into the
+  fallback, which is right for display but destructive before a write: a
+  transient Blob error reads as "empty" and the write then wipes the real file.
+  This returns the fallback only when the blob genuinely doesn't exist and
+  throws on everything else, so the caller aborts instead of overwriting.
+*/
+export async function readJsonStrict<T>(key: string, fallback: T): Promise<T> {
+  let result;
+  try {
+    result = await get(key, { access: 'private', useCache: false });
+  } catch (err) {
+    if (err instanceof BlobNotFoundError) return fallback;
+    throw err;
+  }
+  if (!result) return fallback;
+  if (result.statusCode !== 200) throw new Error(`Blob read ${key}: status ${result.statusCode}`);
+  return JSON.parse(await new Response(result.stream).text()) as T;
 }
 
 export async function writeJson<T>(key: string, data: T): Promise<void> {

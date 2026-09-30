@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadDispoData, saveDispoData } from '@/lib/dispoData';
-import { loadStores, saveStores, addStoreSource } from '@/lib/storeData';
+import { loadStoresStrict, saveStores, addStoreSource } from '@/lib/storeData';
 import { loadProducts, saveProducts, ProductMaster } from '@/lib/productData';
 import {
   loadDiamondUploads, saveDiamondUploads, saveDiamondRaw, deleteDiamondRaw,
@@ -9,7 +9,7 @@ import {
 } from '@/lib/diamondData';
 import { runAutoCalcForMonth } from '@/lib/autoCalc';
 import { logFromUser } from '@/lib/activityLog';
-import { stampAssignments, logAssignmentChanges } from '@/lib/baProfiles';
+import { stampAssignments, logAssignmentChanges, dedicatedConflicts, loadBaProfiles } from '@/lib/baProfiles';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -61,7 +61,9 @@ export async function POST(req: NextRequest) {
     const assignedBaEmail = (body.assignedBaEmail || '').trim();
     const assignedBaName = (body.assignedBaName || '').trim();
 
-    const stores = await loadStores();
+    // Strict: this route writes the WHOLE store list back, so a failed read must
+    // abort, not save a list holding only this one store.
+    const stores = await loadStoresStrict();
     const storesBefore = structuredClone(stores);
     let target = stores.find(s => s.storeName.toLowerCase() === storeName.toLowerCase());
     let storesChanged = false;
@@ -83,6 +85,14 @@ export async function POST(req: NextRequest) {
     if (storesChanged) {
       // Date/who-stamp a BA picked in the upload panel, same as the Stores page.
       const assignmentChanges = stampAssignments(storesBefore, stores, user);
+      // Same rule as the Stores page: a Dedicated BA works one store.
+      const conflicts = dedicatedConflicts(stores, assignmentChanges, await loadBaProfiles());
+      if (conflicts.length) {
+        const c = conflicts[0];
+        return NextResponse.json({
+          error: `${c.email} is a Dedicated BA and is already assigned to ${c.stores.filter(n => n !== storeName).join(', ')}. Pick another BA, take them off that store on the Stores page first, or mark them Roaming on BA Management. Nothing was loaded.`,
+        }, { status: 409 });
+      }
       await saveStores(stores);
       await logAssignmentChanges(user, assignmentChanges);
     }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadStores } from '@/lib/storeData';
 import { deriveBaByStore, lookupDerivedBa } from '@/lib/storeBa';
-import { loadBaProfiles, saveBaProfiles, BaDeployment } from '@/lib/baProfiles';
+import { loadBaProfiles, loadBaProfilesStrict, saveBaProfiles, BaDeployment, BaProfiles } from '@/lib/baProfiles';
 import { logActivity } from '@/lib/activityLog';
 
 export const dynamic = 'force-dynamic';
@@ -85,7 +85,13 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'deployment must be dedicated, roaming or null' }, { status: 400 });
   }
 
-  const profiles = await loadBaProfiles();
+  let profiles: BaProfiles;
+  try {
+    profiles = await loadBaProfilesStrict();
+  } catch (err) {
+    console.error('BA profiles PUT: read failed', err);
+    return NextResponse.json({ error: 'Could not read BA settings. Nothing was saved; try again.' }, { status: 503 });
+  }
   const previous = profiles[email]?.deployment;
   if (deployment) {
     profiles[email] = { ...profiles[email], deployment, updatedAt: new Date().toISOString(), updatedBy: user.email };

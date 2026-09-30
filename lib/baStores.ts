@@ -3,8 +3,10 @@ import type { Visit } from './visitData';
 
 /*
   Which stores a BA is credited with for a month: the ONE rule behind both the
-  Monthly Sales points (lib/autoCalc.ts) and the leaderboard's Sales Vol / Val,
-  so the points and the figures beside them are always over the same stores.
+  Monthly Sales points (lib/autoCalc.ts) and the leaderboard's Sales Vol / Val.
+  One difference, on purpose: the points skip a store with no target for the
+  month (nothing to score against), while the leaderboard still shows its
+  sales, so a missing target never hides sales that really happened.
 
     1. Every store the BA checked into that month (Perigee visit storeCode,
        matched on the store's siteCode or its Perigee Site Code override)...
