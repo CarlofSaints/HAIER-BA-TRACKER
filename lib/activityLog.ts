@@ -4,7 +4,7 @@ import type { User } from './userData';
 export type ActivityAction =
   | 'upload_visits' | 'upload_dispo' | 'upload_training' | 'upload_targets' | 'upload_display' | 'upload_red_flags' | 'upload_diamond' | 'upload_daily_sales'
   | 'delete_visits' | 'delete_dispo' | 'delete_training' | 'delete_targets' | 'delete_display' | 'delete_red_flags' | 'delete_diamond' | 'delete_daily_sales'
-  | 'delete_store'
+  | 'delete_store' | 'assign_ba' | 'set_ba_deployment'
   | 'cron_import' | 'sync_sams' | 'email_sales_7_days'
   | 'user_create' | 'user_edit' | 'user_delete' | 'user_purge' | 'rep_exclude'
   | 'scores_save'

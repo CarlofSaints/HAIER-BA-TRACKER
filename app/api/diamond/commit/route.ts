@@ -9,6 +9,7 @@ import {
 } from '@/lib/diamondData';
 import { runAutoCalcForMonth } from '@/lib/autoCalc';
 import { logFromUser } from '@/lib/activityLog';
+import { stampAssignments, logAssignmentChanges } from '@/lib/baProfiles';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
     const assignedBaName = (body.assignedBaName || '').trim();
 
     const stores = await loadStores();
+    const storesBefore = structuredClone(stores);
     let target = stores.find(s => s.storeName.toLowerCase() === storeName.toLowerCase());
     let storesChanged = false;
     if (!target) {
@@ -78,7 +80,12 @@ export async function POST(req: NextRequest) {
       if (assignedBaEmail !== (target.assignedBaEmail || '')) { target.assignedBaEmail = assignedBaEmail; storesChanged = true; }
       if (assignedBaName !== (target.assignedBaName || '')) { target.assignedBaName = assignedBaName; storesChanged = true; }
     }
-    if (storesChanged) await saveStores(stores);
+    if (storesChanged) {
+      // Date/who-stamp a BA picked in the upload panel, same as the Stores page.
+      const assignmentChanges = stampAssignments(storesBefore, stores, user);
+      await saveStores(stores);
+      await logAssignmentChanges(user, assignmentChanges);
+    }
 
     // Month-to-date staleness guard: these PDFs are month-to-date and loading
     // OVERWRITES the store's slice for the month. Block a file whose end-date is

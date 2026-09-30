@@ -33,6 +33,10 @@ export interface DerivedBa {
   repName: string;
   visitCount: number;
   lastVisit: string;
+  // The winning rep's FIRST check-in at the store: when Perigee visits began
+  // allocating the store to them. Rebuilt from visits on every read, so it is
+  // never stale and needs no stored history.
+  firstVisit: string;
 }
 
 export type DerivedBaMap = Record<string, DerivedBa>;
@@ -81,6 +85,7 @@ export async function deriveBaByStore(stores: StoreMaster[]): Promise<DerivedBaM
       repName: v.repName || v.email || '',
       visitCount: 0,
       lastVisit: '',
+      firstVisit: '',
     };
     for (const k of visitKeys(v)) {
       if (!derived[k]) derived[k] = { ...val };
@@ -97,6 +102,7 @@ export async function deriveBaByStore(stores: StoreMaster[]): Promise<DerivedBaM
       d.visitCount++;
       const when = v.checkInDate || '';
       if (when > d.lastVisit) d.lastVisit = when;
+      if (when && (!d.firstVisit || when < d.firstVisit)) d.firstVisit = when;
     }
   }
   return derived;

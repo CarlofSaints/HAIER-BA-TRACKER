@@ -11,6 +11,7 @@ import { loadScoringConfig } from './scoringConfig';
 import { loadTargetData, getStoreTarget } from './targetData';
 import { loadDispoData, calcSalesValue } from './dispoData';
 import { loadStores } from './storeData';
+import { buildBaStoresForMonth } from './baStores';
 import { loadKPIControls } from './kpiControls';
 import { countDisplayChecksForMonth } from './displayData';
 import { countTrainingsForMonth } from './trainingData';
@@ -71,62 +72,9 @@ export async function calcSalesScores(month: string): Promise<SalesResult[]> {
 
   const salesThreshold = kpiControls.salesThresholdPct ?? 80;
 
-  // Resolve a Perigee visit storeCode → its matching store. A store matches on
-  // its own siteCode OR on an explicit Perigee Site Code override (for when
-  // Perigee identifies the store with a different code). Both keys resolve to
-  // the store's OWN siteCode (used for the target lookup) + DISPO store name.
-  const perigeeToStore = new Map<string, { storeName: string; ownCode: string }>();
-  for (const s of stores) {
-    if (!s.siteCode) continue;
-    const ownCode = s.siteCode.trim().toUpperCase();
-    const resolved = { storeName: s.storeName, ownCode };
-    perigeeToStore.set(ownCode, resolved);
-    const pCode = s.perigeeSiteCode?.trim().toUpperCase();
-    if (pCode) perigeeToStore.set(pCode, resolved);
-  }
-
-  // Explicit store→BA assignments (siteCode upper → assigned BA). When a store is
-  // assigned, its sales credit the assigned BA and are NOT credited to whoever
-  // happened to visit it (e.g. a departed BA still on record in Perigee).
-  const assignedByCode = new Map<string, { email: string; repName: string; storeName: string }>();
-  for (const s of stores) {
-    if (s.assignedBaEmail && s.siteCode) {
-      assignedByCode.set(s.siteCode.trim().toUpperCase(), {
-        email: s.assignedBaEmail.toLowerCase(),
-        repName: s.assignedBaName || s.assignedBaEmail,
-        storeName: s.storeName,
-      });
-    }
-  }
-
-  const baStores = new Map<string, { repName: string; stores: Map<string, string> }>();
-  {
-    for (const v of allVisits) {
-      if (!v.checkInDate || !v.email || !v.checkInDate.startsWith(month)) continue;
-      const email = v.email.toLowerCase();
-      if (!baStores.has(email)) baStores.set(email, { repName: v.repName || v.email, stores: new Map() });
-      const entry = baStores.get(email)!;
-      if (v.storeCode) {
-        const visitCode = v.storeCode.trim().toUpperCase();
-        const matched = perigeeToStore.get(visitCode);
-        // Skip stores that are explicitly assigned to another BA — they're
-        // attributed below to the assigned BA, not the visiting one. Key by the
-        // store's OWN siteCode so the target lookup below resolves correctly.
-        if (matched && !assignedByCode.has(matched.ownCode)) {
-          entry.stores.set(matched.ownCode, matched.storeName);
-        }
-      }
-      if (v.repName) entry.repName = v.repName;
-    }
-  }
-
-  // Attribute each assigned store's sales to its assigned BA.
-  for (const [code, a] of assignedByCode) {
-    if (!baStores.has(a.email)) baStores.set(a.email, { repName: a.repName, stores: new Map() });
-    const entry = baStores.get(a.email)!;
-    entry.repName = a.repName;
-    entry.stores.set(code, a.storeName);
-  }
+  // Which stores each BA is credited with: shared with the leaderboard so the
+  // points and its Sales Vol / Val are always over the same stores.
+  const baStores = buildBaStoresForMonth(month, stores, allVisits);
 
   const rawMonthSales = dispoData.sales[dispoMonth] || {};
   const monthSalesNorm: Record<string, Record<string, number>> = {};

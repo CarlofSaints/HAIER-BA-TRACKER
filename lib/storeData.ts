@@ -21,6 +21,14 @@ export interface StoreMaster {
   // = auto-derive the BA from visit data as before.
   assignedBaEmail?: string;
   assignedBaName?: string;
+  // When/who set the current assignedBaEmail. Stamped by the server on save,
+  // never taken from the client. Blank on assignments made before tracking
+  // started (30 Sep 2026): the date is genuinely unknown for those.
+  // Visit-derived (Perigee) allocations are not stored here; their "since" is
+  // the BA's first check-in at the store, derived live (lib/storeBa.ts).
+  assignedAt?: string;
+  assignedBy?: string;
+  assignedVia?: 'manual';
   // Where this store was first/also seen. A store can be ingested from a data
   // load (DISPO/Diamond/Hirsch upload) and/or from Perigee visits — both tags
   // accumulate so a single store DB holds stores even for channels we never get

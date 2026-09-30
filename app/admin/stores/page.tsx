@@ -15,9 +15,19 @@ interface StoreMaster {
   perigeeSiteCode?: string;
   assignedBaEmail?: string;
   assignedBaName?: string;
+  assignedAt?: string;
+  assignedBy?: string;
   derivedBaEmail?: string;
   derivedBaName?: string;
+  derivedBaSince?: string;
   addedFrom?: ('data' | 'perigee')[];
+  // Display-only fields the GET adds; stripped before saving.
+  mainChannelId?: string;
+  mainChannelName?: string;
+}
+
+function fmtDate(iso?: string): string {
+  return iso ? new Date(iso).toLocaleDateString('en-ZA') : '';
 }
 
 /** "Data", "Perigee", or "Data/Perigee". Legacy stores (no field) show "Data". */
@@ -45,6 +55,9 @@ export default function StoresPage() {
   const [stores, setStores] = useState<StoreMaster[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [bas, setBas] = useState<BAOption[]>([]);
+  const [dedicated, setDedicated] = useState<Set<string>>(new Set());
+  // Stores whose BA was changed since the last save (their stamp is stale).
+  const [baEdited, setBaEdited] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
@@ -58,14 +71,20 @@ export default function StoresPage() {
   const loadData = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [storesRes, channelsRes, basRes] = await Promise.all([
+      const [storesRes, channelsRes, basRes, profRes] = await Promise.all([
         authFetch('/api/stores?derivedBa=1'),
         authFetch('/api/channels'),
         authFetch('/api/bas'),
+        authFetch('/api/bas/profiles?allocations=0'),
       ]);
       if (storesRes.ok) setStores(await storesRes.json());
       if (channelsRes.ok) setChannels(await channelsRes.json());
       if (basRes.ok) setBas(await basRes.json());
+      if (profRes.ok) {
+        const d = await profRes.json() as { profiles: Record<string, { deployment?: string }> };
+        setDedicated(new Set(Object.entries(d.profiles || {}).filter(([, p]) => p.deployment === 'dedicated').map(([e]) => e)));
+      }
+      setBaEdited(new Set());
     } catch { /* ignore */ }
     finally { setLoadingData(false); }
   }, []);
@@ -176,11 +195,39 @@ export default function StoresPage() {
     if (realIdx === -1) return;
     const ba = bas.find(b => b.email === email);
     const updated = [...stores];
+
+    // A Dedicated BA works one store: picking a new store for them moves them
+    // off the old one(s), after a confirm. Roaming / not set: left alone.
+    const key = (email || '').toLowerCase().trim();
+    if (key && dedicated.has(key)) {
+      const others = updated
+        .map((s, i) => ({ s, i }))
+        .filter(({ s, i }) => i !== realIdx && (s.assignedBaEmail || '').toLowerCase().trim() === key);
+      if (others.length) {
+        const names = others.map(o => o.s.storeName).join(', ');
+        const ok = window.confirm(
+          `${ba?.repName || email} is a Dedicated BA and is assigned to ${names}.\n\n`
+          + `Move them to ${store.storeName}? They will be taken off ${names} (set back to Auto from visits).\n\n`
+          + `If they really cover more than one store, cancel and mark them Roaming on BA Management.`
+        );
+        if (!ok) return;
+        for (const o of others) {
+          updated[o.i] = { ...updated[o.i], assignedBaEmail: '', assignedBaName: '' };
+        }
+        setBaEdited(prev => {
+          const n = new Set(prev);
+          for (const o of others) n.add(`${o.s.siteCode}|${o.s.storeName}|${o.s.channelId}`);
+          return n;
+        });
+      }
+    }
+
     updated[realIdx] = {
       ...updated[realIdx],
       assignedBaEmail: email || '',
       assignedBaName: ba?.repName || '',
     };
+    setBaEdited(prev => new Set(prev).add(`${store.siteCode}|${store.storeName}|${store.channelId}`));
     setStores(updated);
     setDirty(true);
   }
@@ -227,11 +274,19 @@ export default function StoresPage() {
   async function handleSave() {
     setSaving(true);
     try {
-      const payload = stores.map(({ siteCode, storeName, channelId, area, perigeeSiteCode, assignedBaEmail, assignedBaName, addedFrom }) => ({
-        siteCode: (siteCode || '').trim(), storeName, channelId, area: area || '',
-        perigeeSiteCode: (perigeeSiteCode || '').trim(),
-        assignedBaEmail: assignedBaEmail || '', assignedBaName: assignedBaName || '',
-        addedFrom: addedFrom || [],
+      // Every stored field goes back (province, town/city, status from the Site
+      // Control File used to be dropped here). Only the fields the GET adds for
+      // display are stripped; the assignment date is re-stamped by the server.
+      const payload = stores.map(({
+        channelName: _cn, mainChannelId: _mi, mainChannelName: _mn,
+        derivedBaEmail: _de, derivedBaName: _dn, derivedBaSince: _ds,
+        ...rest
+      }) => ({
+        ...rest,
+        siteCode: (rest.siteCode || '').trim(), area: rest.area || '',
+        perigeeSiteCode: (rest.perigeeSiteCode || '').trim(),
+        assignedBaEmail: rest.assignedBaEmail || '', assignedBaName: rest.assignedBaName || '',
+        addedFrom: rest.addedFrom || [],
       }));
       const res = await authFetch('/api/stores', {
         method: 'PUT',
@@ -241,6 +296,8 @@ export default function StoresPage() {
       if (res.ok) {
         setDirty(false);
         setToast({ msg: 'Stores saved', type: 'success' });
+        // Reload so the new assignment dates show.
+        await loadData();
       } else {
         const data = await res.json().catch(() => ({}));
         setToast({ msg: data.error || 'Save failed', type: 'error' });
@@ -444,9 +501,20 @@ export default function StoresPage() {
                             <option value={store.assignedBaEmail}>{store.assignedBaName || store.assignedBaEmail}</option>
                           )}
                           {bas.map(b => (
-                            <option key={b.email} value={b.email}>{b.repName}</option>
+                            <option key={b.email} value={b.email}>
+                              {b.repName}{dedicated.has(b.email.toLowerCase()) ? ' (Dedicated)' : ''}
+                            </option>
                           ))}
                         </select>
+                        <div style={{ fontSize: '0.68rem', color: '#6b7280', marginTop: 2 }}>
+                          {baEdited.has(`${store.siteCode}|${store.storeName}|${store.channelId}`)
+                            ? 'Changed, not saved yet'
+                            : store.assignedBaEmail
+                              ? `Manual, ${store.assignedAt ? fmtDate(store.assignedAt) : 'date not recorded'}`
+                              : store.derivedBaName
+                                ? `Perigee, first visit ${fmtDate(store.derivedBaSince) || '?'}`
+                                : ''}
+                        </div>
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button
