@@ -5,6 +5,7 @@ import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 import SamsFreshnessCard from '@/components/SamsFreshnessCard';
+import FilterSelect from '@/components/FilterSelect';
 
 interface DispoSalesData {
   sales: Record<string, Record<string, Record<string, number>>>;
@@ -892,41 +893,42 @@ export function SalesStockView() {
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Month</label>
-            <select className="select" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} style={{ minWidth: 160 }}>
-              <option value="all">All Months</option>
-              {months.map(m => <option key={m} value={m}>{formatMonthLabel(m)}</option>)}
-            </select>
+            <FilterSelect
+              value={monthFilter}
+              onChange={setMonthFilter}
+              options={[{ value: 'all', label: 'All Months' }, ...months.map(m => ({ value: m, label: formatMonthLabel(m) }))]}
+              style={{ minWidth: 160 }}
+            />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Sales Channel</label>
-            <select className="select" value={channelFilter} onChange={e => setChannelFilter(e.target.value)} style={{ minWidth: 140 }}>
-              <option value="all">All Sales Channels</option>
-              {channels.filter(c => c.id !== 'dc').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <FilterSelect
+              value={channelFilter}
+              onChange={setChannelFilter}
+              options={[{ value: 'all', label: 'All Sales Channels' }, ...channels.filter(c => c.id !== 'dc').map(c => ({ value: c.id, label: c.name }))]}
+              style={{ minWidth: 140 }}
+            />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Store</label>
-            <select
-              className="select"
+            <FilterSelect
               value={storeFilter.length === 0 ? '' : storeFilter[0]}
-              onChange={e => setStoreFilter(e.target.value ? [e.target.value] : [])}
+              onChange={v => setStoreFilter(v ? [v] : [])}
+              options={[{ value: '', label: 'All Stores' }, ...availableStores.map(s => ({ value: s, label: s }))]}
               style={{ minWidth: 160 }}
-            >
-              <option value="">All Stores</option>
-              {availableStores.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Product</label>
-            <select
-              className="select"
-              value={productFilter.length === 0 ? '' : productFilter[0]}
-              onChange={e => setProductFilter(e.target.value ? [e.target.value] : [])}
-              style={{ minWidth: 160 }}
-            >
-              <option value="">All Products</option>
-              {availableProducts.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Product (SKU)</label>
+            <FilterSelect
+              multiple
+              value={productFilter}
+              onChange={setProductFilter}
+              allLabel="All Products"
+              searchPlaceholder="Search SKUs..."
+              options={availableProducts.map(p => ({ value: p, label: p }))}
+              style={{ minWidth: 160, maxWidth: 260 }}
+            />
           </div>
           {hasFilters && (
             <button className="btn btn-outline" onClick={clearFilters} style={{ fontSize: '0.8rem' }}>

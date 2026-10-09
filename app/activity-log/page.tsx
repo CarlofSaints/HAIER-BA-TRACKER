@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
+import FilterSelect from '@/components/FilterSelect';
 
 interface LogEntry {
   id: string;
@@ -110,27 +111,24 @@ export default function ActivityLogPage() {
 
         {/* Filters */}
         <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-          <select
+          <FilterSelect
             value={actionFilter}
-            onChange={e => { setActionFilter(e.target.value); setPage(1); }}
-            style={{ padding: '0.4rem 0.6rem', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8rem', background: 'white' }}
-          >
-            <option value="">All Actions</option>
-            {Object.entries(ACTION_GROUPS).map(([group, actions]) => (
-              <optgroup key={group} label={group}>
-                {actions.map(a => <option key={a} value={a}>{ACTION_LABELS[a] || a}</option>)}
-              </optgroup>
-            ))}
-          </select>
+            onChange={v => { setActionFilter(v); setPage(1); }}
+            options={[
+              { value: '', label: 'All Actions' },
+              ...Object.entries(ACTION_GROUPS).flatMap(([group, actions]) =>
+                actions.map(a => ({ value: a, label: ACTION_LABELS[a] || a, group }))),
+            ]}
+            searchPlaceholder="Search actions..."
+            style={{ padding: '0.4rem 0.6rem', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8rem', minWidth: 180 }}
+          />
 
-          <select
+          <FilterSelect
             value={monthFilter}
-            onChange={e => { setMonthFilter(e.target.value); setPage(1); }}
-            style={{ padding: '0.4rem 0.6rem', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8rem', background: 'white' }}
-          >
-            <option value="">Last 3 Months</option>
-            {monthOptions().map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
+            onChange={v => { setMonthFilter(v); setPage(1); }}
+            options={[{ value: '', label: 'Last 3 Months' }, ...monthOptions().map(m => ({ value: m, label: m }))]}
+            style={{ padding: '0.4rem 0.6rem', borderRadius: 6, border: '1px solid #d1d5db', fontSize: '0.8rem', minWidth: 140 }}
+          />
         </div>
 
         {/* Table */}
