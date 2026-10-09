@@ -20,7 +20,10 @@ interface FormDataResponse {
 
 type FormKey = 'display' | 'red-flags' | 'training';
 
-/** Forms whose uploads keep Perigee photos. Roles match each form's form-data API. */
+/**
+ * Forms whose uploads keep Perigee photos. Roles follow the sidebar: clients see the
+ * Display Maintenance page but not Red Flags or Training.
+ */
 const FORMS: { key: FormKey; label: string; roles: Role[] }[] = [
   { key: 'display', label: 'Display Maintenance', roles: ['super_admin', 'admin', 'client'] },
   { key: 'red-flags', label: 'Red Flags', roles: ['super_admin', 'admin'] },
@@ -46,29 +49,38 @@ const PROVINCE = new Set(['province']);
 
 /** Shown in the fixed columns or not useful in the grid. */
 const HIDDEN = new Set([
-  'id', 'email', 'representative id', 'rep email', 'customer', 'store code', 'place id', 'time',
+  'id', 'email', 'representative id', 'rep email', 'customer', 'store code', 'place id',
   'visit uuid', 'visit id', 'visitid', 'tag', 'sync date', 'sync time',
   ...FIRST_NAME, ...LAST_NAME, ...REP_NAME, ...STORE, ...CHANNEL, ...PROVINCE,
   'date', 'check in date', 'check-in date',
 ]);
 
 const norm = (h: string) => h.toLowerCase().trim();
-const findCol = (headers: string[], names: Set<string>) => headers.find(h => names.has(norm(h)));
+// Every matching header, because uploads in one month can name the same field differently
+// (one export says "Store", another "Place"); each row reads whichever it has.
+const findCols = (headers: string[], names: Set<string>) => headers.filter(h => names.has(norm(h)));
 
 function buildColumns(headers: string[]) {
   return {
-    first: findCol(headers, FIRST_NAME),
-    last: findCol(headers, LAST_NAME),
-    rep: findCol(headers, REP_NAME),
-    store: findCol(headers, STORE),
-    channel: findCol(headers, CHANNEL),
-    province: findCol(headers, PROVINCE),
+    first: findCols(headers, FIRST_NAME),
+    last: findCols(headers, LAST_NAME),
+    rep: findCols(headers, REP_NAME),
+    store: findCols(headers, STORE),
+    channel: findCols(headers, CHANNEL),
+    province: findCols(headers, PROVINCE),
     visible: headers.filter(h => !h.startsWith('_') && !HIDDEN.has(norm(h))),
   };
 }
 type Cols = ReturnType<typeof buildColumns>;
 
-const cell = (row: FormRow, col?: string) => (col ? String(row[col] ?? '').trim() : '');
+/** First non-empty value among the candidate headers. */
+function cell(row: FormRow, cols: string[]): string {
+  for (const c of cols) {
+    const v = String(row[c] ?? '').trim();
+    if (v) return v;
+  }
+  return '';
+}
 
 function baName(row: FormRow, c: Cols): string {
   const merged = [cell(row, c.first), cell(row, c.last)].filter(Boolean).join(' ');
@@ -105,6 +117,11 @@ function monthOptions() {
   return out;
 }
 
+function monthEnd(month: string) {
+  const [y, m] = month.split('-').map(Number);
+  return `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+}
+
 function formatDate(iso: string) {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
@@ -125,6 +142,7 @@ function Lightbox({ photos, index, onIndex, onClose }: {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.preventDefault(); // don't scroll the grid behind
       else if (e.key === 'ArrowLeft') prev();
       else if (e.key === 'ArrowRight') next();
     };
@@ -228,10 +246,19 @@ export default function FormPhotosPage() {
   const cols = useMemo(() => (data ? buildColumns(data.headers) : null), [data]);
   const imageCols = useMemo(() => new Set(data?.imageColumns ?? []), [data]);
 
-  // Rows carry the derived fields the filters and fixed columns read.
+  // Rows carry the derived fields the filters and fixed columns read. Overlapping
+  // exports (1-15 Oct, then 1-31 Oct) load the same row twice, so identical rows are
+  // dropped. Rows that differ (several products flagged on one visit) all stay.
   const rows = useMemo(() => {
     if (!data || !cols) return [];
-    return data.rows.map(row => ({
+    const seen = new Set<string>();
+    const unique = data.rows.filter(row => {
+      const key = JSON.stringify(Object.keys(row).filter(k => !k.startsWith('_')).sort().map(k => [k, row[k]]));
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return unique.map(row => ({
       row,
       ba: baName(row, cols),
       store: cell(row, cols.store),
@@ -242,21 +269,35 @@ export default function FormPhotosPage() {
     }));
   }, [data, cols]);
 
+  // A date input emits partial years while typing ("0002-10-01"), so only a complete date
+  // filters; a From after To is read the other way round rather than emptying the grid.
+  const dateRange = useMemo(() => {
+    const ok = (d: string) => /^(19|20)\d{2}-\d{2}-\d{2}$/.test(d) ? d : '';
+    const from = ok(fromDate), to = ok(toDate);
+    return from && to && from > to ? { from: to, to: from } : { from, to };
+  }, [fromDate, toDate]);
+
   // Each filter's options narrow to the rows the OTHER filters leave.
   const passes = useCallback((r: (typeof rows)[number], skip?: 'channel' | 'ba' | 'store' | 'province') =>
     (skip === 'channel' || selChannels.length === 0 || selChannels.includes(r.channel)) &&
     (skip === 'ba' || selBas.length === 0 || selBas.includes(r.ba)) &&
     (skip === 'store' || selStores.length === 0 || selStores.includes(r.store)) &&
     (skip === 'province' || selProvinces.length === 0 || selProvinces.includes(r.province)) &&
-    (!fromDate || r.date >= fromDate) &&
-    (!toDate || r.date <= toDate) &&
+    (!dateRange.from || r.date >= dateRange.from) &&
+    (!dateRange.to || r.date <= dateRange.to) &&
     (!photosOnly || r.hasPhoto),
-  [selChannels, selBas, selStores, selProvinces, fromDate, toDate, photosOnly]);
+  [selChannels, selBas, selStores, selProvinces, dateRange, photosOnly]);
 
-  const channelOptions = useMemo(() => unique(rows.filter(r => passes(r, 'channel')).map(r => r.channel)), [rows, passes]);
-  const baOptions = useMemo(() => unique(rows.filter(r => passes(r, 'ba')).map(r => r.ba)), [rows, passes]);
-  const storeOptions = useMemo(() => unique(rows.filter(r => passes(r, 'store')).map(r => r.store)), [rows, passes]);
-  const provinceOptions = useMemo(() => unique(rows.filter(r => passes(r, 'province')).map(r => r.province)), [rows, passes]);
+  // A ticked value stays in its list even when no row has it any more (after a month
+  // or date change), so it can still be seen and unticked.
+  const channelOptions = useMemo(() => unique([...rows.filter(r => passes(r, 'channel')).map(r => r.channel), ...selChannels]), [rows, passes, selChannels]);
+  const baOptions = useMemo(() => unique([...rows.filter(r => passes(r, 'ba')).map(r => r.ba), ...selBas]), [rows, passes, selBas]);
+  const storeOptions = useMemo(() => unique([...rows.filter(r => passes(r, 'store')).map(r => r.store), ...selStores]), [rows, passes, selStores]);
+  const provinceOptions = useMemo(() => unique([...rows.filter(r => passes(r, 'province')).map(r => r.province), ...selProvinces]), [rows, passes, selProvinces]);
+
+  // Photos whose image failed to load drop out of the grid, the count and the lightbox.
+  const [brokenSrcs, setBrokenSrcs] = useState<Set<string>>(new Set());
+  const markBroken = useCallback((src: string) => setBrokenSrcs(prev => (prev.has(src) ? prev : new Set(prev).add(src))), []);
 
   const filtered = useMemo(
     () => rows.filter(r => passes(r)).sort((a, b) => b.date.localeCompare(a.date) || a.ba.localeCompare(b.ba)),
@@ -279,13 +320,15 @@ export default function FormPhotosPage() {
       for (const h of gridCols) {
         const v = r.row[h];
         if (imageCols.has(h) && isImageUrl(v)) {
+          const src = resolveImageUrl(v);
+          if (brokenSrcs.has(src)) continue;
           photoIndex.set(`${ri}|${h}`, photos.length);
-          photos.push({ src: resolveImageUrl(v), question: h, ba: r.ba, store: r.store, date: r.date });
+          photos.push({ src, question: h, ba: r.ba, store: r.store, date: r.date });
         }
       }
     });
     return { photos, photoIndex };
-  }, [filtered, gridCols, imageCols]);
+  }, [filtered, gridCols, imageCols, brokenSrcs]);
 
   function clearFilters() {
     setSelChannels([]); setSelBas([]); setSelStores([]); setSelProvinces([]);
@@ -338,11 +381,11 @@ export default function FormPhotosPage() {
           </div>
           <div>
             <label style={label}>From</label>
-            <input className="input" type="date" value={fromDate} min={`${month}-01`} onChange={e => setFromDate(e.target.value)} style={{ width: 150 }} />
+            <input className="input" type="date" value={fromDate} min={`${month}-01`} max={toDate || monthEnd(month)} onChange={e => setFromDate(e.target.value)} style={{ width: 150 }} />
           </div>
           <div>
             <label style={label}>To</label>
-            <input className="input" type="date" value={toDate} min={`${month}-01`} onChange={e => setToDate(e.target.value)} style={{ width: 150 }} />
+            <input className="input" type="date" value={toDate} min={fromDate || `${month}-01`} max={monthEnd(month)} onChange={e => setToDate(e.target.value)} style={{ width: 150 }} />
           </div>
           <div>
             <label style={label}>Channel</label>
@@ -373,8 +416,8 @@ export default function FormPhotosPage() {
           <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem' }}>
             <span><strong style={{ color: '#111827' }}>{filtered.length}</strong> forms</span>
             <span><strong style={{ color: '#111827' }}>{photos.length}</strong> photos</span>
-            <span><strong style={{ color: '#111827' }}>{new Set(filtered.map(r => r.ba)).size}</strong> BAs</span>
-            <span><strong style={{ color: '#111827' }}>{new Set(filtered.map(r => r.store)).size}</strong> stores</span>
+            <span><strong style={{ color: '#111827' }}>{new Set(filtered.map(r => r.ba).filter(Boolean)).size}</strong> BAs</span>
+            <span><strong style={{ color: '#111827' }}>{new Set(filtered.map(r => r.store).filter(Boolean)).size}</strong> stores</span>
           </div>
         )}
 
@@ -398,6 +441,7 @@ export default function FormPhotosPage() {
                   <th style={{ ...th, ...stickyCell(STICKY.num + STICKY.ba, STICKY.store, '#f9fafb'), zIndex: 3, borderRight: '1px solid #e5e7eb' }}>Store</th>
                   <th style={th}>Date</th>
                   <th style={th}>Channel</th>
+                  <th style={th}>Province</th>
                   {gridCols.map(h => <th key={h} style={{ ...th, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }} title={h}>{h}</th>)}
                 </tr>
               </thead>
@@ -412,6 +456,7 @@ export default function FormPhotosPage() {
                       <td style={{ ...td, ...stickyCell(STICKY.num + STICKY.ba, STICKY.store, bg), borderRight: '1px solid #e5e7eb' }} title={r.store}>{r.store || '—'}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.date ? formatDate(r.date) : '—'}</td>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.channel || '—'}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.province || '—'}</td>
                       {gridCols.map(h => {
                         const v = r.row[h];
                         if (imageCols.has(h)) {
@@ -427,7 +472,7 @@ export default function FormPhotosPage() {
                                   loading="lazy"
                                   onClick={() => setLightboxIndex(pi)}
                                   style={{ height: 56, width: 72, objectFit: 'cover', borderRadius: 4, border: '1px solid #e5e7eb', cursor: 'zoom-in', display: 'block' }}
-                                  onError={e => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }}
+                                  onError={() => markBroken(photos[pi].src)}
                                 />
                               ) : <span style={{ color: '#d1d5db' }}>—</span>}
                             </td>
