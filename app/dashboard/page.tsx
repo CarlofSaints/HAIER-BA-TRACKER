@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
+import FilterSelect from '@/components/FilterSelect';
 import SamsFreshnessCard from '@/components/SamsFreshnessCard';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -444,17 +445,21 @@ export default function DashboardPage() {
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Visit Channel</label>
-            <select className="select" value={channelFilter} onChange={e => { setChannelFilter(e.target.value); setPage(1); }} style={{ minWidth: 160 }}>
-              <option value="">All Visit Channels</option>
-              {channels.map(ch => <option key={ch} value={ch}>{ch}</option>)}
-            </select>
+            <FilterSelect
+              value={channelFilter}
+              onChange={v => { setChannelFilter(v); setPage(1); }}
+              options={[{ value: '', label: 'All Visit Channels' }, ...channels.map(ch => ({ value: ch, label: ch }))]}
+              style={{ minWidth: 160 }}
+            />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>BA</label>
-            <select className="select" value={baFilter} onChange={e => { setBaFilter(e.target.value); setPage(1); }} style={{ minWidth: 200 }}>
-              <option value="">All BAs</option>
-              {bas.map(b => <option key={b.key} value={b.key}>{b.name}</option>)}
-            </select>
+            <FilterSelect
+              value={baFilter}
+              onChange={v => { setBaFilter(v); setPage(1); }}
+              options={[{ value: '', label: 'All BAs' }, ...bas.map(b => ({ value: b.key, label: b.name }))]}
+              style={{ minWidth: 200 }}
+            />
           </div>
           <button className="btn btn-outline" onClick={() => { setFromDate(''); setToDate(''); setChannelFilter(''); setBaFilter(''); setPage(1); }}>
             Clear Filters
@@ -591,17 +596,17 @@ export default function DashboardPage() {
                 <div style={{ background: 'white', borderRadius: 12, padding: '1.25rem', border: '1px solid #e5e7eb' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', margin: 0 }}>Forms Completed per Rep</h3>
-                    <select
-                      className="select"
+                    <FilterSelect
                       value={formTypeFilter}
-                      onChange={e => setFormTypeFilter(e.target.value as typeof formTypeFilter)}
+                      onChange={v => setFormTypeFilter(v as typeof formTypeFilter)}
+                      options={[
+                        { value: 'all', label: 'All Forms' },
+                        { value: 'training', label: 'Training' },
+                        { value: 'display', label: 'Display' },
+                        { value: 'redFlags', label: 'Red Flags' },
+                      ]}
                       style={{ fontSize: '0.75rem', padding: '4px 8px', minWidth: 120 }}
-                    >
-                      <option value="all">All Forms</option>
-                      <option value="training">Training</option>
-                      <option value="display">Display</option>
-                      <option value="redFlags">Red Flags</option>
-                    </select>
+                    />
                   </div>
                   {formsPerRep.length > 0 ? (
                     <ResponsiveContainer width="100%" height={Math.max(240, formsPerRep.length * 28)}>

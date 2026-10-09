@@ -5,6 +5,7 @@ import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 import SamsFreshnessCard from '@/components/SamsFreshnessCard';
+import FilterSelect from '@/components/FilterSelect';
 import {
   aggregateRolling7, rolling7Sheet, dayLabel, newestFirst,
   type BaSource, type Rolling7Mode, type Rolling7Row, type Rolling7ViewRow,
@@ -47,7 +48,7 @@ export default function Sales7DaysPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('store');
   const [channelFilter, setChannelFilter] = useState('all');
   const [storeFilter, setStoreFilter] = useState('');
-  const [productFilter, setProductFilter] = useState('');
+  const [productFilter, setProductFilter] = useState<string[]>([]);
   const [baFilter, setBaFilter] = useState('');
 
   const [sortKey, setSortKey] = useState('value');
@@ -97,7 +98,7 @@ export default function Sales7DaysPage() {
         r =>
           channelMatches(r) &&
           (!storeFilter || r.store === storeFilter) &&
-          (!productFilter || r.article === productFilter) &&
+          (productFilter.length === 0 || productFilter.includes(r.article)) &&
           (!baFilter || (r.ba || NO_BA) === baFilter),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,10 +154,10 @@ export default function Sales7DaysPage() {
   function clearFilters() {
     setChannelFilter('all');
     setStoreFilter('');
-    setProductFilter('');
+    setProductFilter([]);
     setBaFilter('');
   }
-  const hasFilters = channelFilter !== 'all' || !!storeFilter || !!productFilter || !!baFilter;
+  const hasFilters = channelFilter !== 'all' || !!storeFilter || productFilter.length > 0 || !!baFilter;
 
   const showStore = viewMode !== 'product';
   const showArticle = viewMode !== 'store';
@@ -233,31 +234,42 @@ export default function Sales7DaysPage() {
           </div>
           <div>
             <label style={labelStyle}>Sales Channel</label>
-            <select className="select" value={channelFilter} onChange={e => { setChannelFilter(e.target.value); setStoreFilter(''); setBaFilter(''); }} style={{ minWidth: 180 }}>
-              <option value="all">All Sales Channels</option>
-              {channelOptions.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
+            <FilterSelect
+              value={channelFilter}
+              onChange={v => { setChannelFilter(v); setStoreFilter(''); setBaFilter(''); }}
+              options={[{ value: 'all', label: 'All Sales Channels' }, ...channelOptions.map(c => ({ value: c.id, label: c.label }))]}
+              style={{ minWidth: 180 }}
+            />
           </div>
           <div>
             <label style={labelStyle}>Store</label>
-            <select className="select" value={storeFilter} onChange={e => setStoreFilter(e.target.value)} style={selectStyle}>
-              <option value="">All Stores</option>
-              {storeOptions.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <FilterSelect
+              value={storeFilter}
+              onChange={setStoreFilter}
+              options={[{ value: '', label: 'All Stores' }, ...storeOptions.map(s => ({ value: s, label: s }))]}
+              style={selectStyle}
+            />
           </div>
           <div>
             <label style={labelStyle}>BA</label>
-            <select className="select" value={baFilter} onChange={e => setBaFilter(e.target.value)} style={selectStyle}>
-              <option value="">All BAs</option>
-              {baOptions.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
+            <FilterSelect
+              value={baFilter}
+              onChange={setBaFilter}
+              options={[{ value: '', label: 'All BAs' }, ...baOptions.map(b => ({ value: b, label: b }))]}
+              style={selectStyle}
+            />
           </div>
           <div>
             <label style={labelStyle}>SKU</label>
-            <select className="select" value={productFilter} onChange={e => setProductFilter(e.target.value)} style={selectStyle}>
-              <option value="">All SKUs</option>
-              {productOptions.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
+            <FilterSelect
+              multiple
+              value={productFilter}
+              onChange={setProductFilter}
+              allLabel="All SKUs"
+              searchPlaceholder="Search SKUs..."
+              options={productOptions.map(p => ({ value: p, label: p }))}
+              style={{ ...selectStyle, maxWidth: 260 }}
+            />
           </div>
           {hasFilters && (
             <button className="btn btn-outline" onClick={clearFilters} style={{ fontSize: '0.8rem' }}>Clear Filters</button>

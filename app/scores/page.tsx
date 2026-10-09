@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
+import FilterSelect from '@/components/FilterSelect';
 import type { BAScore } from '@/lib/scoreData';
 import { KPI_DEFS } from '@/lib/scoreData';
 import type { WeeklyBAScore } from '@/lib/weeklyScoreData';
@@ -457,17 +458,12 @@ export default function ScoreEntryPage() {
           </div>
           <div>
             <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>View</label>
-            <select
-              className="input"
-              value={selectedWeek}
-              onChange={e => setSelectedWeek(Number(e.target.value))}
+            <FilterSelect
+              value={String(selectedWeek)}
+              onChange={v => setSelectedWeek(Number(v))}
+              options={[{ value: String(MTD), label: 'MTD (Full Month)' }, ...weeks.map(w => ({ value: String(w.week), label: w.label }))]}
               style={{ width: 180 }}
-            >
-              <option value={MTD}>MTD (Full Month)</option>
-              {weeks.map(w => (
-                <option key={w.week} value={w.week}>{w.label}</option>
-              ))}
-            </select>
+            />
           </div>
           <button
             className="btn btn-outline"

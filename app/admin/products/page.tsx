@@ -5,6 +5,7 @@ import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
 import Footer from '@/components/Footer';
+import FilterSelect from '@/components/FilterSelect';
 
 interface ProductMaster {
   articleDesc: string;
@@ -260,17 +261,17 @@ export default function ProductsPage() {
             onChange={e => setSearch(e.target.value)}
             style={{ minWidth: 200, maxWidth: 300 }}
           />
-          <select
-            className="select"
+          <FilterSelect
             value={diamondFilter}
-            onChange={e => setDiamondFilter(e.target.value as 'all' | 'has' | 'unlinked')}
+            onChange={v => setDiamondFilter(v as 'all' | 'has' | 'unlinked')}
             title="Filter by Diamond Corner mapping"
+            options={[
+              { value: 'all', label: 'All products' },
+              { value: 'has', label: `Has Diamond code (${diamondCount})` },
+              { value: 'unlinked', label: `Diamond-only — no Makro code (${unlinkedCount})` },
+            ]}
             style={{ minWidth: 220 }}
-          >
-            <option value="all">All products</option>
-            <option value="has">Has Diamond code ({diamondCount})</option>
-            <option value="unlinked">Diamond-only — no Makro code ({unlinkedCount})</option>
-          </select>
+          />
           <button
             className="btn btn-primary"
             onClick={openAdd}

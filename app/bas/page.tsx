@@ -5,6 +5,7 @@ import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Toast from '@/components/Toast';
 import Footer from '@/components/Footer';
+import FilterSelect from '@/components/FilterSelect';
 
 interface BA {
   email: string;
@@ -176,13 +177,18 @@ export default function BAsPage() {
             value={search} onChange={e => setSearch(e.target.value)}
             style={{ width: 300 }}
           />
-          <select className="select" value={typeFilter} onChange={e => setTypeFilter(e.target.value as TypeFilter)} style={{ width: 300 }}>
-            <option value="all">All BAs</option>
-            <option value="unset">Dedicated/Roaming not set</option>
-            <option value="dedicated">Dedicated</option>
-            <option value="roaming">Roaming</option>
-            <option value="attention">Dedicated but assigned to more than one store ({attentionCount})</option>
-          </select>
+          <FilterSelect
+            value={typeFilter}
+            onChange={v => setTypeFilter(v as TypeFilter)}
+            options={[
+              { value: 'all', label: 'All BAs' },
+              { value: 'unset', label: 'Dedicated/Roaming not set' },
+              { value: 'dedicated', label: 'Dedicated' },
+              { value: 'roaming', label: 'Roaming' },
+              { value: 'attention', label: `Dedicated but assigned to more than one store (${attentionCount})` },
+            ]}
+            style={{ width: 300 }}
+          />
         </div>
         {attentionCount > 0 && typeFilter !== 'attention' && (
           <div style={{ marginBottom: '1rem', padding: '0.6rem 0.9rem', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#991b1b', fontSize: '0.85rem' }}>

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
+import FilterSelect from '@/components/FilterSelect';
 import { monthLabel, lastDayOfMonth } from '@/lib/dailySalesWeeks';
 
 type CellStatus = 'submitted' | 'missed' | 'none';
@@ -238,17 +239,12 @@ export default function DailySalesPage() {
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Week</label>
-                    <select
-                      className="select"
+                    <FilterSelect
                       value={weekStart}
-                      onChange={e => setWeekStart(e.target.value)}
+                      onChange={setWeekStart}
+                      options={[{ value: '', label: 'Last 7 days (rolling)' }, ...data.options.weeks.map(w => ({ value: w.start, label: w.label }))]}
                       style={{ minWidth: 200 }}
-                    >
-                      <option value="">Last 7 days (rolling)</option>
-                      {data.options.weeks.map(w => (
-                        <option key={w.start} value={w.start}>{w.label}</option>
-                      ))}
-                    </select>
+                    />
                   </div>
                 </div>
               </div>
@@ -318,12 +314,12 @@ export default function DailySalesPage() {
               <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f3f4f6', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>Month</label>
-                  <select className="select" value={selectedMonth} onChange={e => pickMonth(e.target.value)} style={{ minWidth: 150 }}>
-                    <option value="">Custom range</option>
-                    {data.options.months.map(m => (
-                      <option key={m} value={m}>{monthLabel(m)}</option>
-                    ))}
-                  </select>
+                  <FilterSelect
+                    value={selectedMonth}
+                    onChange={pickMonth}
+                    options={[{ value: '', label: 'Custom range' }, ...data.options.months.map(m => ({ value: m, label: monthLabel(m) }))]}
+                    style={{ minWidth: 150 }}
+                  />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280', marginBottom: 2 }}>From</label>
