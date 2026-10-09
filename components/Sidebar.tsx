@@ -24,6 +24,7 @@ const KPI_ITEMS: NavItem[] = [
   { label: 'Sales: Last 7 Days', href: '/sales-7-days', icon: '📅', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Display Maintenance', href: '/display-maintenance', icon: '🖥️', roles: ['super_admin', 'admin', 'client'] },
   { label: 'Red Flags', href: '/red-flags', icon: '🚩', roles: ['super_admin', 'admin'] },
+  { label: 'Form Photos', href: '/form-photos', icon: '📷', roles: ['super_admin', 'admin', 'client'] },
 ];
 
 const AFTER_KPI_ITEMS: NavItem[] = [
