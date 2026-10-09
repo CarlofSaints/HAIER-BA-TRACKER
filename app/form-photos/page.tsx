@@ -21,12 +21,12 @@ interface FormDataResponse {
 type FormKey = 'display' | 'red-flags' | 'training';
 
 /**
- * Forms whose uploads keep Perigee photos. Roles follow the sidebar: clients see the
- * Display Maintenance page but not Red Flags or Training.
+ * Forms whose uploads keep Perigee photos. Clients see Display and Red Flags photos
+ * (Carl, 9 Oct 2026) but not Training; each matches its form-data API's roles.
  */
 const FORMS: { key: FormKey; label: string; roles: Role[] }[] = [
   { key: 'display', label: 'Display Maintenance', roles: ['super_admin', 'admin', 'client'] },
-  { key: 'red-flags', label: 'Red Flags', roles: ['super_admin', 'admin'] },
+  { key: 'red-flags', label: 'Red Flags', roles: ['super_admin', 'admin', 'client'] },
   { key: 'training', label: 'Training', roles: ['super_admin', 'admin'] },
 ];
 
