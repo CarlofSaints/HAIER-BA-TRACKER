@@ -113,6 +113,7 @@ function emailBody(report: Rolling7Report): { subject: string; html: string } {
     ${channelRows}
   </table>
   <p>The workbook has three sheets: By Store, By SKU, and By SKU and Store. Store sheets include the BA for each store, and the most recent day is the first day column.</p>
+  <p>SOH is the stock on hand for every SKU at each store, whether it sold this week or not. SKUs with stock but no sales show 0 units.</p>
   <p>It covers the channels Haier loads daily. Channels reported monthly are not included.</p>
   <p>You can also view and filter this report online: <a href="${APP_URL}/sales-7-days">Sales: Last 7 Days</a>.</p>
   <p style="color:#9ca3af;font-size:12px;margin-top:24px">Sent automatically by Haier BA Measurement when a new day of sales data arrives.</p>
