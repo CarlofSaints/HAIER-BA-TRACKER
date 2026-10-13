@@ -86,6 +86,11 @@ export interface Rolling7Report {
   The rolling-7-day report at store × SKU grain, each row carrying its store's
   BA (resolveStoreBa, the same rule as the leaderboard export). Used by the
   Sales: Last 7 Days page and the daily email.
+
+  Rows are every SKU that SOLD in the window plus every SKU still IN STOCK at a
+  SAMS store, the latter with zero units. Without the stock-only rows a store's
+  SOH read as just the stock of whatever sold that week, so a store holding 27
+  units whose only seller had sold out showed SOH 0.
 */
 export async function buildRolling7Report(): Promise<Rolling7Report> {
   const [rolling, dispo, stores, channels] = await Promise.all([
@@ -102,16 +107,29 @@ export async function buildRolling7Report(): Promise<Rolling7Report> {
   // Same rule as /sales: the 'dc' channel and its subs are depots, not shops.
   const dcIds = new Set(['dc', ...channels.filter(c => c.parentId === 'dc').map(c => c.id)]);
 
+  // Stores with SAMS daily facts, plus every store in a SAMS channel (so one
+  // that sold nothing this week still shows its stock). DISPO/Excel/PDF stores
+  // stay off this page: their stock isn't from SAMS.
+  const samsChannelIds = new Set(channels.filter(c => c.dataSource === 'sams').map(c => c.id));
+  const storeNames = new Set(Object.keys(rolling.byStore));
+  if (rolling.days.length > 0) {
+    for (const s of stores) if (samsChannelIds.has(s.channelId)) storeNames.add(s.storeName);
+  }
+
   const rows: Rolling7Row[] = [];
-  for (const [storeName, articles] of Object.entries(rolling.byStore)) {
+  for (const storeName of storeNames) {
     const sm = storeByName.get(storeName);
     const channelId = sm?.channelId || '';
     if (dcIds.has(channelId)) continue;
     const ch = channelById.get(channelId);
     const ba = sm ? resolveStoreBa(sm, derived) : null;
+    const sold = rolling.byStore[storeName] || {};
+    const stock = dispo.stock[storeName] || {};
 
-    for (const [article, daily] of Object.entries(articles)) {
-      if (daily.every(u => u === 0)) continue;
+    for (const article of new Set([...Object.keys(sold), ...Object.keys(stock)])) {
+      const daily = sold[article] || new Array(rolling.days.length).fill(0);
+      const soh = stock[article]?.soh || 0;
+      if (soh === 0 && daily.every(u => u === 0)) continue;
       const units = daily.reduce((s, u) => s + u, 0);
       rows.push({
         store: storeName,
@@ -125,7 +143,7 @@ export async function buildRolling7Report(): Promise<Rolling7Report> {
         daily,
         units,
         value: calcSalesValue(units, dispo.prices[article]),
-        soh: dispo.stock[storeName]?.[article]?.soh || 0,
+        soh,
       });
     }
   }

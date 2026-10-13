@@ -39,6 +39,10 @@ const BA_SOURCE_HINT: Record<BaSource, string> = {
   none: 'No BA assigned and no Perigee check-ins at this store',
 };
 
+const SOH_HINT =
+  'Sales columns only count SKUs that sold in these 7 days. SOH covers every SKU in stock at the store, ' +
+  'whether it sold or not, so SKUs with stock but no sales show 0 units.';
+
 export default function Sales7DaysPage() {
   const { session, loading: authLoading, logout } = useAuth();
   const [data, setData] = useState<Payload | null>(null);
@@ -313,6 +317,21 @@ export default function Sales7DaysPage() {
                 <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', margin: 0 }}>
                   {viewMode === 'store' ? 'By Store' : viewMode === 'product' ? 'By SKU' : 'By SKU and Store'} ({viewRows.length} rows)
                   <span style={{ fontWeight: 400, color: '#6b7280', fontSize: '0.8rem' }}> · daily figures are units</span>
+                  <span
+                    tabIndex={0}
+                    role="img"
+                    aria-label={SOH_HINT}
+                    title={SOH_HINT}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: 16, height: 16, marginLeft: 8, borderRadius: '50%',
+                      border: '1px solid #9ca3af', color: '#6b7280', fontSize: '0.7rem',
+                      fontWeight: 700, fontStyle: 'italic', fontFamily: 'Georgia, serif',
+                      cursor: 'help', verticalAlign: 'middle',
+                    }}
+                  >
+                    i
+                  </span>
                 </h3>
               </div>
               <div style={{ overflowX: 'auto', maxHeight: 600, overflowY: 'auto' }}>
