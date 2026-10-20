@@ -1,3 +1,4 @@
+import { isPhotoUrl } from '@/lib/photoUrl';
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
@@ -16,7 +17,6 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 export const runtime = 'nodejs';
 
-const PERIGEE_PREFIX = 'https://live.perigeeportal.co.za';
 
 const COLUMN_MAP: Record<string, string> = {
   'email': 'email',
@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
         const v = r[h];
         if (v && typeof v === 'string' && v.trim()) {
           total++;
-          if (v.trim().startsWith(PERIGEE_PREFIX)) imageCount++;
+          if (isPhotoUrl(v.trim())) imageCount++;
         }
       }
       if (total > 0 && (imageCount / total) >= 0.3) {
@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
       for (const row of formRows) {
         for (const col of imageColumns) {
           const val = row[col];
-          if (typeof val === 'string' && val.startsWith(PERIGEE_PREFIX)) {
+          if (isPhotoUrl(val)) {
             uniqueUrls.add(val);
           }
         }
@@ -263,7 +263,7 @@ export async function POST(req: NextRequest) {
       for (const row of formRows) {
         for (const col of imageColumns) {
           const val = row[col];
-          if (typeof val === 'string' && val.startsWith(PERIGEE_PREFIX) && !seen.has(val)) {
+          if (isPhotoUrl(val) && !seen.has(val)) {
             seen.add(val);
             tasks.push({
               perigeeUrl: val,

@@ -1,17 +1,18 @@
+import { isPhotoUrl } from '@/lib/photoUrl';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/image?url=<perigee-portal-url>
- * Proxies images from live.perigeeportal.co.za so the browser can display them
+ * Proxies photos from Perigee or Field Goose so the browser can display them
  * without CORS issues. Caches for 24 hours.
  */
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url');
 
   if (!url) return new NextResponse('Missing url param', { status: 400 });
-  if (!url.startsWith('https://live.perigeeportal.co.za')) {
+  if (!isPhotoUrl(url)) {
     return new NextResponse('Disallowed domain', { status: 403 });
   }
 
