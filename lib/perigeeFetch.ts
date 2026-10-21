@@ -115,6 +115,11 @@ export async function fetchAllPerigeeVisits(
     const data = extractData(json);
     const meta = extractMeta(json);
 
+    // Field Goose answers HTTP 200 with { visits: { valid: false, code: 401, message } } on a bad token.
+    if (meta.valid === false) {
+      throw new PerigeeFetchError(num(meta.code) ?? res.status, String(meta.message ?? meta.error ?? 'API rejected the request'));
+    }
+
     if (page === 1) {
       firstPageMeta = meta;
       rawTopLevelKeys = json && typeof json === 'object' && !Array.isArray(json) ? Object.keys(json) : [];
