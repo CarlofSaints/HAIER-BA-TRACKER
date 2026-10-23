@@ -69,6 +69,7 @@ export interface SamsSyncMeta {
   matchedNonSamsSample?: { siteId: string; storeName: string; channel: string }[];
   skippedEmptySamsChannels?: string[]; // marked SAMS but SAMS returned nothing → NOT wiped
   lastError?: string;
+  lastFailedAt?: string; // when lastError happened; lastSync stays on the last GOOD run
 }
 
 export interface SamsSyncLogEntry {
@@ -109,6 +110,34 @@ function yearFromDate(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === '') return null;
   const d = raw instanceof Date ? raw : new Date(String(raw));
   return isNaN(d.getTime()) ? null : d.getUTCFullYear();
+}
+
+const QUERY_LABEL: Record<string, string> = {
+  haier_sams: 'SAMS sales and stock',
+  client_product_links: 'the product links',
+  client_products: 'the product list',
+};
+
+/** A proxy/SQL error → what it means, in words an admin can act on. */
+export function explainSqlError(raw: string): string {
+  if (/Failed to connect|ETIMEOUT|ECONNREFUSED|ESOCKET/i.test(raw)) {
+    return 'the SQL server did not answer (blocked by its firewall or offline)';
+  }
+  if (/\(401\)|Unauthori[sz]ed/i.test(raw)) {
+    return 'the SQL proxy refused our key (check SQL_PROXY_API_KEY matches Railway API_KEY)';
+  }
+  if (/Login failed/i.test(raw)) return 'the SQL server refused the login (password changed or account locked)';
+  if (/Could not find stored procedure|Invalid object name/i.test(raw)) {
+    return 'the stored procedure or table is missing on the SQL server';
+  }
+  return 'an unexpected error';
+}
+
+/** "Could not load the product list: <meaning>. Detail: <raw>" for each failed query. */
+function describeFailures(timings: Record<string, QueryTiming>, keys: string[]): string {
+  return keys
+    .map(k => `Could not load ${QUERY_LABEL[k] ?? k}: ${explainSqlError(timings[k].error ?? '')}. Detail: ${timings[k].error ?? 'none'}`)
+    .join(' | ');
 }
 
 /** SITE_ID "GAME-G016" → channel token "GAME". */
@@ -170,9 +199,13 @@ export async function runSamsSync(
     getClientProducts(client),
   );
 
-  if (!timings.haier_sams.ok) {
-    await finalizeMeta(source, syncStart, timings, undefined, timings.haier_sams.error, target);
-    throw new Error(`SAMS pull failed: ${timings.haier_sams.error}`);
+  // Without the product lookups the merge writes raw article codes into live
+  // data, so ANY failed query stops the sync and the last good data stays.
+  const failed = ['haier_sams', 'client_product_links', 'client_products'].filter(k => !timings[k].ok);
+  if (failed.length) {
+    const msg = `Sync stopped, previous data kept. ${describeFailures(timings, failed)}`;
+    await finalizeMeta(source, syncStart, timings, undefined, msg, target);
+    throw new Error(msg);
   }
 
   // 2. Control files.
@@ -461,11 +494,18 @@ async function finalizeMeta(
   const durationMs = Date.now() - syncStart;
 
   const meta = await readJson<SamsSyncMeta>(META_KEY, {});
-  meta.lastSync = now.toISOString();
+  // A failed run must not look like an update: lastSync (shown to clients as
+  // "Synced …") only moves on success.
+  if (error) {
+    meta.lastFailedAt = now.toISOString();
+  } else {
+    meta.lastSync = now.toISOString();
+    meta.lastSyncSource = source;
+    meta.lastSyncTarget = target;
+    if (source === 'cron') meta.lastAutoSync = now.toISOString();
+    meta.lastFailedAt = undefined;
+  }
   if (latestDataDate) meta.latestDataDate = latestDataDate; // preserve prior on error path
-  meta.lastSyncSource = source;
-  meta.lastSyncTarget = target;
-  if (source === 'cron') meta.lastAutoSync = now.toISOString();
   meta.lastSyncDurationMs = durationMs;
   meta.lastSyncQueryTimings = timings;
   if (counts) meta.counts = counts;

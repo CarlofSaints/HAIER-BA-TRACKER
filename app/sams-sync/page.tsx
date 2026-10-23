@@ -34,6 +34,7 @@ interface SyncMeta {
   matchedNonSamsSample?: { siteId: string; storeName: string; channel: string }[];
   skippedEmptySamsChannels?: string[];
   lastError?: string;
+  lastFailedAt?: string;
 }
 interface LogEntry {
   at: string;
@@ -326,7 +327,9 @@ export default function SamsSyncPage() {
                 background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b',
                 borderRadius: 8, padding: '0.6rem 0.85rem', marginBottom: '1rem', fontSize: '0.78rem',
               }}>
-                Last run reported an error: {meta.lastError}
+                <strong>Last sync FAILED{meta.lastFailedAt ? ` (${fmtDateTime(meta.lastFailedAt)})` : ''}.</strong>{' '}
+                {meta.lastError.split(' | ').map((line, i) => <div key={i} style={{ marginTop: 4 }}>{line}</div>)}
+                {meta.lastSync && <div style={{ marginTop: 4 }}>The reports still show the last good sync, {fmtDateTime(meta.lastSync)}.</div>}
               </div>
             )}
 
