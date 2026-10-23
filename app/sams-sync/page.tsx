@@ -154,6 +154,7 @@ export default function SamsSyncPage() {
       if (showLog) loadLog();
     } catch (e) {
       setToast({ msg: e instanceof Error ? e.message : 'Sync failed', type: 'error' });
+      loadStatus(); // the failure is in meta now: show the FAILED banner without a reload
     } finally {
       setSyncing(false);
       setSyncingLabel(null);
@@ -328,7 +329,7 @@ export default function SamsSyncPage() {
                 borderRadius: 8, padding: '0.6rem 0.85rem', marginBottom: '1rem', fontSize: '0.78rem',
               }}>
                 <strong>Last sync FAILED{meta.lastFailedAt ? ` (${fmtDateTime(meta.lastFailedAt)})` : ''}.</strong>{' '}
-                {meta.lastError.split(' | ').map((line, i) => <div key={i} style={{ marginTop: 4 }}>{line}</div>)}
+                {meta.lastError.split('\n').map((line, i) => <div key={i} style={{ marginTop: 4 }}>{line}</div>)}
                 {meta.lastSync && <div style={{ marginTop: 4 }}>The reports still show the last good sync, {fmtDateTime(meta.lastSync)}.</div>}
               </div>
             )}

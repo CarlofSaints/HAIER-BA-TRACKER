@@ -52,6 +52,7 @@ export default function SamsSchedulePage() {
   const { session, loading: authLoading, logout } = useAuth(['admin', 'super_admin']);
   const [sched, setSched] = useState<Schedule>({ enabled: true, hours: [5], days: [0, 1, 2, 3, 4, 5, 6], timezone: 'Africa/Johannesburg' });
   const [lastAutoSync, setLastAutoSync] = useState<string | null>(null);
+  const [lastAutoSyncFailed, setLastAutoSyncFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
@@ -67,6 +68,7 @@ export default function SamsSchedulePage() {
       .then(d => {
         if (d.schedule) setSched(d.schedule);
         setLastAutoSync(d.lastAutoSync ?? null);
+        setLastAutoSyncFailed(!!d.lastAutoSyncFailed);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -248,6 +250,11 @@ export default function SamsSchedulePage() {
                 {running ? 'Syncing…' : 'Run a sync now'}
               </button>
               <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>Last automatic sync: {fmtDateTime(lastAutoSync)}</span>
+              {lastAutoSyncFailed && (
+                <span style={{ fontSize: '0.8rem', color: '#991b1b', fontWeight: 600 }}>
+                  It FAILED. See <a href="/sams-sync" style={{ color: '#991b1b' }}>Data Sync (SAMS)</a> for what went wrong.
+                </span>
+              )}
             </div>
 
             {/* Daily Sales: Last 7 Days email */}
