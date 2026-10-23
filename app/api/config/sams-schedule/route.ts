@@ -10,9 +10,14 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const [schedule, meta] = await Promise.all([loadSamsSchedule(), loadSamsSyncMeta()]);
-  // lastAutoSync = last time the CRON actually ran a sync (not manual runs).
+  // lastAutoSync = last time the CRON ran a sync (not manual runs), failed or not.
   return NextResponse.json(
-    { schedule, lastAutoSync: meta.lastAutoSync ?? null, lastSync: meta.lastSync ?? null },
+    {
+      schedule,
+      lastAutoSync: meta.lastAutoSync ?? null,
+      lastSync: meta.lastSync ?? null,
+      lastAutoSyncFailed: !!meta.lastAutoSync && meta.lastFailedAt === meta.lastAutoSync,
+    },
     { headers: noCacheHeaders() },
   );
 }
