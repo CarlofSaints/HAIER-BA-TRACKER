@@ -92,11 +92,11 @@ function baName(row: FormRow, c: Cols): string {
 const PERIGEE_PREFIX = 'https://live.perigeeportal.co.za';
 
 function isImageUrl(val: unknown): val is string {
-  return typeof val === 'string' && val.startsWith('https://');
+  return typeof val === 'string' && /^https?:\/\//.test(val);
 }
 
 function resolveImageUrl(url: string): string {
-  return url.startsWith(PERIGEE_PREFIX) ? `/api/image?url=${encodeURIComponent(url)}` : url;
+  return url.startsWith(PERIGEE_PREFIX) || url.startsWith('http://') ? `/api/image?url=${encodeURIComponent(url)}` : url;
 }
 
 function currentMonth() {

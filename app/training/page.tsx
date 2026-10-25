@@ -104,13 +104,14 @@ function formatMonth(m: string) {
 }
 
 function isImageUrl(val: unknown): val is string {
-  return typeof val === 'string' && val.startsWith('https://');
+  return typeof val === 'string' && /^https?:\/\//.test(val);
 }
 
 const PERIGEE_PREFIX = 'https://live.perigeeportal.co.za';
 
 function resolveImageUrl(originalUrl: string): string {
-  if (originalUrl.startsWith(PERIGEE_PREFIX)) {
+  // http links go via the proxy too: an http <img> on an https page is blocked as mixed content
+  if (originalUrl.startsWith(PERIGEE_PREFIX) || originalUrl.startsWith('http://')) {
     return `/api/image?url=${encodeURIComponent(originalUrl)}`;
   }
   return originalUrl;
