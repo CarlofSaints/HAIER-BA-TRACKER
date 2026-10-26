@@ -36,7 +36,7 @@ export function verifyHubToken(token: string | null, secret: string): HubToken |
 
 /** A plain page for the dead ends (expired link, no access, no account), with a way back. */
 export function hubMessage(title: string, detail: string, status: number): Response {
-  const hub = process.env.NEXT_PUBLIC_AM_HUB_URL || 'https://am-hub.vercel.app';
+  const hub = process.env.NEXT_PUBLIC_AM_HUB_URL || 'https://atomic-marketing-hub.vercel.app';
   const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
   return new Response(
     `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>` +
