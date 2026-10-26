@@ -460,3 +460,6 @@ Rides on PR #2. Not yet merged.
 
 ---
 
+
+## Atomic Marketing Hub sign-in (26 Oct 2026)
+`GET /sso/callback` (`app/sso/callback/route.ts`, `lib/hubSso.ts`): verifies the Hub token with `AM_SSO_SECRET`, needs module `haier-ba`, finds the EXISTING user by email (never creates one) and writes the same `haier_session` localStorage copy as /api/auth via a tiny page. Needs `AM_SSO_SECRET` on Vercel (same value as the Hub). `lib/hubSso.ts` is identical in every AM module.
