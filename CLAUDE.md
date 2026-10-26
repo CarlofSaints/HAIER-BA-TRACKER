@@ -37,8 +37,8 @@ BA (Brand Ambassador) performance scoring dashboard for Haier. Scores 6 KPIs out
 - `lib/storeData.ts` — StoreMaster, loadStores()
 - `lib/kpiControls.ts` — KPIControls (minTrainings, minVisits, salesThreshold, minDisplayChecks, minRedFlags)
 - `lib/scoringConfig.ts` — ScoringConfig (lateCheckinTime, earlyCheckoutTime)
-- `lib/auth.ts` — requireLogin(), requireRole(), requireAnyUser(), noCacheHeaders()
-- `lib/useAuth.ts` — useAuth() hook, authFetch() (adds x-user-id header)
+- `lib/auth.ts` — requireLogin(), requireRole(), requireAnyUser(), noCacheHeaders() (read the signed `haier_auth` cookie, lib/session.ts)
+- `lib/useAuth.ts` — useAuth() hook, authFetch() (cookie auth; a 401 sends you to /login)
 - `lib/blob.ts` — readJson(), writeJson(), deleteBlob()
 
 ### Auto-Calc Logic (lib/autoCalc.ts)
@@ -332,10 +332,10 @@ modified `lib/productData.ts` (+`diamondCode`), `app/api/products/route.ts`,
 ### 11. Password Reset / Forgot Password + Login Fix (DEPLOYED, Jun 29, 2026)
 
 Carl got locked out. Built per `PLAN.md` (now deleted — scratch). All committed:
-- **`app/api/admin-reset/route.ts`** — POST `{ secret:"haier-seed-2026", email, newPassword }` force-resets any user's password (bcrypt). The break-glass tool.
+- ~~admin-reset break-glass route~~ REMOVED 26 Oct 2026 (sign-in hardening). Use Forgot password, or a super admin sets a password on Users.
 - **Forgot-password flow** — `app/api/forgot-password` (generates token, 1h expiry, emails Resend link), `app/api/reset-password` (consumes token), `app/reset-password/page.tsx`, "Forgot My Password?" link on `/login`. `User` gained `resetToken`/`resetTokenExpiry`.
 
-**Commits:** `8cf6a92`, `eddaf32`, `c894ee2`. Carl is back in via admin-reset.
+**Commits:** `8cf6a92`, `eddaf32`, `c894ee2`. Carl got back in via a break-glass route, since removed.
 
 ### 12. Diamond Corner — store created/updated from the PDF upload (DEPLOYED, Jun 29, 2026)
 
@@ -463,3 +463,8 @@ Rides on PR #2. Not yet merged.
 
 ## Atomic Marketing Hub sign-in (26 Oct 2026)
 `GET /sso/callback` (`app/sso/callback/route.ts`, `lib/hubSso.ts`): verifies the Hub token with `AM_SSO_SECRET`, needs module `haier-ba`, finds the EXISTING user by email (never creates one) and writes the same `haier_session` localStorage copy as /api/auth via a tiny page. Needs `AM_SSO_SECRET` on Vercel (same value as the Hub). `lib/hubSso.ts` is identical in every AM module.
+
+## Sign-in hardening (26 Oct 2026)
+- API auth = signed httpOnly cookie `haier_auth` (`lib/session.ts`, env `HAIER_SESSION_SECRET`, REQUIRED on Vercel or sign-in fails closed). Set by `/api/auth` and `/sso/callback`, cleared by `DELETE /api/auth`. The `haier_session` localStorage copy is display only; `x-user-id` is no longer read anywhere.
+- Any password change signs out older sessions (cookie carries a hash of the password hash); change-password re-issues the caller's cookie.
+- Seed and break-glass reset routes removed. Crons refuse when CRON_SECRET is unset.

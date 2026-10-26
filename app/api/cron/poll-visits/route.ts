@@ -129,7 +129,8 @@ export async function GET(req: NextRequest) {
   // Validate cron secret OR super_admin session
   const authHeader = req.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
-  const isCronAuth = !cronSecret || authHeader === `Bearer ${cronSecret}`;
+  // No CRON_SECRET = no cron access (it used to mean open to anyone).
+  const isCronAuth = !!cronSecret && authHeader === `Bearer ${cronSecret}`;
   const isAdminAuth = !!(await requireRole(req, ['super_admin']));
   if (!isCronAuth && !isAdminAuth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

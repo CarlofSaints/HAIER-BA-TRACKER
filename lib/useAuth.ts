@@ -59,7 +59,8 @@ export function useAuth(requiredRole?: Role | Role[]) {
     }
   }, [router, rolesKey]);
 
-  function logout() {
+  async function logout() {
+    await fetch('/api/auth', { method: 'DELETE' }).catch(() => {});
     localStorage.removeItem(SESSION_KEY);
     router.push('/login');
   }
@@ -67,20 +68,16 @@ export function useAuth(requiredRole?: Role | Role[]) {
   return { session, loading, logout, setSession };
 }
 
-export function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  let userId = '';
-  if (typeof window !== 'undefined') {
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (raw) {
-        const s = JSON.parse(raw) as Partial<Session>;
-        userId = s?.id ?? '';
-      }
-    } catch { /* ignore */ }
+/**
+ * Fetch for this app's API. Auth is the httpOnly session cookie (lib/session.ts), sent by the
+ * browser itself. A 401 means that session is gone (expired, password changed, or signed in
+ * before cookies existed), so drop the display copy and go to the login page.
+ */
+export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const res = await fetch(input, { credentials: 'same-origin', ...init, cache: 'no-store' });
+  if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    localStorage.removeItem(SESSION_KEY);
+    window.location.href = '/login';
   }
-
-  const headers = new Headers(init.headers);
-  if (userId) headers.set('x-user-id', userId);
-
-  return fetch(input, { ...init, headers, cache: 'no-store' });
+  return res;
 }

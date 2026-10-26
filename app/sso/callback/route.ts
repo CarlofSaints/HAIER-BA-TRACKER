@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { loadUsers } from '@/lib/userData';
 import { hubMessage, verifyHubToken } from '@/lib/hubSso';
+import { createSession, sessionCookieHeader } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +9,7 @@ const MODULE = 'haier-ba';
 
 /**
  * Sign-in from the Atomic Marketing Hub (lib/hubSso.ts). Existing users only, matched by email.
- * Writes the same localStorage session app/login/page.tsx stores after /api/auth, via a tiny
+ * Sets the same session cookie as /api/auth and writes the localStorage copy, via a tiny
  * page (a redirect alone can't reach localStorage), then opens the dashboard.
  */
 export async function GET(req: NextRequest) {
@@ -25,6 +26,9 @@ export async function GET(req: NextRequest) {
     return hubMessage('No Haier BA Measurement account', `There is no Haier BA Measurement user for ${hub.email}. Ask your admin to add you.`, 403);
   }
 
+  const token = createSession(user);
+  if (!token) return hubMessage('Sign-in is not configured', 'HAIER_SESSION_SECRET is missing on this deployment.', 503);
+
   // Same shape as /api/auth. JSON in a <script>: escape '<' so no value can close the tag.
   const session = JSON.stringify({
     id: user.id,
@@ -39,6 +43,6 @@ export async function GET(req: NextRequest) {
   return new Response(
     `<!doctype html><meta charset="utf-8"><title>Signing in…</title><body style="font-family:Arial,sans-serif">Signing in…` +
     `<script>localStorage.setItem('haier_session', JSON.stringify(${session}));location.replace(${JSON.stringify(next)});</script></body>`,
-    { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } },
+    { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': sessionCookieHeader(token) } },
   );
 }

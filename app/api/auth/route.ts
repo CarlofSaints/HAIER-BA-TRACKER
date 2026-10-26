@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { loadUsers } from '@/lib/userData';
 import { noCacheHeaders } from '@/lib/auth';
 import { logActivity } from '@/lib/activityLog';
+import { createSession, sessionCookieHeader } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,9 +37,18 @@ export async function POST(req: NextRequest) {
 
     logActivity('user_login', user.email, `${user.name} ${user.surname}`, 'auth', `${user.name} ${user.surname} logged in`).catch(() => {});
 
-    return NextResponse.json(session, { headers: noCacheHeaders() });
+    const token = createSession(user);
+    if (!token) {
+      return NextResponse.json({ error: 'Sign-in is not configured on this deployment (HAIER_SESSION_SECRET).' }, { status: 503 });
+    }
+    return NextResponse.json(session, { headers: { ...noCacheHeaders(), 'Set-Cookie': sessionCookieHeader(token) } });
   } catch (err) {
     console.error('Auth error:', err);
     return NextResponse.json({ error: 'Login failed' }, { status: 500 });
   }
+}
+
+/** Sign out: clear the session cookie. */
+export async function DELETE() {
+  return NextResponse.json({ ok: true }, { headers: { ...noCacheHeaders(), 'Set-Cookie': sessionCookieHeader('', 0) } });
 }

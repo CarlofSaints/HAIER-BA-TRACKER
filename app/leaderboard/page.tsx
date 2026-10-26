@@ -269,7 +269,7 @@ export default function LeaderboardPage() {
   }
 
   /*
-    Excel export. Must go through authFetch — lib/auth.ts is x-user-id header
+    Excel export. Must go through authFetch — lib/auth.ts reads the session cookie
     only with no cookie fallback, so a plain <a href="/api/…"> download 401s.
   */
   async function handleExportExcel() {

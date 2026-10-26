@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireRole } from '@/lib/auth';
 import { loadReminders, saveReminders, computeNextDue } from '@/lib/reminderData';
 import { loadUsers } from '@/lib/userData';
 import { sendEmail } from '@/lib/email';
@@ -11,16 +12,13 @@ export async function GET(req: NextRequest) {
   // Auth: CRON_SECRET bearer token or super_admin
   const authHeader = req.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
-  const isCronAuth = !cronSecret || authHeader === `Bearer ${cronSecret}`;
+  // No CRON_SECRET = no cron access (it used to mean open to anyone).
+  const isCronAuth = !!cronSecret && authHeader === `Bearer ${cronSecret}`;
 
   if (!isCronAuth) {
     // Also allow super_admin to trigger manually
-    const userId = req.headers.get('x-user-id');
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // Quick check — not worth full requireRole import for cron
-    const users = await loadUsers();
-    const caller = users.find(u => u.id === userId);
-    if (!caller || caller.role !== 'super_admin') {
+    const caller = await requireRole(req, ['super_admin']);
+    if (!caller) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
   }
