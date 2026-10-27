@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { loadUsers, saveUsers } from '@/lib/userData';
@@ -21,9 +22,13 @@ export async function POST(req: NextRequest) {
     if (idx < 0) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
+    // Same rule as PUT/DELETE /api/users/[id]: only a super_admin may reset a super_admin.
+    if (users[idx].role === 'super_admin' && admin.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Cannot modify super_admin user' }, { status: 403 });
+    }
 
     // Generate random temp password
-    const tempPassword = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 4).toUpperCase();
+    const tempPassword = crypto.randomBytes(9).toString('base64url');
     const hash = await bcrypt.hash(tempPassword, 10);
 
     // Update user record

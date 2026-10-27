@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAnyUser, noCacheHeaders } from '@/lib/auth';
-import { loadUsers, saveUsers } from '@/lib/userData';
+import { loadUsers, saveUsers, toSafeUser } from '@/lib/userData';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +28,7 @@ export async function PUT(req: NextRequest) {
 
     await saveUsers(users);
 
-    const { passwordHash: _, ...safe } = users[idx];
+    const safe = toSafeUser(users[idx]);
     return NextResponse.json(safe, { headers: noCacheHeaders() });
   } catch (err) {
     console.error('Account update error:', err);

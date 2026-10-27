@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 import { requireAnyUser, noCacheHeaders } from '@/lib/auth';
+import { sniffImageType } from '@/lib/avatarImage';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,12 +21,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'File too large (max 2MB)' }, { status: 400 });
     }
 
-    const bytes = await file.arrayBuffer();
-    await put(`avatars/${user.id}`, Buffer.from(bytes), {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    // The type comes from the file's own bytes, never the uploader's claim (an HTML 'avatar' would run script).
+    const type = sniffImageType(bytes);
+    if (!type) {
+      return NextResponse.json({ error: 'Please upload a PNG, JPEG, GIF or WebP image' }, { status: 400 });
+    }
+    await put(`avatars/${user.id}`, bytes, {
       access: 'private',
       addRandomSuffix: false,
       allowOverwrite: true,
-      contentType: file.type || 'image/png',
+      contentType: type,
     });
 
     return NextResponse.json({ ok: true }, { headers: noCacheHeaders() });
