@@ -271,7 +271,8 @@ export default function SettingsPage() {
         const r2 = await authFetch('/api/config/perigee');
         setConfig(await r2.json());
       } else {
-        setToast({ msg: 'Save failed', type: 'error' });
+        const err = await res.json().catch(() => ({}));
+        setToast({ msg: err.error || 'Save failed', type: 'error' });
       }
     } catch {
       setToast({ msg: 'Save failed', type: 'error' });

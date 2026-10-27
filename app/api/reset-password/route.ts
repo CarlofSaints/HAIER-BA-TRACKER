@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { loadUsers, saveUsers } from '@/lib/userData';
 
@@ -11,12 +12,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Token and password required' }, { status: 400 });
     }
 
-    if (password.length < 6) {
-      return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
+    if (password.length < 8) {
+      return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 });
     }
 
     const users = await loadUsers();
-    const idx = users.findIndex(u => u.resetToken === token);
+    // Stored as SHA-256 (forgot-password); compare the hash of what was sent.
+    const hashed = createHash('sha256').update(String(token)).digest('hex');
+    const idx = users.findIndex(u => !!u.resetToken && u.resetToken === hashed);
     if (idx === -1) {
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
