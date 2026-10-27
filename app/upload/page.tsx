@@ -550,7 +550,7 @@ export default function UploadPage() {
   }
 
   // Download all live targets as an .xlsx laid out for re-upload (edit → re-upload
-  // round-trip). Must go through authFetch + a blob URL: auth is the x-user-id
+  // round-trip). Must go through authFetch + a blob URL: auth is the session cookie
   // header only, so a plain <a href> to the API 401s.
   async function handleTargetExport() {
     setTargetExporting(true);

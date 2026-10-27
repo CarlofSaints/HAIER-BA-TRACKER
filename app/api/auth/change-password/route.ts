@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { loadUsers, saveUsers } from '@/lib/userData';
 import { requireLogin, noCacheHeaders } from '@/lib/auth';
+import { createSession, sessionCookieHeader } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,8 +18,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Both passwords required' }, { status: 400 });
     }
 
-    if (newPassword.length < 6) {
-      return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
+    if (newPassword.length < 8) {
+      return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 });
     }
 
     const valid = await bcrypt.compare(currentPassword, user.passwordHash);
@@ -36,7 +37,9 @@ export async function POST(req: NextRequest) {
     users[idx].forcePasswordChange = false;
     await saveUsers(users);
 
-    return NextResponse.json({ ok: true }, { headers: noCacheHeaders() });
+    // The password change signs out older sessions (lib/session.ts pv); keep this one.
+    const token = createSession(users[idx]);
+    return NextResponse.json({ ok: true }, { headers: { ...noCacheHeaders(), ...(token ? { 'Set-Cookie': sessionCookieHeader(token) } : {}) } });
   } catch (err) {
     console.error('Change password error:', err);
     return NextResponse.json({ error: 'Failed' }, { status: 500 });

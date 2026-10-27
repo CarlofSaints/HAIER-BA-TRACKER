@@ -1,10 +1,11 @@
 import { loadUsers, User, Role } from './userData';
+import { readCookie, userFromSession } from './session';
 
+/** The signed-in user from the session cookie (lib/session.ts), re-loaded on every call. */
 export async function requireLogin(req: Request): Promise<User | null> {
-  const userId = req.headers.get('x-user-id');
-  if (!userId) return null;
-  const users = await loadUsers();
-  return users.find(u => u.id === userId) ?? null;
+  const raw = readCookie(req);
+  if (!raw) return null;
+  return userFromSession(raw, await loadUsers());
 }
 
 export async function requireRole(req: Request, roles: Role[]): Promise<User | null> {
