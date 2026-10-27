@@ -13,14 +13,17 @@ export const SESSION_COOKIE = 'haier_auth';
 const MAX_AGE = 60 * 60 * 24 * 14; // 14 days
 
 function secret(): string | null {
-  return process.env.HAIER_SESSION_SECRET || (process.env.VERCEL ? null : 'local-dev-only-secret');
+  if (process.env.HAIER_SESSION_SECRET) return process.env.HAIER_SESSION_SECRET;
+  // No separate setting needed: derive the key from the Hub SSO secret that is already set.
+  if (process.env.AM_SSO_SECRET) return `haier-session:${process.env.AM_SSO_SECRET}`;
+  return process.env.VERCEL ? null : 'local-dev-only-secret';
 }
 
 const sign = (body: string, key: string) => crypto.createHmac('sha256', key).update(body).digest('base64url');
 const pwVersion = (u: Pick<User, 'passwordHash'>) =>
   crypto.createHash('sha256').update(u.passwordHash || '').digest('base64url').slice(0, 12);
 
-/** Null when HAIER_SESSION_SECRET is missing on Vercel: sign-in then fails closed. */
+/** Null when both HAIER_SESSION_SECRET and AM_SSO_SECRET are missing on Vercel: sign-in then fails closed. */
 export function createSession(user: Pick<User, 'id' | 'passwordHash'>): string | null {
   const key = secret();
   if (!key) return null;
