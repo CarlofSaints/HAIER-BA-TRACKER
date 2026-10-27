@@ -75,6 +75,17 @@ function firstRowKey(row: Record<string, unknown> | undefined): string {
  * (belt and suspenders). Stops on: last page reached, total collected, an empty
  * or short page, the server not advancing the page, or a hard page cap.
  */
+/** The Bearer token only ever goes to Field Goose (or the old Perigee portal), over https. */
+export function isAllowedPerigeeEndpoint(u: unknown): boolean {
+  if (typeof u !== 'string') return false;
+  try {
+    const url = new URL(u);
+    return url.protocol === 'https:' && ['www.fieldgoose.com', 'fieldgoose.com', 'live.perigeeportal.co.za'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchAllPerigeeVisits(
   endpoint: string,
   apiKey: string,
@@ -90,6 +101,10 @@ export async function fetchAllPerigeeVisits(
   let rawTopLevelKeys: string[] = [];
   let prevFirstKey = '';
   let page = 1;
+
+  if (!isAllowedPerigeeEndpoint(endpoint)) {
+    throw new Error('The configured Field Goose endpoint is not an https fieldgoose.com address. Fix it in Settings.');
+  }
 
   for (; page <= maxPages; page++) {
     const url = page === 1

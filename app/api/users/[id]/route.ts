@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { loadUsers, saveUsers } from '@/lib/userData';
+import { loadUsers, saveUsers, toSafeUser } from '@/lib/userData';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { logFromUser } from '@/lib/activityLog';
 
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const target = users.find(u => u.id === id);
   if (!target) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const { passwordHash: _, ...safe } = target;
+  const safe = toSafeUser(target);
   return NextResponse.json(safe, { headers: noCacheHeaders() });
 }
 
@@ -50,7 +50,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   await saveUsers(users);
   const changedFields = Object.keys(body).filter(k => k !== 'password').join(', ') || 'password';
   logFromUser(user, 'user_edit', `user/${users[idx].email}`, `Edited user ${users[idx].name} ${users[idx].surname} — changed: ${changedFields}`);
-  const { passwordHash: _, ...safe } = users[idx];
+  const safe = toSafeUser(users[idx]);
   return NextResponse.json(safe, { headers: noCacheHeaders() });
 }
 

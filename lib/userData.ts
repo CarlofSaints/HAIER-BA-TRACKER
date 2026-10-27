@@ -25,3 +25,10 @@ export async function loadUsers(): Promise<User[]> {
 export async function saveUsers(users: User[]): Promise<void> {
   await writeJson(BLOB_KEY, users);
 }
+
+/** A user as the API may send it: never the password hash or a live reset token. */
+export function toSafeUser(u: User): Omit<User, "passwordHash" | "resetToken" | "resetTokenExpiry"> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { passwordHash, resetToken, resetTokenExpiry, ...safe } = u;
+  return safe;
+}

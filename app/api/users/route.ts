@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { loadUsers, saveUsers, User } from '@/lib/userData';
+import { loadUsers, saveUsers, User, toSafeUser } from '@/lib/userData';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
 import { logFromUser } from '@/lib/activityLog';
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const users = await loadUsers();
-  const safe = users.map(({ passwordHash: _, ...rest }) => rest);
+  const safe = users.map(toSafeUser);
   return NextResponse.json(safe, { headers: noCacheHeaders() });
 }
 
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     }
 
     logFromUser(user, 'user_create', `user/${newUser.email}`, `Created user ${name} ${surname} (${email}) as ${role}`);
-    const { passwordHash: _, ...safe } = newUser;
+    const safe = toSafeUser(newUser);
     return NextResponse.json(safe, { status: 201, headers: noCacheHeaders() });
   } catch (err) {
     console.error('Create user error:', err);

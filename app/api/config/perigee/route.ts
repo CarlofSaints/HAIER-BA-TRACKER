@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole, noCacheHeaders } from '@/lib/auth';
 import { readJson, writeJson } from '@/lib/blob';
+import { isAllowedPerigeeEndpoint } from '@/lib/perigeeFetch';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +35,16 @@ export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
     const current = await readJson<PerigeeConfig>(BLOB_KEY, DEFAULT);
+
+    // The stored token is sent as a Bearer header to this endpoint, so: Field Goose only, and
+    // moving it elsewhere needs the token typed again (it can never follow to a new host on its own).
+    if (typeof body.endpoint === 'string' && body.endpoint.trim() && !isAllowedPerigeeEndpoint(body.endpoint.trim())) {
+      return NextResponse.json({ error: 'The endpoint must be an https www.fieldgoose.com address.' }, { status: 400 });
+    }
+    const endpointChanged = body.endpoint !== undefined && body.endpoint !== current.endpoint;
+    if (endpointChanged && current.apiKey && !body.apiKey) {
+      return NextResponse.json({ error: 'You changed the endpoint, so enter the Bearer token again too.' }, { status: 400 });
+    }
 
     const updated: PerigeeConfig = {
       apiKey: body.apiKey !== undefined ? body.apiKey : current.apiKey,
