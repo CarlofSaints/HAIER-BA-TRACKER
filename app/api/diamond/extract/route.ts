@@ -102,7 +102,11 @@ export async function POST(req: NextRequest) {
     if (!aiRes.ok) {
       const detail = await aiRes.text().catch(() => '');
       console.error('Anthropic OCR error:', aiRes.status, detail);
-      return NextResponse.json({ error: `OCR failed (${aiRes.status}). Please try again.` }, { status: 502 });
+      // Anthropic reports empty credits as a plain 400, so "try again" would never help.
+      const error = /credit balance/i.test(detail)
+        ? 'The Anthropic account behind this app is out of credits, so the PDF cannot be read. Add credits to that account, then try again.'
+        : `OCR failed (${aiRes.status}). Please try again.`;
+      return NextResponse.json({ error }, { status: 502 });
     }
 
     const ai = await aiRes.json();
